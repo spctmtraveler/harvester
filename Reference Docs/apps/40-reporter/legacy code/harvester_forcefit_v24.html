@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Harvester v24: Force Fit</title>
+    <style>
+        :root { --bg: #1e1e1e; --panel: #252526; --border: #333; --text: #d4d4d4; --accent: #0e639c; --success: #2e7d32; --warning: #ff8f00; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); padding: 20px; display: flex; height: 100vh; margin: 0; box-sizing: border-box; }
+        
+        .sidebar { width: 500px; border-right: 1px solid var(--border); display: flex; flex-direction: column; padding-right: 20px; flex-shrink: 0; }
+        .main { flex: 1; display: flex; flex-direction: column; padding-left: 20px; overflow: hidden; }
+
+        h2 { margin-top: 0; color: #fff; border-bottom: 1px solid #333; padding-bottom: 10px; }
+        label { font-size: 0.8em; font-weight: bold; color: #81c784; text-transform: uppercase; margin-bottom: 5px; display: block; }
+
+        .prompt-box {
+            width: 100%; height: 500px; 
+            background: #111; border: 1px solid #444; color: #ce9178; 
+            font-family: monospace; font-size: 0.85em; padding: 10px; 
+            resize: vertical; margin-bottom: 10px;
+        }
+
+        /* THEME LIST & TAGS */
+        #themeList { flex: 1; overflow-y: auto; padding-right: 5px; margin-top: 10px; }
+        
+        .theme-block { margin-bottom: 15px; background: #2a2a2a; border-radius: 4px; border: 1px solid #333; }
+        .theme-header { padding: 10px; background: #333; font-weight: bold; display: flex; justify-content: space-between; cursor: pointer; }
+        .theme-body { padding: 10px; display: flex; flex-wrap: wrap; gap: 5px; }
+        
+        .tag-pill { 
+            background: #444; color: #ccc; padding: 4px 8px; border-radius: 4px; font-size: 0.8em; cursor: help; border: 1px solid #555;
+        }
+        .tag-pill:hover { background: #0e639c; color: white; border-color: #fff; }
+
+        /* EXPORT PANEL */
+        .export-panel { margin-top: auto; padding-top: 15px; border-top: 1px solid #333; }
+        .export-btn { width: 48%; padding: 10px; margin-top: 5px; background: var(--accent); color: white; border: none; font-weight: bold; cursor: pointer; border-radius: 4px; }
+        .export-btn.secondary { background: #444; }
+        
+        .action-btn { background: var(--warning); color: #000; width: 100%; padding:10px; border:none; border-radius:4px; font-weight:bold; cursor:pointer;}
+        .action-btn:hover { background: #ffca28; }
+        
+        /* REPORT AREA */
+        .report-container { 
+            flex: 1; background: #222; border: 1px solid #333; border-radius: 4px; padding: 40px; 
+            overflow-y: auto; font-family: 'Georgia', serif; line-height: 1.6; color: #e0e0e0; font-size: 1.1em;
+        }
+        .citation { color: #5c9eba; font-size: 0.7em; font-family: sans-serif; cursor: pointer; vertical-align: super; }
+    </style>
+</head>
+<body>
+
+<div class="sidebar">
+    <h2>1. The Architect (Force Fit)</h2>
+    
+    <label>Taxonomy & Instructions</label>
+    <textarea id="organizerPrompt" class="prompt-box">You are a Qualitative Data Architect.
+Map the raw tags to the TARGET TAXONOMY.
+
+### ⚠️ RULE: FORCE FIT (NO OUTLIERS)
+1. You MUST assign every tag to one of the 14 categories below.
+2. Do NOT create an "Outliers" bucket. If a tag is vague (e.g., "Process"), look at the context implied by the tag name and assign it to the most logical home (e.g., "Workflow & Modernization").
+3. **Rationale:** For every assignment, you must provide a short 1-sentence reason why it fits there.
+
+### 🎯 TARGET TAXONOMY (The Slide Deck Structure):
+
+**I. EXTERNAL: The Revenue Engine**
+1. **Chair Acquisition (The "Get"):** Securing the market chair, pipeline, timeline 12+ months out.
+2. **ELT Formation (Building the Bench):** Recruiting the 10-15 execs, leveraging networks.
+3. **ELT Activation (The Work):** Getting them to send emails, make asks, attend meetings.
+4. **The Executive Value Prop (The Hook):** The reasons volunteer executives participate 
+5. **Corporate Sponsorship:** ROI, levels, securing company dollars.
+6. **Corporate Activation:** Company leaders, internal champions, employee engagement.
+
+**II. INTERNAL: The Enablement Engine**
+7. **Internal Leadership (GAP):** GAP meetings, accountability, VP/Director management.
+8. **Operational Infrastructure:** Salesforce, SharePoint, Data integrity, Financial policy.
+9. **Staff Enablement:** Onboarding, Training, Resources, Knowledge gaps.
+10. **Shadow Operations:** Workarounds, local templates, P2P sharing, bypassing systems.
+11. **Workflow & Modernization:** Task design, AI, day-to-day execution, email efficiency.
+
+**III. SYSTEM PERFORMANCE**
+12. **Capacity & Burnout:** Staff workload, admin burden vs strategic time.
+13. **Measurement & Governance:** Metrics, standardization vs flexibility.
+14. **Culture & Norms:** Team dynamics, remote work, recognition.
+
+RETURN JSON format: 
+{ 
+  "mappings": [ 
+    {
+      "theme": "Target Theme Name", 
+      "tag": "Raw Tag Name",
+      "rationale": "Why this tag belongs here"
+    } 
+  ] 
+}</textarea>
+    
+    <button id="btnOrganize" class="action-btn" onclick="organizeData()">
+        ⚡ Run Force-Fit Organizer
+    </button>
+
+    <div class="export-panel">
+        <button class="export-btn" onclick="downloadJSON()">JSON</button>
+        <button class="export-btn secondary" onclick="downloadMarkdown()">Markdown</button>
+    </div>
+</div>
+
+<div class="main">
+    <h2>2. Sorted Data (Hover for Rationale)</h2>
+    <div id="themeList"><div style="padding:20px; color:#666; text-align:center">Waiting for command...</div></div>
+</div>
+
+<script type="module">
+    import { DBHelper } from "https://happydo.xyz/api_auto_db/db_helper.js";
+    import { askAI } from "https://happydo.xyz/api/ailnl.js";
+
+    const APP_NAME = "Interview_Harvester_v1";
+    let rawInsights = [];
+    let themeBuckets = {}; 
+
+    async function init() {
+        await DBHelper.init(APP_NAME);
+        loadData();
+    }
+
+    async function loadData() {
+        // Fetch only accepted insights
+        const res = await DBHelper.query(APP_NAME, "SELECT * FROM insights WHERE status = 'accepted'");
+        rawInsights = res.rows;
+        document.getElementById('themeList').innerHTML = `<div style="padding:10px; color:#888; text-align:center">${rawInsights.length} raw insights loaded.<br>Ready to organize.</div>`;
+    }
+
+    // --- FORCE FIT ORGANIZER ---
+    window.organizeData = async () => {
+        const btn = document.getElementById('btnOrganize');
+        const userInstructions = document.getElementById('organizerPrompt').value;
+        
+        btn.disabled = true; btn.innerText = "Architecting (This takes a moment)...";
+        
+        const topics = [...new Set(rawInsights.map(r => r.topic))];
+        
+        // Batch processing if too many tags (Split into chunks of 50)
+        // For simplicity in this v24, we will try one big batch but increase token limit logic by asking for JSON only.
+        
+        const prompt = `
+        ${userInstructions}
+        
+        RAW TAGS TO SORT: 
+        ${topics.join(", ")}
+        `;
+
+        try {
+            // Using GPT-4o for complex reasoning
+            const response = await askAI(prompt, "gpt-4o");
+            const jsonStr = response.match(/\{[\s\S]*\}/)[0];
+            const json = JSON.parse(jsonStr);
+            
+            themeBuckets = {};
+            
+            // Initialize buckets map for insights
+            const tagMap = {}; // tag -> { theme, rationale }
+
+            json.mappings.forEach(m => {
+                if(!themeBuckets[m.theme]) themeBuckets[m.theme] = [];
+                // Store rationale for UI
+                tagMap[m.tag] = { theme: m.theme, rationale: m.rationale };
+            });
+
+            // Fallback bucket
+            themeBuckets["Unsorted / Garbage"] = [];
+
+            // Assign insights to buckets in memory
+            rawInsights.forEach(item => {
+                const mapData = tagMap[item.topic];
+                if (mapData) {
+                    item.temp_theme = mapData.theme;
+                    item.rationale = mapData.rationale; // Save the "Why"
+                    if(!themeBuckets[mapData.theme]) themeBuckets[mapData.theme] = [];
+                    themeBuckets[mapData.theme].push(item);
+                } else {
+                    item.temp_theme = "Unsorted / Garbage";
+                    themeBuckets["Unsorted / Garbage"].push(item);
+                }
+            });
+
+            renderThemes();
+            btn.disabled = false; btn.innerText = "⚡ Re-Run";
+
+        } catch (e) {
+            alert("Organization Error: " + e.message);
+            console.error(e);
+            btn.disabled = false; btn.innerText = "Retry";
+        }
+    };
+
+    function renderThemes() {
+        const container = document.getElementById('themeList');
+        // Sort themes alphabetically or by priority? Let's do alphabetical for now
+        const themes = Object.keys(themeBuckets).sort();
+        
+        let html = "";
+        
+        themes.forEach(t => {
+            const items = themeBuckets[t];
+            if(items.length === 0) return;
+            
+            // Get unique tags in this theme for display
+            const uniqueTags = [...new Set(items.map(i => i.topic))];
+            
+            // Build tag pills with tooltips
+            const pills = uniqueTags.map(tag => {
+                // Find rationale from first item with this tag
+                const sample = items.find(i => i.topic === tag);
+                const reason = sample ? sample.rationale : "No rationale provided.";
+                return `<span class="tag-pill" title="AI Logic: ${reason}">${tag}</span>`;
+            }).join("");
+
+            html += `
+            <div class="theme-block">
+                <div class="theme-header" onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'none' ? 'flex' : 'none'">
+                    <span>${t}</span>
+                    <span style="opacity:0.6">${items.length} items</span>
+                </div>
+                <div class="theme-body">
+                    ${pills}
+                </div>
+            </div>`;
+        });
+        
+        container.innerHTML = html;
+    }
+
+    // --- DOWNLOADERS ---
+    window.downloadJSON = () => {
+        if(Object.keys(themeBuckets).length === 0) { alert("Please organize data first."); return; }
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(themeBuckets, null, 2));
+        const anchor = document.createElement('a');
+        anchor.setAttribute("href", dataStr);
+        anchor.setAttribute("download", "harvester_forcefit_export.json");
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+    };
+
+    window.downloadMarkdown = () => {
+        if(Object.keys(themeBuckets).length === 0) { alert("Please organize data first."); return; }
+        let md = "# Harvester Data Export (Force Fit)\n\n";
+        for(let theme in themeBuckets) {
+            md += `## ${theme}\n\n`;
+            themeBuckets[theme].forEach(i => {
+                md += `### ${i.topic}\n`;
+                if(i.rationale) md += `*AI Logic: ${i.rationale}*\n`;
+                md += `> "${i.quote}"\n*Source ID: ${i.source_id}*\n\n`;
+            });
+            md += "---\n\n";
+        }
+        const dataStr = "data:text/plain;charset=utf-8," + encodeURIComponent(md);
+        const anchor = document.createElement('a');
+        anchor.setAttribute("href", dataStr);
+        anchor.setAttribute("download", "harvester_forcefit_context.txt");
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+    };
+
+    init();
+</script>
+</body>
+</html>

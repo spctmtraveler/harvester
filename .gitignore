@@ -1,0 +1,22 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+
+# Secrets / env
+.env
+.env.*
+
+# Logs
+*.log
+
+# Local databases / artifacts
+*.sqlite
+*.sqlite3
+*.db
+
+# Node/Python caches (in case we add tooling later)
+node_modules/
+dist/
+.pytest_cache/
+__pycache__/
+

@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Phase 2: The Filtered Gardener</title>
+    <style>
+        :root { --bg: #1e1e1e; --panel: #252526; --border: #333; --text: #d4d4d4; --accent: #0e639c; --success: #2e7d32; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); padding: 20px; display: flex; flex-direction: column; height: 100vh; margin: 0; box-sizing: border-box; }
+        h1 { margin: 0 0 10px 0; }
+        p { color: #888; margin-top: 0; }
+        .container { display: flex; gap: 20px; flex: 1; overflow: hidden; }
+        .col { flex: 1; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; display: flex; flex-direction: column; overflow: hidden; }
+        .col-header { padding: 15px; border-bottom: 1px solid var(--border); background: #222; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
+        .col-body { flex: 1; overflow-y: auto; padding: 15px; }
+        .tag-item { display: flex; justify-content: space-between; padding: 8px; border-bottom: 1px solid #333; font-size: 0.9em; }
+        .tag-count { background: #444; padding: 2px 6px; border-radius: 4px; font-size: 0.8em; }
+        
+        .theme-card { background: #333; border: 1px solid #444; border-radius: 6px; margin-bottom: 15px; overflow: hidden; }
+        .theme-header { padding: 10px; background: #444; display: flex; gap: 10px; align-items: center; }
+        .theme-input { background: #222; border: 1px solid #555; color: white; padding: 5px; font-weight: bold; width: 100%; border-radius: 3px; }
+        .theme-tags { padding: 10px; display: flex; flex-wrap: wrap; gap: 5px; }
+        .sub-tag { display: inline-block; background: #222; border: 1px solid #555; padding: 4px 8px; border-radius: 4px; font-size: 0.85em; color: #aaa; }
+        
+        button { padding: 8px 16px; background: var(--accent); color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        button:hover { opacity: 0.9; }
+        button.success { background: var(--success); }
+        button:disabled { background: #444; cursor: not-allowed; }
+        .loading { text-align: center; color: #888; padding: 20px; font-style: italic; }
+        
+        /* Progress Bar */
+        #progress-container { display: none; margin-top: 10px; background: #333; height: 10px; border-radius: 5px; overflow: hidden; }
+        #progress-fill { width: 0%; height: 100%; background: var(--accent); transition: width 0.3s ease; }
+    </style>
+</head>
+<body>
+
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+        <div>
+            <h1>Phase 2: The Filtered Gardener</h1>
+            <p>Processing only <strong>ACCEPTED</strong> insights.</p>
+        </div>
+        <div style="display:flex; gap:10px;">
+            <button onclick="startBatchProcess()">✨ 1. Auto-Group</button>
+            <button onclick="applyChanges()" class="success" id="btnApply" disabled>💾 2. Save Hierarchy</button>
+        </div>
+    </div>
+    
+    <div id="statusMsg" style="color:#aaa; font-family:monospace; margin-bottom:10px;">Ready.</div>
+    <div id="progress-container"><div id="progress-fill"></div></div>
+
+    <div class="container">
+        <div class="col" style="flex: 0 0 300px;">
+            <div class="col-header">Raw Topics (<span id="rawCount">0</span>)</div>
+            <div class="col-body" id="rawList"><div class="loading">Loading database...</div></div>
+        </div>
+
+        <div class="col">
+            <div class="col-header">Proposed Hierarchy <span style="font-size:0.8em; font-weight:normal; color:#aaa;">(Edit names if needed)</span></div>
+            <div class="col-body" id="groupList">
+                <div style="text-align:center; padding:50px; color:#666;">Click "Auto-Group" to start.</div>
+            </div>
+        </div>
+    </div>
+
+<script type="module">
+    import { DBHelper } from "https://happydo.xyz/api_auto_db/db_helper.js";
+    import { askAI } from "https://happydo.xyz/api/ailnl.js";
+
+    const APP_NAME = "Interview_Harvester_v1";
+    let rawTags = [];
+    let masterThemes = []; 
+    let finalMappings = {}; 
+
+    async function init() {
+        await DBHelper.init(APP_NAME);
+        try { await DBHelper.query(APP_NAME, "ALTER TABLE insights ADD COLUMN master_theme TEXT"); } catch(e) {}
+        loadRawTags();
+    }
+
+    async function loadRawTags() {
+        // --- CRITICAL FIX: ADDED 'WHERE status = accepted' ---
+        const res = await DBHelper.query(APP_NAME, "SELECT topic, COUNT(*) as c FROM insights WHERE status = 'accepted' GROUP BY topic ORDER BY c DESC");
+        rawTags = res.rows;
+        document.getElementById('rawCount').innerText = rawTags.length;
+        const container = document.getElementById('rawList');
+        if(rawTags.length === 0) { container.innerHTML = "<div class='loading'>No ACCEPTED insights found!</div>"; return; }
+        container.innerHTML = rawTags.map(t => `<div class="tag-item"><span>${t.topic}</span><span class="tag-count">${t.c}</span></div>`).join("");
+    }
+
+    // --- BATCH PROCESSOR ---
+    window.startBatchProcess = async () => {
+        const btn = document.querySelector('button');
+        const status = document.getElementById('statusMsg');
+        const pBar = document.getElementById('progress-container');
+        const pFill = document.getElementById('progress-fill');
+        
+        btn.disabled = true;
+        pBar.style.display = 'block';
+        finalMappings = {}; 
+
+        try {
+            // STEP 1: ARCHITECT MODE (Get the Themes Only)
+            status.innerText = "Step 1/2: Architecting Themes...";
+            pFill.style.width = "10%";
+            
+            // Limit sample to 100 to save tokens
+            const architectureSample = rawTags.slice(0, 100).map(t => t.topic).join(", ");
+            
+            const archPrompt = `
+            You are a Data Architect. I have ${rawTags.length} unique tags from user interviews.
+            Create 8-12 Master Themes to organize them.
+            
+            RULES:
+            1. Group by SUBJECT (e.g., "Technology & Tools", "Governance", "Culture").
+            2. Avoid generic buckets like "Pain Points" or "Misc".
+            3. RETURN ONLY A JSON ARRAY OF STRINGS.
+            
+            SAMPLE TAGS: ${architectureSample}
+            
+            OUTPUT EXAMPLE: ["Theme A", "Theme B", "Theme C"]
+            `;
+            
+            const archRes = await askAI(archPrompt, "gpt-4o");
+            const archJson = JSON.parse(archRes.match(/\[[\s\S]*\]/)[0]);
+            masterThemes = archJson;
+            
+            masterThemes.forEach(t => finalMappings[t] = []);
+
+            // STEP 2: SORTER MODE (Batch Processing)
+            const BATCH_SIZE = 50;
+            const totalBatches = Math.ceil(rawTags.length / BATCH_SIZE);
+            
+            for (let i = 0; i < rawTags.length; i += BATCH_SIZE) {
+                const batchNum = Math.floor(i / BATCH_SIZE) + 1;
+                const pct = 10 + Math.floor((batchNum / totalBatches) * 90);
+                pFill.style.width = `${pct}%`;
+                status.innerText = `Step 2/2: Sorting Batch ${batchNum} of ${totalBatches}...`;
+                
+                const batch = rawTags.slice(i, i + BATCH_SIZE).map(t => t.topic);
+                
+                const sortPrompt = `
+                You are a Tag Sorter.
+                MASTER THEMES: ${JSON.stringify(masterThemes)}
+                TAGS TO SORT: ${JSON.stringify(batch)}
+                TASK: Assign each tag to the BEST Master Theme.
+                OUTPUT JSON: { "mappings": [ {"tag": "tag_name", "theme": "Theme Name"} ] }
+                `;
+                
+                const sortRes = await askAI(sortPrompt, "openai"); 
+                try {
+                    const sortJson = JSON.parse(sortRes.match(/\{[\s\S]*\}/)[0]);
+                    
+                    sortJson.mappings.forEach(m => {
+                        if (finalMappings[m.theme]) {
+                            finalMappings[m.theme].push(m.tag);
+                        } else {
+                            if(!finalMappings[m.theme]) finalMappings[m.theme] = [];
+                            finalMappings[m.theme].push(m.tag);
+                        }
+                    });
+                } catch(err) {
+                    console.error("Batch failed", err);
+                    if (!finalMappings["Unsorted"]) finalMappings["Unsorted"] = [];
+                    batch.forEach(t => finalMappings["Unsorted"].push(t));
+                }
+                
+                renderGroups();
+                await new Promise(r => setTimeout(r, 500)); 
+            }
+            
+            status.innerText = "Done! Review changes below.";
+            document.getElementById('btnApply').disabled = false;
+
+        } catch(e) { 
+            alert("Process Error: " + e.message); 
+            console.error(e);
+        }
+        
+        btn.disabled = false;
+        btn.innerText = "✨ 1. Auto-Group";
+    };
+
+    function renderGroups() {
+        const container = document.getElementById('groupList');
+        let html = "";
+        const sortedKeys = Object.keys(finalMappings).sort();
+        
+        sortedKeys.forEach((theme, idx) => {
+            const tags = finalMappings[theme];
+            if (tags.length === 0) return;
+            
+            html += `
+            <div class="theme-card">
+                <div class="theme-header">
+                    <span>📁</span>
+                    <input type="text" class="theme-input" value="${theme}" onchange="updateThemeKey('${theme}', this.value)">
+                    <span style="font-size:0.8em; color:#aaa; margin-left:auto;">${tags.length} items</span>
+                </div>
+                <div class="theme-tags">${tags.map(t => `<span class="sub-tag">${t}</span>`).join("")}</div>
+            </div>`;
+        });
+        
+        container.innerHTML = html;
+    }
+
+    window.updateThemeKey = (oldKey, newKey) => {
+        if (oldKey === newKey) return;
+        finalMappings[newKey] = finalMappings[oldKey];
+        delete finalMappings[oldKey];
+    };
+
+    window.applyChanges = async () => {
+        const btn = document.getElementById('btnApply');
+        btn.disabled = true; btn.innerText = "Saving to Database...";
+
+        const themes = Object.keys(finalMappings);
+        let totalUpdates = 0;
+
+        for (let theme of themes) {
+            const tags = finalMappings[theme];
+            for (let tag of tags) {
+                const safeTopic = tag.replace(/'/g, "''");
+                const safeTheme = theme.replace(/'/g, "''");
+                await DBHelper.query(APP_NAME, 
+                    `UPDATE insights SET master_theme = '${safeTheme}' WHERE topic = '${safeTopic}'`
+                );
+                totalUpdates++;
+            }
+        }
+        
+        alert(`Success! Updated ${totalUpdates} records.`);
+        location.reload();
+    };
+
+    init();
+</script>
+</body>
+</html>

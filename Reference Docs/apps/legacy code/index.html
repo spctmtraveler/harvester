@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Harvester v25: Command Console</title>
+    <style>
+        /* --- THEME: RETRO TERMINAL (AMBER/GREEN) --- */
+        :root { 
+            --bg: #0d1117; 
+            --panel: #161b22; 
+            --border: #30363d; 
+            --text: #c9d1d9; 
+            --accent: #238636; /* Green */
+            --accent-dim: rgba(35, 134, 54, 0.2);
+            --danger: #da3633;
+            --warning: #d29922;
+            --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+        }
+        
+        body { 
+            font-family: var(--font-mono); 
+            background: var(--bg); 
+            color: var(--text); 
+            margin: 0; display: flex; height: 100vh; overflow: hidden; 
+            font-size: 13px;
+        }
+
+        /* --- LAYOUT --- */
+        .sidebar { width: 380px; background: #010409; border-right: 1px solid var(--border); display: flex; flex-direction: column; padding: 15px; overflow-y: auto; z-index: 2; }
+        .main { flex: 1; display: flex; flex-direction: column; position: relative; background: var(--bg); }
+
+        /* --- VISUAL DECK (TOP BAR) --- */
+        #visual-deck { 
+            height: 100px; background: #0d1117; border-bottom: 1px solid var(--border); 
+            display: flex; align-items: center; gap: 10px; padding: 0 20px; overflow-x: auto;
+        }
+        .file-card { 
+            width: 80px; height: 60px; background: #21262d; border: 1px solid #30363d; 
+            border-radius: 3px; display: flex; align-items: center; justify-content: center; 
+            font-size: 10px; text-align: center; position: relative; overflow: hidden; color: #8b949e;
+        }
+        .file-card.active { border-color: var(--warning); color: var(--text); box-shadow: 0 0 5px var(--warning); }
+        .file-card.done { border-color: var(--accent); color: var(--accent); }
+        .progress-bar { position: absolute; bottom: 0; left: 0; height: 3px; background: var(--accent); width: var(--pct); transition: width 0.3s; }
+
+        /* --- TABS --- */
+        .tabs { display: flex; background: #161b22; border-bottom: 1px solid var(--border); }
+        .tab { 
+            padding: 12px 20px; cursor: pointer; border-right: 1px solid var(--border); 
+            font-weight: bold; color: #8b949e; display: flex; align-items: center; gap: 8px;
+        }
+        .tab:hover { background: #21262d; color: var(--text); }
+        .tab.active { background: var(--bg); color: var(--text); border-top: 2px solid var(--accent); }
+        .badge { background: #30363d; padding: 2px 6px; border-radius: 10px; font-size: 10px; }
+
+        /* --- CONTENT AREAS --- */
+        .view-panel { flex: 1; overflow-y: auto; padding: 20px; display: none; }
+        .view-panel.active { display: block; }
+
+        /* --- FEED ITEMS (RETRO STYLE) --- */
+        .feed-item { 
+            background: #161b22; border: 1px solid #30363d; border-radius: 4px; 
+            padding: 12px; margin-bottom: 10px; position: relative;
+            transition: all 0.2s;
+        }
+        .feed-item:hover { border-color: #58a6ff; }
+        .feed-item.rejected { border-left: 3px solid var(--danger); opacity: 0.7; }
+        .feed-item.accepted { border-left: 3px solid var(--accent); }
+        
+        .item-meta { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 11px; color: #8b949e; }
+        .item-tag { font-weight: bold; color: var(--text); text-transform: uppercase; letter-spacing: 0.5px; }
+        .item-quote { font-style: italic; color: #a5d6ff; margin: 8px 0; border-left: 2px solid #30363d; padding-left: 8px; }
+        
+        /* --- ANIMATIONS --- */
+        .blinking { animation: blink 1.5s infinite; color: var(--warning); font-weight: bold; }
+        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.4; } 100% { opacity: 1; } }
+
+        /* --- CONTROLS --- */
+        .control-group { margin-bottom: 20px; border-bottom: 1px solid var(--border); padding-bottom: 20px; }
+        label { display: block; color: #8b949e; margin-bottom: 8px; font-size: 11px; text-transform: uppercase; }
+        
+        textarea.code-box { 
+            width: 100%; height: 150px; background: #0d1117; color: #79c0ff; 
+            border: 1px solid #30363d; font-family: var(--font-mono); font-size: 11px; padding: 10px; 
+            resize: vertical;
+        }
+
+        button { 
+            width: 100%; padding: 8px; margin-top: 5px; cursor: pointer; 
+            background: #21262d; border: 1px solid #30363d; color: var(--text); font-weight: bold; border-radius: 4px;
+        }
+        button:hover { background: #30363d; }
+        button.primary { background: var(--accent); color: white; border: none; }
+        button.danger { background: rgba(218, 54, 51, 0.1); color: #ff7b72; border-color: rgba(218, 54, 51, 0.5); }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* --- GARDENER & VAPORIZER STYLES --- */
+        .theme-card { background: #161b22; border: 1px solid #30363d; margin-bottom: 15px; border-radius: 4px; }
+        .theme-header { padding: 10px; background: #21262d; font-weight: bold; border-bottom: 1px solid #30363d; }
+        .theme-body { padding: 10px; display: flex; flex-wrap: wrap; gap: 5px; }
+        .tag-pill { 
+            background: #30363d; padding: 4px 8px; border-radius: 4px; font-size: 11px; 
+            cursor: help; border: 1px solid #484f58; 
+        }
+        .tag-pill:hover { border-color: #58a6ff; color: #58a6ff; }
+
+        table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        td, th { text-align: left; padding: 8px; border-bottom: 1px solid #30363d; }
+        th { color: #8b949e; }
+    </style>
+</head>
+<body>
+
+<div class="sidebar">
+    <h2 style="margin:0 0 10px 0; color:var(--text)">HARVESTER <span style="color:var(--accent)">v25</span></h2>
+    <div id="status-line" style="font-size:11px; color:#8b949e; margin-bottom:20px;">System Ready.</div>
+
+    <div class="control-group">
+        <label>1. Source Data</label>
+        <input type="file" id="fileInput" multiple accept=".txt,.md" style="display:none">
+        <button onclick="document.getElementById('fileInput').click()">📂 Load Transcripts</button>
+        <div id="ingest-stats" style="margin-top:5px; font-size:11px; color:#58a6ff;"></div>
+    </div>
+
+    <div class="control-group">
+        <label>2. Harvesting (AI Extraction)</label>
+        <div style="display:flex; gap:5px;">
+            <button class="primary" id="btnStart" onclick="startHarvest()">▶ Start</button>
+            <button id="btnStop" onclick="stopHarvest()" disabled>⏸ Pause</button>
+        </div>
+        <div style="margin-top:10px; font-size:11px;">
+            Batch Limit: <input type="number" id="batchLimit" value="20" style="width:40px; background:#0d1117; border:1px solid #30363d; color:white;">
+            <span id="batch-progress" style="float:right">0 / 20</span>
+        </div>
+    </div>
+
+    <div class="control-group">
+        <label onclick="document.getElementById('sysPrompt').style.display='block'" style="cursor:pointer; text-decoration:underline;">⚙️ Edit System Prompt</label>
+        <textarea id="sysPrompt" class="code-box" style="display:none;"></textarea>
+    </div>
+
+    <div class="control-group">
+        <label>3. Organization</label>
+        <button onclick="switchTab('gardener')" style="color:var(--warning)">⚡ Go to Gardener</button>
+    </div>
+
+    <div style="margin-top:auto;">
+        <button onclick="resetDB()" class="danger">☢️ Reset Database</button>
+    </div>
+</div>
+
+<div class="main">
+    <div id="visual-deck">
+        <div style="color:#8b949e; font-style:italic;">No files loaded.</div>
+    </div>
+
+    <div class="tabs">
+        <div class="tab active" onclick="switchTab('feed')">📡 Live Feed <span id="badge-feed" class="badge">0</span></div>
+        <div class="tab" onclick="switchTab('gardener')">🏗️ Gardener <span class="badge" style="color:var(--warning)">Force Fit</span></div>
+        <div class="tab" onclick="switchTab('vaporizer')">🗑️ Vaporizer</div>
+        <div class="tab" onclick="switchTab('export')">📦 Export</div>
+    </div>
+
+    <div id="view-feed" class="view-panel active">
+        <div id="feed-container"></div>
+    </div>
+
+    <div id="view-gardener" class="view-panel">
+        <div style="margin-bottom:20px; border-bottom:1px solid var(--border); padding-bottom:20px;">
+            <h3>Target Taxonomy Instructions</h3>
+            <textarea id="gardenerPrompt" class="code-box" style="height:100px;">
+You are a Data Architect. Map tags to the 14 Target Themes.
+⚠️ FORCE FIT: Assign every tag to a bucket. No "Outliers".
+Provide a rationale for each assignment.
+TARGETS: ELT Recruitment, Corporate Activation, Internal Leadership, Operational Infrastructure, Staff Enablement...
+            </textarea>
+            <button class="primary" onclick="runForceFit()">⚡ Run Force-Fit Organization</button>
+        </div>
+        <div id="gardener-results">
+            <div style="text-align:center; color:#8b949e; margin-top:50px;">Waiting to organize...</div>
+        </div>
+    </div>
+
+    <div id="view-vaporizer" class="view-panel">
+        <h3>File Management</h3>
+        <table id="vaporizer-table">
+            <thead><tr><th>Filename</th><th>Sentences</th><th>Status</th><th>Action</th></tr></thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <div id="view-export" class="view-panel">
+        <h3>Download Data</h3>
+        <p>Export your organized data for final reporting.</p>
+        <div style="display:flex; gap:10px;">
+            <button onclick="downloadJSON()">Download JSON</button>
+            <button onclick="downloadMarkdown()">Download Context for LLM</button>
+        </div>
+    </div>
+</div>
+
+<script type="module">
+    import { DBHelper } from "https://happydo.xyz/api_auto_db/db_helper.js";
+    import { askAI } from "https://happydo.xyz/api/ailnl.js";
+
+    const APP = "Harvester_v25";
+    let state = { running: false, batchCount: 0 };
+    
+    // --- 1. INITIALIZATION ---
+    async function init() {
+        await DBHelper.init(APP);
+        // Ensure schema
+        try { await DBHelper.query(APP, "ALTER TABLE insights ADD COLUMN master_theme TEXT"); } catch(e) {}
+        try { await DBHelper.query(APP, "ALTER TABLE insights ADD COLUMN rationale TEXT"); } catch(e) {}
+        
+        // Load Flashback
+        loadFlashback();
+        updateVisualDeck();
+        
+        // Set Default Prompt
+        document.getElementById('sysPrompt').value = `You are a strict Qualitative Data Analyst.
+Analyze the user interview transcript segments.
+CONTEXT:
+1. Heart Walk is a fundraising campaign.
+2. ELT = Executive Leadership Team (Volunteers).
+3. "The Chair" = Top Volunteer.
+4. GAP Meetings = Internal Staff Accountability.
+
+DECISION: KEEP (Insight/Pain Point/Process) or REJECT (Filler/Ops).
+OUTPUT JSON: { "items": [ { "topic": "...", "summary": "...", "status": "accepted/rejected", "reason": "...", "quote": "..." } ] }`;
+    }
+
+    // --- 2. INGESTION & VISUALS ---
+    window.startHarvest = async () => {
+        state.running = true; state.batchCount = 0;
+        document.getElementById('btnStart').disabled = true;
+        document.getElementById('btnStop').disabled = false;
+        
+        const limit = parseInt(document.getElementById('batchLimit').value);
+        const status = document.getElementById('status-line');
+
+        while(state.running && state.batchCount < limit) {
+            // Get batch
+            const batch = await DBHelper.query(APP, "SELECT * FROM sentences WHERE status='raw' LIMIT 20");
+            if(batch.rows.length === 0) { status.innerText = "No raw data found."; break; }
+            
+            status.innerHTML = `<span class="blinking">Processing Batch ${state.batchCount + 1}...</span>`;
+            updateVisualDeck(batch.rows[0].file_name);
+
+            // AI Call
+            const txt = batch.rows.map(r => r.text).join("\n");
+            const prompt = document.getElementById('sysPrompt').value + "\n\nDATA:\n" + txt;
+            
+            try {
+                const res = await askAI(prompt, "gpt-4o");
+                const json = JSON.parse(res.match(/\{[\s\S]*\}/)[0]);
+                
+                // Save Items
+                for(let item of json.items || []) {
+                    await DBHelper.query(APP, 
+                        "INSERT INTO insights (topic, summary, status, review_notes, quote, source_id) VALUES (?, ?, ?, ?, ?, ?)",
+                        [item.topic, item.summary, item.status, item.reason, item.quote, batch.rows[0].id]
+                    );
+                    renderFeedItem(item);
+                }
+                
+                // Mark Sentences Done
+                const ids = batch.rows.map(r => r.id).join(",");
+                await DBHelper.query(APP, `UPDATE sentences SET status='harvested' WHERE id IN (${ids})`);
+                
+                state.batchCount++;
+                document.getElementById('batch-progress').innerText = `${state.batchCount} / ${limit}`;
+                
+            } catch(e) { console.error(e); }
+        }
+        stopHarvest();
+    };
+
+    window.stopHarvest = () => {
+        state.running = false;
+        document.getElementById('btnStart').disabled = false;
+        document.getElementById('btnStop').disabled = true;
+        document.getElementById('status-line').innerText = "Idle.";
+        updateVisualDeck();
+    };
+
+    // --- 3. UI RENDERING ---
+    function renderFeedItem(item, prepend=true) {
+        const div = document.createElement('div');
+        div.className = `feed-item ${item.status}`;
+        div.innerHTML = `
+            <div class="item-meta">
+                <span class="item-tag">${item.topic}</span>
+                <span>${item.status === 'accepted' ? '✔' : '✘'}</span>
+            </div>
+            <div>${item.summary}</div>
+            <div class="item-quote">"${item.quote}"</div>
+            <div style="font-size:10px; color:#58a6ff; margin-top:5px;">Reason: ${item.review_notes || item.reason}</div>
+        `;
+        const container = document.getElementById('feed-container');
+        prepend ? container.prepend(div) : container.append(div);
+        
+        // Update Count
+        const badge = document.getElementById('badge-feed');
+        badge.innerText = parseInt(badge.innerText) + 1;
+    }
+
+    async function loadFlashback() {
+        const res = await DBHelper.query(APP, "SELECT * FROM insights ORDER BY id DESC LIMIT 50");
+        document.getElementById('feed-container').innerHTML = '';
+        res.rows.forEach(r => renderFeedItem(r, false));
+        document.getElementById('badge-feed').innerText = res.rows.length;
+    }
+
+    async function updateVisualDeck(activeFile = null) {
+        const res = await DBHelper.query(APP, "SELECT file_name, COUNT(*) as total, SUM(CASE WHEN status='harvested' THEN 1 ELSE 0 END) as done FROM sentences GROUP BY file_name");
+        const deck = document.getElementById('visual-deck');
+        
+        if(res.rows.length === 0) return;
+        
+        deck.innerHTML = res.rows.map(f => {
+            const pct = (f.done / f.total) * 100;
+            const isActive = f.file_name === activeFile;
+            return `
+                <div class="file-card ${f.done === f.total ? 'done' : ''} ${isActive ? 'active' : ''}">
+                    <div style="z-index:2; position:relative;">${f.file_name.substring(0,10)}...</div>
+                    <div class="progress-bar" style="width:${pct}%"></div>
+                </div>`;
+        }).join("");
+    }
+
+    // --- 4. GARDENER (FORCE FIT) ---
+    window.runForceFit = async () => {
+        const container = document.getElementById('gardener-results');
+        container.innerHTML = "<div class='blinking'>Architecting Taxonomy... (This takes 30s)</div>";
+        
+        // 1. Get Tags
+        const res = await DBHelper.query(APP, "SELECT topic FROM insights WHERE status='accepted'");
+        const uniqueTags = [...new Set(res.rows.map(r => r.topic))];
+        
+        // 2. Prompt
+        const prompt = document.getElementById('gardenerPrompt').value + 
+                       "\n\nRAW TAGS:\n" + uniqueTags.join(", ") + 
+                       "\n\nOUTPUT JSON: { \"mappings\": [ {\"theme\": \"...\", \"tag\": \"...\", \"rationale\": \"...\"} ] }";
+        
+        try {
+            const aiRes = await askAI(prompt, "gpt-4o");
+            const json = JSON.parse(aiRes.match(/\{[\s\S]*\}/)[0]);
+            
+            // 3. Save to DB
+            for(let m of json.mappings) {
+                await DBHelper.query(APP, "UPDATE insights SET master_theme=?, rationale=? WHERE topic=?", [m.theme, m.rationale, m.tag]);
+            }
+            
+            // 4. Render
+            renderGardenerResults(json.mappings);
+            
+        } catch(e) {
+            container.innerHTML = `<div style="color:var(--danger)">Error: ${e.message}</div>`;
+        }
+    };
+
+    function renderGardenerResults(mappings) {
+        const buckets = {};
+        mappings.forEach(m => {
+            if(!buckets[m.theme]) buckets[m.theme] = [];
+            buckets[m.theme].push(m);
+        });
+        
+        let html = "";
+        for(let theme in buckets) {
+            html += `
+            <div class="theme-card">
+                <div class="theme-header">${theme} (${buckets[theme].length})</div>
+                <div class="theme-body">
+                    ${buckets[theme].map(m => `<span class="tag-pill" title="${m.rationale}">${m.tag}</span>`).join("")}
+                </div>
+            </div>`;
+        }
+        document.getElementById('gardener-results').innerHTML = html;
+    }
+
+    // --- 5. VAPORIZER ---
+    window.switchTab = async (tab) => {
+        document.querySelectorAll('.view-panel').forEach(el => el.classList.remove('active'));
+        document.getElementById(`view-${tab}`).classList.add('active');
+        document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+        event.currentTarget.classList.add('active'); // rough fix
+        
+        if(tab === 'vaporizer') {
+            const res = await DBHelper.query(APP, "SELECT file_name, COUNT(*) as c FROM sentences GROUP BY file_name");
+            document.querySelector('#vaporizer-table tbody').innerHTML = res.rows.map(r => `
+                <tr>
+                    <td>${r.file_name}</td>
+                    <td>${r.c}</td>
+                    <td>Unknown</td>
+                    <td><button class="danger" onclick="vaporize('${r.file_name}')">NUKE</button></td>
+                </tr>
+            `).join("");
+        }
+    };
+
+    window.vaporize = async (file) => {
+        if(!confirm(`Delete ${file}? This cannot be undone.`)) return;
+        await DBHelper.query(APP, `DELETE FROM insights WHERE source_id IN (SELECT id FROM sentences WHERE file_name='${file}')`);
+        await DBHelper.query(APP, `DELETE FROM sentences WHERE file_name='${file}'`);
+        alert("Vaporized.");
+        switchTab('vaporizer');
+    };
+
+    // --- 6. EXPORT ---
+    window.downloadJSON = async () => {
+        const res = await DBHelper.query(APP, "SELECT * FROM insights WHERE status='accepted'");
+        const blob = new Blob([JSON.stringify(res.rows, null, 2)], {type: "application/json"});
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = "harvester_data.json";
+        a.click();
+    };
+
+    window.downloadMarkdown = async () => {
+        const res = await DBHelper.query(APP, "SELECT * FROM insights WHERE status='accepted' ORDER BY master_theme");
+        let md = "# Harvester Context\n\n";
+        let curTheme = "";
+        res.rows.forEach(r => {
+            if(r.master_theme !== curTheme) {
+                curTheme = r.master_theme || "Uncategorized";
+                md += `## ${curTheme}\n\n`;
+            }
+            md += `### ${r.topic}\n> "${r.quote}"\n*Source ID: ${r.source_id}*\n\n`;
+        });
+        const blob = new Blob([md], {type: "text/plain"});
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = "harvester_context.txt";
+        a.click();
+    };
+
+    // --- SETUP ---
+    document.getElementById('fileInput').addEventListener('change', async (e) => {
+        let count = 0;
+        for(let file of e.target.files) {
+            const text = await file.text();
+            const lines = text.split(/\r?\n/).filter(l => l.length > 5);
+            for(let line of lines) {
+                await DBHelper.query(APP, "INSERT INTO sentences (file_name, text, status) VALUES (?, ?, 'raw')", [file.name, line]);
+                count++;
+            }
+        }
+        document.getElementById('ingest-stats').innerText = `Queued ${count} sentences.`;
+        updateVisualDeck();
+    });
+
+    init();
+</script>
+</body>
+</html>
