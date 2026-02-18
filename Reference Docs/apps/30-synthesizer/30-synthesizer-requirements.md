@@ -4,17 +4,17 @@ Source: `Reference Docs/requirements.md` (v3.1)
 
 ## Goal
 
-Cluster coded sentences into discrete insights with evidence links.
+Cluster coded semantic blocks into discrete insights with evidence links.
 
 ## Inputs
 
-- [ ] Coded sentences from `sentences` table
+- [ ] Coded semantic blocks from `sentences` table
 
 ## Outputs
 
 - [ ] `Insight` rows created:
   - [ ] Concise summary statement
-  - [ ] Flags (`is_problem`, etc.) derived from sentences
+  - [ ] Flags (`is_problem`, etc.) derived from supporting blocks
   - [ ] `dominant_sentiment` computed
 - [ ] `InsightSentence` links populated:
   - [ ] `insight_id` linked
@@ -24,11 +24,12 @@ Cluster coded sentences into discrete insights with evidence links.
 
 ## Hard Rules
 
-- [ ] **Constraint:** Each insight must have at least 1 supporting sentence.
-- [ ] **Constraint:** Sentences can support multiple insights (many-to-many).
-- [ ] **Constraint:** Sentiment score must be mathematically derived (e.g., mean of supporting sentences).
+- [ ] **Constraint:** Each insight must have at least 1 supporting block.
+- [ ] **Constraint:** Blocks can support multiple insights (many-to-many).
+- [ ] **Constraint:** Sentiment score must be mathematically derived (e.g., mean of supporting blocks).
+- [ ] **Constraint:** App must expose editable prompt template before/during processing.
 
 ## Validation / Smoke Tests
 
-- [ ] **Orphan Check:** Ensure no created insight has 0 linked sentences.
-- [ ] **Rank Check:** Ensure at least one sentence per insight has `quote_rank >= 2` (good quote).
+- [ ] **Orphan Check:** Ensure no created insight has 0 linked blocks.
+- [ ] **Rank Check:** Ensure at least one block per insight has `quote_rank >= 2` (good quote).

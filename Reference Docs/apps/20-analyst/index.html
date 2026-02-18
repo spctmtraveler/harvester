@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Analyst — Sentence Coder v1</title>
+    <title>Analyst — Block Coder v1</title>
     <style>
         :root {
             --bg: #0d1117;
@@ -108,7 +108,7 @@
 
         label.field-label { display: block; color: var(--muted); font-size: 11px; margin-bottom: 5px; }
 
-        select, input[type=number] {
+        select, input[type=number], textarea {
             width: 100%;
             background: var(--panel2);
             border: 1px solid var(--border);
@@ -118,6 +118,13 @@
             font-size: 12px;
             font-family: var(--font);
             margin-bottom: 10px;
+        }
+
+        textarea {
+            min-height: 140px;
+            resize: vertical;
+            line-height: 1.45;
+            font-family: var(--mono);
         }
 
         button {
@@ -443,7 +450,7 @@
 <aside class="sidebar">
     <div>
         <div class="app-title">❤️ Analyst</div>
-        <div class="app-sub">Job 2 — Sentence Coder v1</div>
+        <div class="app-sub">Job 2 — Semantic Block Coder v1</div>
     </div>
 
     <div class="ctrl-section">
@@ -500,6 +507,12 @@
     </div>
 
     <div class="ctrl-section">
+        <div class="section-label">Prompt Template</div>
+        <textarea id="promptTemplate" placeholder="Prompt template"></textarea>
+        <button class="btn-ghost" onclick="applyPromptTemplateUpdate()">Apply Prompt Update</button>
+    </div>
+
+    <div class="ctrl-section">
         <div class="section-label">Validation</div>
         <button class="btn-blue" onclick="runValidation()">🔍 Run Smoke Tests</button>
     </div>
@@ -530,7 +543,7 @@
             <div class="empty-state">
                 <div class="empty-icon">📋</div>
                 <div>Processing log will appear here.</div>
-                <div style="font-size:11px; margin-top:5px;">Load sentences and click Start Coding.</div>
+                <div style="font-size:11px; margin-top:5px;">Load blocks and click Start Coding.</div>
             </div>
         </div>
     </div>
@@ -538,7 +551,7 @@
     <!-- ── REVIEW TAB ── -->
     <div id="tab-review" class="view">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-            <h2>Sentence Review Queue</h2>
+            <h2>Block Review Queue</h2>
             <div style="display:flex; gap:8px;">
                 <select id="filterStatus" onchange="loadReviewQueue()" style="width:auto; margin:0;">
                     <option value="all">All Statuses</option>
@@ -554,7 +567,7 @@
         <div id="reviewFeed">
             <div class="empty-state">
                 <div class="empty-icon">🔍</div>
-                <div>No sentences loaded. Run processing first.</div>
+                <div>No blocks loaded. Run processing first.</div>
             </div>
         </div>
     </div>
@@ -563,7 +576,7 @@
     <div id="tab-coverage" class="view">
         <h2>Coverage Dashboard</h2>
         <div class="coverage-grid" id="covGrid">
-            <div class="cov-card"><div class="stat-num" id="cov-total">—</div><div class="cov-lbl">Total Sentences</div></div>
+            <div class="cov-card"><div class="stat-num" id="cov-total">—</div><div class="cov-lbl">Total Blocks</div></div>
             <div class="cov-card"><div class="stat-num" id="cov-finalized" style="color:var(--accent)">—</div><div class="cov-lbl">Finalized</div></div>
             <div class="cov-card"><div class="stat-num" id="cov-review" style="color:var(--warning)">—</div><div class="cov-lbl">Needs Human Review</div></div>
             <div class="cov-card"><div class="stat-num" id="cov-unprocessed" style="color:var(--muted)">—</div><div class="cov-lbl">Unprocessed</div></div>
@@ -717,6 +730,57 @@ Core Campaign Components:
 - Tools/Systems: Salesforce (CRM), SharePoint (resources), pipeline tracker spreadsheets, impact plans, annotated agendas, slide decks, email/call/text templates
 `.trim();
 
+     const DEFAULT_ANALYST_PROMPT_TEMPLATE = `You are a strict semantic block classifier for the "Heart Walk" research analysis system.
+
+== HEART WALK SYSTEMS OVERVIEW ==
+{{SYSTEMS_OVERVIEW}}
+
+== TASK ==
+For each input block below, output a JSON object with:
+1. One or more canonical tags from the ALLOWED TAGS list below.
+    - EXCEPTION: "catch_miscellaneous" and "catch_irrelevant" are EXCLUSIVE — if used, they must be the ONLY tag.
+    - "catch_irrelevant" = not relevant to Heart Walk operations at all.
+    - "catch_miscellaneous" = relevant to Heart Walk but no specific canonical tag fits. Prefer specific tags.
+2. sentiment_score: integer from -2 (strong negative) to +2 (strong positive), 0 = neutral.
+3. Boolean flags (true/false each):
+    - is_problem: block describes a complaint or existing problem
+    - is_solution: block describes an idea for improvement or solution
+    - is_explanation: block provides context or explains how something works
+    - is_workaround: block describes a workaround for something broken
+    RULE: If tag is "catch_irrelevant", ALL four flags must be false.
+4. explanation: concise reason for tags + sentiment decision.
+    - REQUIRED for every item
+    - Max 30 words
+    - Focus on unclear or potentially controversial decisions
+
+== ALLOWED TAGS (canonical tag_keys only — no others permitted) ==
+{{ALLOWED_TAGS}}
+
+== INPUT BLOCKS ==
+{{INPUT_BLOCKS}}
+
+== REQUIRED OUTPUT FORMAT ==
+Return a JSON array ONLY — no commentary, no markdown fences. Array length must equal input count.
+[
+  {
+     "sentence_id": "...",
+     "tags": ["tag_key_1", "tag_key_2"],
+     "sentiment_score": 0,
+     "is_problem": false,
+     "is_solution": false,
+     "is_explanation": true,
+     "is_workaround": false,
+     "explanation": "Short rationale for assigned tags and sentiment."
+  }
+]
+
+== SELF-CHECK BEFORE OUTPUT ==
+1. Verify every input sentence_id appears exactly once in your output.
+2. Verify every tag_key in "tags" exists in the ALLOWED TAGS list.
+3. Verify catch_irrelevant/catch_miscellaneous are never combined with other tags.
+4. Verify catch_irrelevant blocks have all boolean flags set to false.
+5. Verify every item has explanation with <= 30 words.`;
+
     /* ══════════════════════════════════════════════════════
        STATE
     ══════════════════════════════════════════════════════ */
@@ -741,6 +805,8 @@ Core Campaign Components:
         }
 
         await ensureSchema();
+        const promptEl = document.getElementById("promptTemplate");
+        if (promptEl) promptEl.value = DEFAULT_ANALYST_PROMPT_TEMPLATE;
         await refreshStats();
         log("ok", "BOOT", "Analyst ready.");
     }
@@ -1064,7 +1130,7 @@ Core Campaign Components:
 
             const batch = res?.rows || [];
             if (batch.length === 0) {
-                log("ok", "DONE", "All sentences processed. Queue empty.");
+                log("ok", "DONE", "All blocks processed. Queue empty.");
                 break;
             }
 
@@ -1078,7 +1144,7 @@ Core Campaign Components:
                 log("warn", "LOCK", "Could not lock batch: " + e.message);
             }
 
-            log("info", "BATCH", `Processing ${batch.length} sentences…`);
+            log("info", "BATCH", `Processing ${batch.length} blocks…`);
             await processBatch(batch, model);
             await refreshStats();
 
@@ -1107,56 +1173,15 @@ Core Campaign Components:
             `{"sentence_id":"${s.sentence_id}","text":${JSON.stringify(s.clean_text || s.raw_text)},"timestamp":"${s.timestamp_block || ''}","speaker":"${s.speaker || ''}"}`
         ).join("\n");
 
-        return `You are a strict semantic block classifier for the "Heart Walk" research analysis system.
+        const promptTemplate = normalizePromptTemplate(
+            document.getElementById("promptTemplate")?.value,
+            DEFAULT_ANALYST_PROMPT_TEMPLATE
+        );
 
-== HEART WALK SYSTEMS OVERVIEW ==
-${HW_SYSTEMS_OVERVIEW}
-
-== TASK ==
-For each input block below, output a JSON object with:
-1. One or more canonical tags from the ALLOWED TAGS list below.
-   - EXCEPTION: "catch_miscellaneous" and "catch_irrelevant" are EXCLUSIVE — if used, they must be the ONLY tag.
-   - "catch_irrelevant" = not relevant to Heart Walk operations at all.
-   - "catch_miscellaneous" = relevant to Heart Walk but no specific canonical tag fits. Prefer specific tags.
-2. sentiment_score: integer from -2 (strong negative) to +2 (strong positive), 0 = neutral.
-3. Boolean flags (true/false each):
-   - is_problem: sentence describes a complaint or existing problem
-   - is_solution: sentence describes an idea for improvement or solution
-   - is_explanation: sentence provides context or explains how something works
-   - is_workaround: sentence describes a workaround for something broken
-   RULE: If tag is "catch_irrelevant", ALL four flags must be false.
-4. explanation: concise reason for tags + sentiment decision.
-    - REQUIRED for every item
-    - Max 30 words
-    - Focus on unclear or potentially controversial decisions
-
-== ALLOWED TAGS (canonical tag_keys only — no others permitted) ==
-${tagList.map(k => `  "${k}"`).join(",\n")}
-
-== INPUT SENTENCES ==
-${batchText}
-
-== REQUIRED OUTPUT FORMAT ==
-Return a JSON array ONLY — no commentary, no markdown fences. Array length must equal input count.
-[
-  {
-    "sentence_id": "...",
-    "tags": ["tag_key_1", "tag_key_2"],
-    "sentiment_score": 0,
-    "is_problem": false,
-    "is_solution": false,
-    "is_explanation": true,
-        "is_workaround": false,
-        "explanation": "Short rationale for assigned tags and sentiment."
-  }
-]
-
-== SELF-CHECK BEFORE OUTPUT ==
-1. Verify every input sentence_id appears exactly once in your output.
-2. Verify every tag_key in "tags" exists in the ALLOWED TAGS list.
-3. Verify catch_irrelevant/catch_miscellaneous are never combined with other tags.
-4. Verify catch_irrelevant blocks have all boolean flags set to false.
-5. Verify every item has explanation with <= 30 words.`;
+        return promptTemplate
+            .replaceAll("{{SYSTEMS_OVERVIEW}}", HW_SYSTEMS_OVERVIEW)
+            .replaceAll("{{ALLOWED_TAGS}}", tagList.map(k => `  "${k}"`).join(",\n"))
+            .replaceAll("{{INPUT_BLOCKS}}", batchText);
     }
 
     /* ── Process One Batch ── */
@@ -1380,7 +1405,7 @@ Return a JSON array ONLY — no commentary, no markdown fences. Array length mus
             // Load tags for these sentences
             if (sentences.length === 0) {
                 document.getElementById("reviewFeed").innerHTML =
-                    `<div class="empty-state"><div class="empty-icon">✅</div><div>No sentences match this filter.</div></div>`;
+                    `<div class="empty-state"><div class="empty-icon">✅</div><div>No blocks match this filter.</div></div>`;
                 document.getElementById("reviewBadge").textContent = 0;
                 return;
             }
@@ -1544,6 +1569,13 @@ Return a JSON array ONLY — no commentary, no markdown fences. Array length mus
         el.classList.toggle("hidden");
     };
 
+    window.applyPromptTemplateUpdate = function() {
+        const current = normalizePromptTemplate(document.getElementById("promptTemplate")?.value, DEFAULT_ANALYST_PROMPT_TEMPLATE);
+        const promptEl = document.getElementById("promptTemplate");
+        if (promptEl) promptEl.value = current;
+        log("ok", "PROMPT", "Updated prompt template. Next batch uses this version.");
+    };
+
     /* ── Manual Edit Handlers ── */
     window.addTagManual = async function(sid) {
         const key = document.getElementById(`addTag-${sid}`)?.value;
@@ -1656,7 +1688,7 @@ Return a JSON array ONLY — no commentary, no markdown fences. Array length mus
                 AND NOT EXISTS (SELECT 1 FROM sentence_tags st WHERE st.sentence_id = s.sentence_id)
             `);
             const cnt = parseInt(res?.rows?.[0]?.cnt || 0);
-            return { ok: cnt === 0, detail: cnt === 0 ? "All finalized sentences have ≥1 tag" : `${cnt} finalized sentences have no tags` };
+            return { ok: cnt === 0, detail: cnt === 0 ? "All finalized blocks have ≥1 tag" : `${cnt} finalized blocks have no tags` };
         });
 
         // Test 5: catch_irrelevant sentences have all flags = false
@@ -1850,6 +1882,15 @@ Return a JSON array ONLY — no commentary, no markdown fences. Array length mus
             .replace(/"/g,"&quot;");
     }
 
+    function normalizePromptTemplate(value, fallback) {
+        const norm = String(value || "").trim();
+        const template = norm || fallback;
+        const withOverview = template.includes("{{SYSTEMS_OVERVIEW}}") ? template : `${template}\n\n== HEART WALK SYSTEMS OVERVIEW ==\n{{SYSTEMS_OVERVIEW}}`;
+        const withTags = withOverview.includes("{{ALLOWED_TAGS}}") ? withOverview : `${withOverview}\n\n== ALLOWED TAGS ==\n{{ALLOWED_TAGS}}`;
+        const withInput = withTags.includes("{{INPUT_BLOCKS}}") ? withTags : `${withTags}\n\n== INPUT BLOCKS ==\n{{INPUT_BLOCKS}}`;
+        return withInput;
+    }
+
     function normalizeExplanation(text) {
         return String(text || "").replace(/\s+/g, " ").trim();
     }
@@ -1876,7 +1917,7 @@ Return a JSON array ONLY — no commentary, no markdown fences. Array length mus
         try {
             log("info", "EXPORT", "Building sample JSON…");
 
-            // Query finalized sentences ordered by sentence_id
+            // Query finalized blocks ordered by sentence_id
             const res = await DBHelper.query(APP_NAME, `
                 SELECT s.sentence_id, s.raw_text, s.clean_text, s.timestamp_block,
                       s.sentiment_score, s.is_problem, s.is_solution, s.is_explanation, s.is_workaround,
@@ -1888,11 +1929,11 @@ Return a JSON array ONLY — no commentary, no markdown fences. Array length mus
             const sentences = res?.rows || [];
 
             if (sentences.length === 0) {
-                log("warn", "EXPORT", "No finalized sentences to export.");
+                log("warn", "EXPORT", "No finalized blocks to export.");
                 return;
             }
 
-            // Load tags for all finalized sentences
+            // Load tags for all finalized blocks
             const sidList = sentences.map(s => `'${s.sentence_id.replace(/'/g, "''")}'`).join(",");
             const tagRes = await DBHelper.query(APP_NAME, `
                 SELECT st.sentence_id, t.tag_key
@@ -1957,7 +1998,7 @@ Return a JSON array ONLY — no commentary, no markdown fences. Array length mus
             a.click();
             URL.revokeObjectURL(url);
 
-            log("ok", "EXPORT", `Exported ${samples.length} of ${sentences.length} finalized sentences.`);
+            log("ok", "EXPORT", `Exported ${samples.length} of ${sentences.length} finalized blocks.`);
         } catch (e) {
             log("err", "EXPORT", e.message);
         }
