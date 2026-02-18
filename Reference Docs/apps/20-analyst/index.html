@@ -435,6 +435,11 @@
         <button class="btn-blue" onclick="runValidation()">🔍 Run Smoke Tests</button>
     </div>
 
+    <div class="ctrl-section">
+        <div class="section-label">Exports</div>
+        <button class="btn-primary" onclick="downloadTaggedSamples()" style="background:var(--blue);">📥 Download Sample JSON (30)</button>
+    </div>
+
     <div>
         <div class="section-label">Danger Zone</div>
         <button class="btn-danger" onclick="resetAllCoding()">⚠ Reset All Coding</button>
@@ -527,7 +532,7 @@
     /* ══════════════════════════════════════════════════════
        CONSTANTS
     ══════════════════════════════════════════════════════ */
-    const APP_NAME = "HWIE_v1";  // Shared DB with all HWIE apps
+    const APP_NAME = "HWIE_v2";  // Shared DB with all HWIE apps (fresh DB; legacy stays on HWIE_v1)
 
     // Full canonical tag library (tag_key → category_key)
     const TAG_LIBRARY = {
@@ -1659,6 +1664,98 @@ Return a JSON array ONLY — no commentary, no markdown fences. Array length mus
     }
 
     function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+    /* ══════════════════════════════════════════════════════
+       EXPORTS
+    ══════════════════════════════════════════════════════ */
+    window.downloadTaggedSamples = async function() {
+        try {
+            log("info", "EXPORT", "Building sample JSON…");
+
+            // Query finalized sentences ordered by sentence_id
+            const res = await DBHelper.query(APP_NAME, `
+                SELECT s.sentence_id, s.raw_text, s.clean_text, s.timestamp_block,
+                       s.sentiment_score, s.is_problem, s.is_solution, s.is_explanation, s.is_workaround
+                FROM sentences s
+                WHERE s.review_status = 'finalized'
+                ORDER BY s.sentence_id
+            `);
+            const sentences = res?.rows || [];
+
+            if (sentences.length === 0) {
+                log("warn", "EXPORT", "No finalized sentences to export.");
+                return;
+            }
+
+            // Load tags for all finalized sentences
+            const sidList = sentences.map(s => `'${s.sentence_id.replace(/'/g, "''')}'`).join(",");
+            const tagRes = await DBHelper.query(APP_NAME, `
+                SELECT st.sentence_id, t.tag_key
+                FROM sentence_tags st
+                JOIN tags t ON t.tag_id = st.tag_id
+                WHERE st.sentence_id IN (${sidList})
+            `);
+            const tagRows = tagRes?.rows || [];
+            const tagMap = {};
+            for (const tr of tagRows) {
+                if (!tagMap[tr.sentence_id]) tagMap[tr.sentence_id] = [];
+                tagMap[tr.sentence_id].push(tr.tag_key);
+            }
+
+            // Smart sampling: skip first 15, then take every other, cap at 30
+            let samples = [];
+            const maxSamples = 30;
+            const skipFirst = 15;
+
+            if (sentences.length <= skipFirst) {
+                // Not enough to skip 15; take them all up to 30
+                samples = sentences.slice(0, maxSamples);
+            } else {
+                // Skip first 15, then take every other
+                const afterSkip = sentences.slice(skipFirst);
+                for (let i = 0; i < afterSkip.length && samples.length < maxSamples; i += 2) {
+                    samples.push(afterSkip[i]);
+                }
+
+                // If we don't have enough, backfill with items we skipped
+                if (samples.length < maxSamples) {
+                    const used = new Set(samples.map(s => s.sentence_id));
+                    for (let i = 0; i < skipFirst && samples.length < maxSamples; i++) {
+                        if (!used.has(sentences[i].sentence_id)) {
+                            samples.push(sentences[i]);
+                        }
+                    }
+                }
+            }
+
+            // Enrich with tags and export
+            const output = samples.map(s => ({
+                sentence_id: s.sentence_id,
+                text: s.clean_text || s.raw_text,
+                timestamp: s.timestamp_block || "",
+                sentiment_score: parseInt(s.sentiment_score) || 0,
+                is_problem: !!parseInt(s.is_problem),
+                is_solution: !!parseInt(s.is_solution),
+                is_explanation: !!parseInt(s.is_explanation),
+                is_workaround: !!parseInt(s.is_workaround),
+                tags: tagMap[s.sentence_id] || []
+            }));
+
+            // Download
+            const json = JSON.stringify(output, null, 2);
+            const blob = new Blob([json], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `analyst-samples-${new Date().toISOString().slice(0,10)}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+
+            log("ok", "EXPORT", `Exported ${samples.length} of ${sentences.length} finalized sentences.`);
+        } catch (e) {
+            log("err", "EXPORT", e.message);
+        }
+    };
 
     /* ══════════════════════════════════════════════════════
        BOOT
