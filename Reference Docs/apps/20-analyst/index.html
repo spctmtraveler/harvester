@@ -758,6 +758,7 @@ Core Campaign Components:
                     speaker         VARCHAR(100),
                     raw_text        TEXT         NOT NULL,
                     clean_text      TEXT,
+                    analyst_explanation TEXT,
                     sentiment_score TINYINT      DEFAULT 0,
                     is_problem      TINYINT(1)   DEFAULT 0,
                     is_solution     TINYINT(1)   DEFAULT 0,
@@ -767,6 +768,9 @@ Core Campaign Components:
                     created_at      TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
                 )
             `);
+
+            // Backward-compatible column migrations
+            try { await DBHelper.query(APP_NAME, "ALTER TABLE sentences ADD COLUMN analyst_explanation TEXT"); } catch (_) {}
 
             // Tags table
             await DBHelper.query(APP_NAME, `
@@ -1103,13 +1107,13 @@ Core Campaign Components:
             `{"sentence_id":"${s.sentence_id}","text":${JSON.stringify(s.clean_text || s.raw_text)},"timestamp":"${s.timestamp_block || ''}","speaker":"${s.speaker || ''}"}`
         ).join("\n");
 
-        return `You are a strict sentence classifier for the "Heart Walk" research analysis system.
+        return `You are a strict semantic block classifier for the "Heart Walk" research analysis system.
 
 == HEART WALK SYSTEMS OVERVIEW ==
 ${HW_SYSTEMS_OVERVIEW}
 
 == TASK ==
-For each sentence below, output a JSON object with:
+For each input block below, output a JSON object with:
 1. One or more canonical tags from the ALLOWED TAGS list below.
    - EXCEPTION: "catch_miscellaneous" and "catch_irrelevant" are EXCLUSIVE — if used, they must be the ONLY tag.
    - "catch_irrelevant" = not relevant to Heart Walk operations at all.
@@ -1121,6 +1125,10 @@ For each sentence below, output a JSON object with:
    - is_explanation: sentence provides context or explains how something works
    - is_workaround: sentence describes a workaround for something broken
    RULE: If tag is "catch_irrelevant", ALL four flags must be false.
+4. explanation: concise reason for tags + sentiment decision.
+    - REQUIRED for every item
+    - Max 30 words
+    - Focus on unclear or potentially controversial decisions
 
 == ALLOWED TAGS (canonical tag_keys only — no others permitted) ==
 ${tagList.map(k => `  "${k}"`).join(",\n")}
@@ -1138,7 +1146,8 @@ Return a JSON array ONLY — no commentary, no markdown fences. Array length mus
     "is_problem": false,
     "is_solution": false,
     "is_explanation": true,
-    "is_workaround": false
+        "is_workaround": false,
+        "explanation": "Short rationale for assigned tags and sentiment."
   }
 ]
 
@@ -1146,7 +1155,8 @@ Return a JSON array ONLY — no commentary, no markdown fences. Array length mus
 1. Verify every input sentence_id appears exactly once in your output.
 2. Verify every tag_key in "tags" exists in the ALLOWED TAGS list.
 3. Verify catch_irrelevant/catch_miscellaneous are never combined with other tags.
-4. Verify catch_irrelevant sentences have all boolean flags set to false.`;
+4. Verify catch_irrelevant blocks have all boolean flags set to false.
+5. Verify every item has explanation with <= 30 words.`;
     }
 
     /* ── Process One Batch ── */
@@ -1209,7 +1219,8 @@ Return a JSON array ONLY — no commentary, no markdown fences. Array length mus
             } else {
                 await saveSentenceResult(result, "finalized");
                 const tagStr = result.tags.join(", ");
-                log("ok", "SAVED", `${sid} → [${tagStr}] senti=${result.sentiment_score}`);
+                const expShort = normalizeExplanation(result.explanation || "").substring(0, 80);
+                log("ok", "SAVED", `${sid} → [${tagStr}] senti=${result.sentiment_score} why=${expShort}`);
                 savedOk++;
             }
         }
@@ -1265,6 +1276,13 @@ Return a JSON array ONLY — no commentary, no markdown fences. Array length mus
             issues.push(`invalid sentiment_score: ${r.sentiment_score}`);
         }
 
+        const explanation = normalizeExplanation(r.explanation || "");
+        if (!explanation) {
+            issues.push("missing explanation");
+        } else if (countWords(explanation) > 30) {
+            issues.push("explanation exceeds 30 words");
+        }
+
         return issues;
     }
 
@@ -1276,6 +1294,11 @@ Return a JSON array ONLY — no commentary, no markdown fences. Array length mus
         const isSolution = result.is_solution ? 1 : 0;
         const isExpl     = result.is_explanation ? 1 : 0;
         const isWork     = result.is_workaround ? 1 : 0;
+        const explanation = trimToWordLimit(
+            normalizeExplanation(result.explanation || "") || "Auto-tagged; rationale unavailable.",
+            30
+        );
+        const safeExplanation = explanation.replace(/'/g, "''");
 
         try {
             // Update sentence row
@@ -1286,6 +1309,7 @@ Return a JSON array ONLY — no commentary, no markdown fences. Array length mus
                     is_solution     = ${isSolution},
                     is_explanation  = ${isExpl},
                     is_workaround   = ${isWork},
+                    analyst_explanation = '${safeExplanation}',
                     review_status   = '${status}'
                 WHERE sentence_id = '${sid}'
             `);
@@ -1345,7 +1369,7 @@ Return a JSON array ONLY — no commentary, no markdown fences. Array length mus
             const res = await DBHelper.query(APP_NAME, `
                 SELECT s.sentence_id, s.raw_text, s.clean_text, s.timestamp_block, s.speaker,
                        s.sentiment_score, s.is_problem, s.is_solution, s.is_explanation, s.is_workaround,
-                       s.review_status
+                      s.review_status, s.analyst_explanation
                 FROM sentences s
                 ${where}
                 ORDER BY s.sentence_id
@@ -1425,6 +1449,7 @@ Return a JSON array ONLY — no commentary, no markdown fences. Array length mus
         const text = s.clean_text || s.raw_text || "";
         const score = parseInt(s.sentiment_score) || 0;
         const sid = s.sentence_id;
+        const explanation = normalizeExplanation(s.analyst_explanation || "");
         const hasIrrelevant = tags.some(t => t.key === "catch_irrelevant");
         const hasAnyTags = tags.length > 0;
         const borderClass = hasIrrelevant ? "border-irrelevant" : (hasAnyTags ? "border-accepted" : "border-unprocessed");
@@ -1444,6 +1469,9 @@ Return a JSON array ONLY — no commentary, no markdown fences. Array length mus
             ? `<div class="card-flags"><strong>Flags:</strong> ${escHtml(activeFlags.join(", "))}</div>`
             : "";
         const tagText = tagChips ? `<div class="card-tags">${tagChips}</div>` : "";
+        const explanationText = explanation
+            ? `<div class="card-flags"><strong>Why:</strong> ${escHtml(explanation)}</div>`
+            : "";
 
         const pencilIcon = "data:image/svg+xml;utf8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#c9d1d9" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>');
 
@@ -1468,6 +1496,7 @@ Return a JSON array ONLY — no commentary, no markdown fences. Array length mus
             <div class="card-text">"${escHtml(text.substring(0, 360))}${text.length > 360 ? '…' : ''}"</div>
             ${tagText}
             ${flagText}
+            ${explanationText}
             <div class="card-sentiment"><strong>Sentiment:</strong> ${score}</div>
 
             <div class="card-edit-area hidden" id="edit-${sid}">
@@ -1485,6 +1514,10 @@ Return a JSON array ONLY — no commentary, no markdown fences. Array length mus
                         <select id="setSenti-${sid}" style="flex:1;">
                             ${[-2,-1,0,1,2].map(v => `<option value="${v}" ${v===score?'selected':''}>${v > 0 ? '+' : ''}${v} — ${SENTIMENT_LABELS[String(v)]}</option>`).join('')}
                         </select>
+                    </div>
+                    <div class="edit-row">
+                        <label>Why</label>
+                        <input type="text" id="why-${sid}" maxlength="240" value="${escHtml(explanation)}" placeholder="Short reason (max 30 words)">
                     </div>
                     <div class="edit-row">
                         <label>Flags</label>
@@ -1545,6 +1578,12 @@ Return a JSON array ONLY — no commentary, no markdown fences. Array length mus
         const sol     = document.getElementById(`fs-${sid}`)?.checked ? 1 : 0;
         const expl    = document.getElementById(`fe-${sid}`)?.checked ? 1 : 0;
         const work    = document.getElementById(`fw-${sid}`)?.checked ? 1 : 0;
+        const whyRaw  = document.getElementById(`why-${sid}`)?.value || "";
+        const why     = trimToWordLimit(
+            normalizeExplanation(whyRaw) || "Manual update; rationale not provided.",
+            30
+        );
+        const whySafe = why.replace(/'/g, "''");
 
         try {
             await DBHelper.query(APP_NAME, `
@@ -1554,6 +1593,7 @@ Return a JSON array ONLY — no commentary, no markdown fences. Array length mus
                     is_solution     = ${sol},
                     is_explanation  = ${expl},
                     is_workaround   = ${work},
+                    analyst_explanation = '${whySafe}',
                     review_status   = 'finalized'
                 WHERE sentence_id = '${safeSid}'
             `);
@@ -1674,6 +1714,37 @@ Return a JSON array ONLY — no commentary, no markdown fences. Array length mus
             };
         });
 
+        await test("Explanation Presence (tagged blocks)", async () => {
+            const res = await DBHelper.query(APP_NAME, `
+                SELECT COUNT(*) AS cnt
+                FROM sentences s
+                WHERE s.review_status IN ('finalized','needs_human_review')
+                  AND (s.analyst_explanation IS NULL OR TRIM(s.analyst_explanation) = '')
+            `);
+            const cnt = parseInt(res?.rows?.[0]?.cnt || 0);
+            return {
+                ok: cnt === 0,
+                detail: cnt === 0 ? "All tagged blocks include explanation" : `${cnt} tagged blocks missing explanation`
+            };
+        });
+
+        await test("Explanation Word Cap (<=30 words)", async () => {
+            const res = await DBHelper.query(APP_NAME, `
+                SELECT sentence_id, analyst_explanation
+                FROM sentences
+                WHERE review_status IN ('finalized','needs_human_review')
+                  AND analyst_explanation IS NOT NULL
+                  AND TRIM(analyst_explanation) <> ''
+                LIMIT 500
+            `);
+            const rows = res?.rows || [];
+            const over = rows.filter(r => countWords(r.analyst_explanation || "") > 30).length;
+            return {
+                ok: over === 0,
+                detail: over === 0 ? "All explanations are <= 30 words" : `${over} explanations exceed 30 words`
+            };
+        });
+
         // Render results
         let html = `<div style="margin-bottom:16px; font-size:13px; color:var(--muted);">
             Results: <span style="color:var(--accent)">${passed} passed</span>
@@ -1710,7 +1781,7 @@ Return a JSON array ONLY — no commentary, no markdown fences. Array length mus
             await DBHelper.query(APP_NAME, `
                 UPDATE sentences
                 SET sentiment_score=0, is_problem=0, is_solution=0,
-                    is_explanation=0, is_workaround=0, review_status='unprocessed'
+                    is_explanation=0, is_workaround=0, analyst_explanation=NULL, review_status='unprocessed'
             `);
             log("warn", "RESET", "All coding reset. Sentences set back to unprocessed.");
             await refreshStats();
@@ -1779,6 +1850,23 @@ Return a JSON array ONLY — no commentary, no markdown fences. Array length mus
             .replace(/"/g,"&quot;");
     }
 
+    function normalizeExplanation(text) {
+        return String(text || "").replace(/\s+/g, " ").trim();
+    }
+
+    function countWords(text) {
+        const norm = normalizeExplanation(text);
+        return norm ? norm.split(" ").length : 0;
+    }
+
+    function trimToWordLimit(text, maxWords) {
+        const norm = normalizeExplanation(text);
+        if (!norm) return "";
+        const words = norm.split(" ");
+        if (words.length <= maxWords) return norm;
+        return words.slice(0, maxWords).join(" ");
+    }
+
     function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
     /* ══════════════════════════════════════════════════════
@@ -1791,7 +1879,8 @@ Return a JSON array ONLY — no commentary, no markdown fences. Array length mus
             // Query finalized sentences ordered by sentence_id
             const res = await DBHelper.query(APP_NAME, `
                 SELECT s.sentence_id, s.raw_text, s.clean_text, s.timestamp_block,
-                       s.sentiment_score, s.is_problem, s.is_solution, s.is_explanation, s.is_workaround
+                      s.sentiment_score, s.is_problem, s.is_solution, s.is_explanation, s.is_workaround,
+                      s.analyst_explanation
                 FROM sentences s
                 WHERE s.review_status = 'finalized'
                 ORDER BY s.sentence_id
@@ -1854,6 +1943,7 @@ Return a JSON array ONLY — no commentary, no markdown fences. Array length mus
                 is_solution: !!parseInt(s.is_solution),
                 is_explanation: !!parseInt(s.is_explanation),
                 is_workaround: !!parseInt(s.is_workaround),
+                explanation: normalizeExplanation(s.analyst_explanation || ""),
                 tags: tagMap[s.sentence_id] || []
             }));
 
