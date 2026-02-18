@@ -20,6 +20,9 @@ dist/
 .pytest_cache/
 __pycache__/
 
+# Local scratch workspace (keep out of repo)
+scratch/
+
 # Sensitive source material (do not commit)
 Reference Docs/Source transcript files for reference/
 
