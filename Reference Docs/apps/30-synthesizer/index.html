@@ -1,0 +1,1121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Synthesizer — Insight Extractor v1</title>
+    <style>
+        :root {
+            --bg: #0d1117;
+            --panel: #161b22;
+            --panel2: #21262d;
+            --border: #30363d;
+            --text: #c9d1d9;
+            --muted: #8b949e;
+            --accent: #238636;
+            --accent-dim: rgba(35,134,54,0.15);
+            --blue: #1f6feb;
+            --blue-dim: rgba(31,111,235,0.15);
+            --danger: #da3633;
+            --warning: #d29922;
+            --warning-dim: rgba(210,153,34,0.15);
+            --font: 'Segoe UI', system-ui, sans-serif;
+            --mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+        }
+
+        *, *::before, *::after { box-sizing: border-box; }
+
+        body {
+            font-family: var(--font);
+            background: var(--bg);
+            color: var(--text);
+            margin: 0;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+            font-size: 13px;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 300px;
+            min-width: 300px;
+            background: #010409;
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            padding: 16px;
+            gap: 16px;
+            overflow-y: auto;
+        }
+
+        .app-title { font-size: 15px; font-weight: 700; color: var(--text); }
+        .app-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+        .ctrl-section { border-bottom: 1px solid var(--border); padding-bottom: 16px; }
+        .section-label {
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            font-size: 10px;
+            color: var(--muted);
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+
+        label.field-label { display: block; color: var(--muted); font-size: 11px; margin-bottom: 5px; }
+
+        select, input[type=number] {
+            width: 100%;
+            background: var(--panel2);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 7px 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            font-family: var(--font);
+            margin-bottom: 10px;
+        }
+
+        button {
+            width: 100%;
+            padding: 9px 14px;
+            border-radius: 6px;
+            border: none;
+            font-weight: 600;
+            font-size: 12px;
+            cursor: pointer;
+            margin-bottom: 6px;
+            transition: opacity 0.2s;
+        }
+        button:disabled { opacity: 0.4; cursor: not-allowed; }
+        button.btn-primary { background: var(--accent); color: #fff; }
+        button.btn-blue { background: var(--blue); color: #fff; }
+        button.btn-ghost {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text);
+        }
+        button.btn-danger { background: var(--danger); color: #fff; }
+
+        .sys-status {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 10px;
+            font-size: 11px;
+            line-height: 1.8;
+        }
+
+        .status-dot { display:inline-block; width: 8px; height: 8px; border-radius:50%; margin-right:6px; }
+        .dot-green { background: var(--accent); }
+        .dot-red { background: var(--danger); }
+        .dot-grey { background: #555; }
+
+        .stat-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+        .stat-box {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 10px;
+            text-align: center;
+        }
+        .stat-num { font-size: 22px; font-weight: 700; color: var(--text); font-family: var(--mono); }
+        .stat-lbl { font-size: 10px; color: var(--muted); margin-top: 2px; }
+
+        /* Main */
+        .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+        .tabs {
+            display: flex;
+            background: var(--panel);
+            border-bottom: 1px solid var(--border);
+            padding: 0 4px;
+        }
+        .tab {
+            padding: 12px 16px;
+            cursor: pointer;
+            color: var(--muted);
+            font-size: 12px;
+            font-weight: 600;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -1px;
+            white-space: nowrap;
+        }
+        .tab:hover { color: var(--text); }
+        .tab.active { color: var(--text); border-bottom-color: var(--accent); }
+        .tab .badge {
+            background: var(--panel2);
+            color: var(--muted);
+            padding: 2px 6px;
+            border-radius: 10px;
+            font-size: 10px;
+            margin-left: 5px;
+        }
+
+        .view { flex: 1; overflow-y: auto; padding: 20px; display: none; }
+        .view.active { display: block; }
+
+        /* Log */
+        .log-entry {
+            display: flex;
+            gap: 10px;
+            padding: 6px 0;
+            border-bottom: 1px solid #1e242b;
+            align-items: flex-start;
+            font-family: var(--mono);
+            font-size: 11px;
+            line-height: 1.5;
+        }
+        .log-time { color: var(--muted); min-width: 55px; }
+        .log-level-ok { color: var(--accent); font-weight: 700; min-width: 60px; }
+        .log-level-err { color: var(--danger); font-weight: 700; min-width: 60px; }
+        .log-level-warn { color: var(--warning); font-weight: 700; min-width: 60px; }
+        .log-level-info { color: var(--blue); font-weight: 700; min-width: 60px; }
+        .log-msg { color: var(--text); }
+
+        /* Insight cards */
+        .insight-card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 14px;
+            margin-bottom: 10px;
+        }
+        .insight-meta {
+            display:flex;
+            justify-content: space-between;
+            align-items:center;
+            margin-bottom: 8px;
+            font-size: 11px;
+            color: var(--muted);
+        }
+        .insight-id { font-family: var(--mono); font-weight: 700; color: var(--text); }
+        .pill {
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 10px;
+            font-weight: 600;
+            background: var(--blue-dim);
+            color: var(--blue);
+        }
+
+        .insight-summary {
+            color: var(--text);
+            line-height: 1.6;
+            margin-bottom: 10px;
+        }
+
+        .evidence-list { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 10px; }
+        .evidence-item {
+            padding: 8px 10px;
+            border: 1px solid #1e242b;
+            border-radius: 6px;
+            background: #0b1220;
+            margin-bottom: 8px;
+        }
+        .ev-head {
+            display:flex;
+            justify-content: space-between;
+            font-size: 11px;
+            color: var(--muted);
+            margin-bottom: 6px;
+        }
+        .ev-id { font-family: var(--mono); color: var(--text); font-weight: 700; }
+        .ev-quote {
+            color: #a5d6ff;
+            font-style: italic;
+            border-left: 2px solid var(--border);
+            padding-left: 10px;
+            line-height: 1.6;
+            font-size: 12px;
+        }
+
+        .empty-state { text-align: center; padding: 60px 20px; color: var(--muted); }
+        .empty-icon { font-size: 40px; margin-bottom: 10px; }
+
+        h2 { font-size: 14px; font-weight: 700; margin: 0 0 12px 0; }
+    </style>
+</head>
+<body>
+
+<aside class="sidebar">
+    <div>
+        <div class="app-title">🧩 Synthesizer</div>
+        <div class="app-sub">Job 3 — Insight Extractor v1</div>
+    </div>
+
+    <div class="ctrl-section">
+        <div class="section-label">System Status</div>
+        <div class="sys-status" id="sysStatus">
+            <div><span class="status-dot dot-grey" id="dot-db"></span>DB — checking…</div>
+            <div><span class="status-dot dot-grey" id="dot-schema"></span>Schema — checking…</div>
+        </div>
+    </div>
+
+    <div class="ctrl-section">
+        <div class="section-label">Stats</div>
+        <div class="stat-grid">
+            <div class="stat-box">
+                <div class="stat-num" id="statFinalized">—</div>
+                <div class="stat-lbl">Finalized Sentences</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-num" id="statInsights">—</div>
+                <div class="stat-lbl">Insights</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="ctrl-section">
+        <div class="section-label">Run Settings</div>
+        <label class="field-label">Sentence Batch Size</label>
+        <input type="number" id="batchSize" value="20" min="5" max="60">
+        <label class="field-label">Model</label>
+        <select id="modelSelect">
+            <option value="gpt-4o">gpt-4o (accurate)</option>
+            <option value="gpt-4o-mini" selected>gpt-4o-mini (fast)</option>
+            <option value="gemini">Gemini</option>
+        </select>
+        <button class="btn-primary" id="btnStart" disabled onclick="startSynthesis()">▶ Start Synthesizing</button>
+        <button class="btn-ghost" id="btnStop" disabled onclick="stopSynthesis()">⏹ Stop</button>
+        <button class="btn-ghost" onclick="refreshStats()">↻ Refresh Stats</button>
+    </div>
+
+    <div class="ctrl-section">
+        <div class="section-label">Validation</div>
+        <button class="btn-blue" onclick="runSmokeTests()">🔍 Run Smoke Tests</button>
+    </div>
+
+    <div>
+        <div class="section-label">Repo Safety</div>
+        <div style="font-size:11px; color:var(--muted); line-height:1.6;">
+            This app reads coded sentences and writes evidence-linked insights.
+        </div>
+    </div>
+</aside>
+
+<main class="main">
+    <nav class="tabs">
+        <div class="tab active" data-tab="log" onclick="switchTab('log')">Processing Log <span class="badge" id="logBadge">0</span></div>
+        <div class="tab" data-tab="insights" onclick="switchTab('insights')">Insights <span class="badge" id="insightBadge">0</span></div>
+        <div class="tab" data-tab="validation" onclick="switchTab('validation')">Smoke Tests <span class="badge" id="valBadge">0</span></div>
+    </nav>
+
+    <div id="tab-log" class="view active">
+        <div id="logFeed">
+            <div class="empty-state">
+                <div class="empty-icon">📋</div>
+                <div>Processing log will appear here.</div>
+            </div>
+        </div>
+    </div>
+
+    <div id="tab-insights" class="view">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+            <h2>Insights</h2>
+            <button class="btn-ghost" style="width:auto; margin:0; padding:7px 12px;" onclick="loadInsights()">Refresh</button>
+        </div>
+        <div id="insightFeed">
+            <div class="empty-state">
+                <div class="empty-icon">🧠</div>
+                <div>No insights loaded yet.</div>
+            </div>
+        </div>
+    </div>
+
+    <div id="tab-validation" class="view">
+        <h2>Smoke Tests</h2>
+        <div id="valResults">
+            <div class="empty-state">
+                <div class="empty-icon">✅</div>
+                <div>Click "Run Smoke Tests" to validate insight integrity.</div>
+            </div>
+        </div>
+    </div>
+</main>
+
+<script type="module">
+    import { DBHelper } from "https://happydo.xyz/api_auto_db/db_helper.js";
+    import { askAI } from "https://happydo.xyz/api/ailnl.js";
+
+    const APP_NAME = "HWIE_v1";
+
+    // Systems overview must be included in every prompt.
+    const HW_SYSTEMS_OVERVIEW = `
+Heart Walk is a market-based fundraising and engagement campaign by the American Heart Association (AHA).
+Goals: generate corporate sponsorship revenue, engage companies/community leaders, activate employee participation, build long-term leadership pipelines.
+
+Organizational Structure:
+- National Level: sets strategy, develops resources, provides reporting systems, offers regional oversight
+- Market Level: executes Heart Walk locally, recruits/manages volunteer leadership, manages corporate relationships, coordinates meetings/events
+
+Internal AHA Leadership (paid staff): Executive Director (ED), Development Director (DD), Senior Development Director, Senior Vice President (SVP), Director
+External Volunteer Leadership: ELT Chair, ELT Members, Market Board Members, Corporate Executives, Team Captains
+
+Meetings & Cadence: ELT meetings, GAP meetings, strategy meetings, internal coordination, executive networking breakfasts
+Tools/Systems: Salesforce, SharePoint, reporting dashboards, pipeline trackers, impact plans, annotated agendas, slide decks, email/call/text templates
+`.trim();
+
+    let isRunning = false;
+    let shouldStop = false;
+    let logCount = 0;
+
+    async function init() {
+        log("info", "BOOT", "Initializing Synthesizer v1…");
+        try {
+            await DBHelper.init(APP_NAME);
+            setDot("dot-db", "green", "DB — connected ✓");
+            log("ok", "DB", "Connected to " + APP_NAME);
+        } catch (e) {
+            setDot("dot-db", "red", "DB — FAILED");
+            log("err", "DB", "Connection failed: " + e.message);
+            return;
+        }
+
+        await ensureSchema();
+        await refreshStats();
+        log("ok", "BOOT", "Synthesizer ready.");
+    }
+
+    async function ensureSchema() {
+        log("info", "SCHEMA", "Ensuring insight schema…");
+        try {
+            await DBHelper.query(APP_NAME, `
+                CREATE TABLE IF NOT EXISTS insights (
+                    insight_id               INT PRIMARY KEY AUTO_INCREMENT,
+                    summary_plain            TEXT NOT NULL,
+                    summary_long             TEXT,
+                    dominant_sentiment_score TINYINT DEFAULT 0,
+                    is_problem               TINYINT(1) DEFAULT 0,
+                    is_solution              TINYINT(1) DEFAULT 0,
+                    is_explanation           TINYINT(1) DEFAULT 0,
+                    is_workaround            TINYINT(1) DEFAULT 0,
+                    created_by_run_id        INT,
+                    created_at               TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            `);
+
+            await DBHelper.query(APP_NAME, `
+                CREATE TABLE IF NOT EXISTS insight_sentences (
+                    insight_id    INT NOT NULL,
+                    sentence_id   VARCHAR(50) NOT NULL,
+                    quote_rank    TINYINT DEFAULT 0,
+                    support_role  VARCHAR(30) DEFAULT 'evidence',
+                    notes         TEXT,
+                    PRIMARY KEY (insight_id, sentence_id)
+                )
+            `);
+
+            await DBHelper.query(APP_NAME, `
+                CREATE TABLE IF NOT EXISTS sentence_synthesis_queue (
+                    sentence_id VARCHAR(50) PRIMARY KEY,
+                    status      VARCHAR(20) DEFAULT 'unprocessed',
+                    last_run_id INT,
+                    updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                )
+            `);
+
+            // Best-effort backfill queue table
+            await DBHelper.query(APP_NAME, `
+                INSERT IGNORE INTO sentence_synthesis_queue (sentence_id, status)
+                SELECT sentence_id, 'unprocessed'
+                FROM sentences
+                WHERE review_status = 'finalized'
+            `);
+
+            setDot("dot-schema", "green", "Schema — OK ✓");
+            log("ok", "SCHEMA", "Insight tables ready.");
+
+        } catch (e) {
+            setDot("dot-schema", "red", "Schema — FAILED");
+            log("err", "SCHEMA", e.message);
+        }
+    }
+
+    window.refreshStats = async function() {
+        try {
+            const s = await DBHelper.query(APP_NAME, "SELECT COUNT(*) AS cnt FROM sentences WHERE review_status='finalized'");
+            const i = await DBHelper.query(APP_NAME, "SELECT COUNT(*) AS cnt FROM insights");
+            const finalized = parseInt(s?.rows?.[0]?.cnt || 0);
+            const insights  = parseInt(i?.rows?.[0]?.cnt || 0);
+            setText("statFinalized", finalized);
+            setText("statInsights", insights);
+
+            document.getElementById("btnStart").disabled = finalized === 0 || isRunning;
+        } catch (e) {
+            log("warn", "STATS", "Could not load stats: " + e.message);
+        }
+    };
+
+    window.startSynthesis = async function() {
+        if (isRunning) return;
+        isRunning = true;
+        shouldStop = false;
+        document.getElementById("btnStart").disabled = true;
+        document.getElementById("btnStop").disabled = false;
+        switchTab("log");
+
+        const batchSize = clampInt(parseInt(document.getElementById("batchSize").value) || 20, 5, 60);
+        const model = document.getElementById("modelSelect").value;
+
+        log("ok", "START", `Synthesis started. Batch=${batchSize}, Model=${model}`);
+
+        while (!shouldStop) {
+            // Pull a batch of finalized sentences that are still unprocessed for synthesis
+            let batchRes;
+            try {
+                batchRes = await DBHelper.query(APP_NAME, `
+                    SELECT s.sentence_id, s.raw_text, s.clean_text, s.sentiment_score,
+                           s.is_problem, s.is_solution, s.is_explanation, s.is_workaround,
+                           s.timestamp_block, s.speaker
+                    FROM sentences s
+                    JOIN sentence_synthesis_queue q ON q.sentence_id = s.sentence_id
+                    WHERE s.review_status = 'finalized'
+                      AND q.status = 'unprocessed'
+                    LIMIT ${batchSize}
+                `);
+            } catch (e) {
+                log("err", "LOAD", "DB query failed: " + e.message);
+                break;
+            }
+
+            const batch = batchRes?.rows || [];
+            if (batch.length === 0) {
+                log("ok", "DONE", "No unprocessed finalized sentences remaining.");
+                break;
+            }
+
+            // Lock the batch
+            const ids = batch.map(r => `'${r.sentence_id.replace(/'/g, "''")}'`).join(",");
+            try {
+                await DBHelper.query(APP_NAME, `
+                    UPDATE sentence_synthesis_queue
+                    SET status='queued'
+                    WHERE sentence_id IN (${ids})
+                `);
+            } catch(_) {}
+
+            // Fetch tags for batch
+            let tagsRes;
+            try {
+                tagsRes = await DBHelper.query(APP_NAME, `
+                    SELECT st.sentence_id, t.tag_key
+                    FROM sentence_tags st
+                    JOIN tags t ON t.tag_id = st.tag_id
+                    WHERE st.sentence_id IN (${ids})
+                `);
+            } catch (e) {
+                log("err", "LOAD", "Tag join failed: " + e.message);
+                await markQueue(batch, "error", null);
+                break;
+            }
+
+            const tagRows = tagsRes?.rows || [];
+            const tagMap = {};
+            for (const tr of tagRows) {
+                if (!tagMap[tr.sentence_id]) tagMap[tr.sentence_id] = [];
+                tagMap[tr.sentence_id].push(tr.tag_key);
+            }
+
+            const enriched = batch.map(s => ({
+                ...s,
+                text: s.clean_text || s.raw_text,
+                tags: tagMap[s.sentence_id] || []
+            }));
+
+            log("info", "BATCH", `Synthesizing from ${enriched.length} coded sentences…`);
+            const runId = await insertRun("extract_insights", model, enriched.map(s => s.sentence_id));
+            await synthesizeBatch(enriched, model, runId);
+            await refreshStats();
+
+            await sleep(700);
+        }
+
+        isRunning = false;
+        shouldStop = false;
+        document.getElementById("btnStop").disabled = true;
+        document.getElementById("btnStart").disabled = false;
+        log("ok", "FINISH", "Synthesis loop ended.");
+    };
+
+    window.stopSynthesis = function() {
+        shouldStop = true;
+        document.getElementById("btnStop").disabled = true;
+        log("warn", "STOP", "Stop requested — finishing current batch…");
+    };
+
+    async function insertRun(purpose, model, inputIds) {
+        // Uses the ai_runs table created by Analyst (or creates it if missing)
+        try {
+            await DBHelper.query(APP_NAME, `
+                CREATE TABLE IF NOT EXISTS ai_runs (
+                    run_id        INT          PRIMARY KEY AUTO_INCREMENT,
+                    purpose       VARCHAR(60),
+                    model_name    VARCHAR(60),
+                    batch_size    INT,
+                    input_ids     TEXT,
+                    output_json   MEDIUMTEXT,
+                    status        VARCHAR(30)  DEFAULT 'completed',
+                    created_at    TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
+                )
+            `);
+        } catch(_) {}
+
+        try {
+            const safeInput = JSON.stringify(inputIds).replace(/'/g, "''");
+            await DBHelper.query(APP_NAME, `
+                INSERT INTO ai_runs (purpose, model_name, batch_size, input_ids, status)
+                VALUES ('${purpose}', '${model}', ${inputIds.length}, '${safeInput}', 'running')
+            `);
+            const idRes = await DBHelper.query(APP_NAME, "SELECT LAST_INSERT_ID() AS id");
+            return parseInt(idRes?.rows?.[0]?.id || 0) || null;
+        } catch(_) {
+            return null;
+        }
+    }
+
+    function buildPrompt(enrichedSentences) {
+        const inputLines = enrichedSentences.map(s => {
+            return JSON.stringify({
+                sentence_id: s.sentence_id,
+                text: s.text,
+                sentiment_score: parseInt(s.sentiment_score) || 0,
+                flags: {
+                    is_problem: !!parseInt(s.is_problem),
+                    is_solution: !!parseInt(s.is_solution),
+                    is_explanation: !!parseInt(s.is_explanation),
+                    is_workaround: !!parseInt(s.is_workaround)
+                },
+                tags: s.tags,
+                timestamp: s.timestamp_block || "",
+                speaker: s.speaker || ""
+            });
+        }).join("\n");
+
+        return `You are the "Synthesizer" agent for the Heart Walk evidence database.
+
+== HEART WALK SYSTEMS OVERVIEW (CONTEXT) ==
+${HW_SYSTEMS_OVERVIEW}
+
+== GOAL ==
+Cluster the provided coded sentences into discrete, concise insights.
+
+== HARD RULES ==
+1. Every insight MUST include at least 1 supporting sentence.
+2. Use ONLY the provided sentence_ids for evidence links.
+3. Sentences may support multiple insights (many-to-many).
+4. Provide quote_rank 0..3 for each evidence sentence.
+5. Each insight must include at least ONE evidence sentence with quote_rank >= 2.
+6. support_role must be one of: direct_quote, evidence, context, counterpoint.
+7. Do not invent topic labels. Topic semantics come from the supporting sentence tags.
+
+== INPUT (CODED SENTENCES) ==
+${inputLines}
+
+== REQUIRED OUTPUT (JSON ONLY) ==
+Return ONLY a JSON array (no markdown, no commentary). Each array item is one insight:
+[
+  {
+    "summary_plain": "One-sentence insight statement.",
+    "summary_long": "(optional) 1-3 sentence elaboration.",
+    "evidence": [
+      {
+        "sentence_id": "LV.001",
+        "quote_rank": 3,
+        "support_role": "direct_quote",
+        "notes": "optional"
+      }
+    ]
+  }
+]
+
+== SELF-CHECK BEFORE OUTPUT ==
+- Every evidence.sentence_id must be one of the input sentence_ids.
+- quote_rank must be integer 0..3.
+- support_role must be one of the allowed enum values.
+- Every insight must have evidence.length >= 1 and at least one quote_rank >= 2.`;
+    }
+
+    async function synthesizeBatch(enriched, model, runId) {
+        const prompt = buildPrompt(enriched);
+        let raw = null;
+        try {
+            raw = await askAI(prompt, model, { temperature: 0.2 });
+        } catch (e) {
+            log("err", "AI", "AI call failed: " + e.message);
+            await markQueue(enriched, "error", runId);
+            await finishRun(runId, null, "error");
+            return;
+        }
+
+        let insights = null;
+        try {
+            const match = raw.match(/\[[\s\S]*\]/);
+            if (!match) throw new Error("No JSON array found in response");
+            insights = JSON.parse(match[0]);
+            if (!Array.isArray(insights)) throw new Error("Output is not an array");
+        } catch (e) {
+            log("err", "PARSE", "Failed to parse JSON: " + e.message);
+            await markQueue(enriched, "error", runId);
+            await finishRun(runId, raw, "error");
+            return;
+        }
+
+        const inputById = new Map(enriched.map(s => [s.sentence_id, s]));
+        const usedSentenceIds = new Set();
+
+        let createdCount = 0;
+        let rejectedCount = 0;
+
+        for (const ins of insights) {
+            const issues = validateInsight(ins, inputById);
+            if (issues.length > 0) {
+                rejectedCount++;
+                log("warn", "VAL", `Rejected insight: ${issues.join("; ")}`);
+                continue;
+            }
+
+            const evidence = ins.evidence;
+            for (const ev of evidence) usedSentenceIds.add(ev.sentence_id);
+
+            // Compute derived fields from evidence sentences (hard rule: mathematical derivation)
+            const derived = computeDerivedFromEvidence(evidence, inputById);
+
+            const insightId = await insertInsight({
+                summary_plain: String(ins.summary_plain || "").trim(),
+                summary_long: String(ins.summary_long || "").trim() || null,
+                dominant_sentiment_score: derived.dominant_sentiment_score,
+                is_problem: derived.flags.is_problem,
+                is_solution: derived.flags.is_solution,
+                is_explanation: derived.flags.is_explanation,
+                is_workaround: derived.flags.is_workaround,
+                created_by_run_id: runId
+            });
+
+            if (!insightId) {
+                log("err", "DB", "Failed to insert insight");
+                continue;
+            }
+
+            const okLinks = await insertInsightSentences(insightId, evidence);
+            if (!okLinks) {
+                log("err", "DB", `Failed to link evidence for insight ${insightId}`);
+                continue;
+            }
+
+            createdCount++;
+            log("ok", "INSIGHT", `Created insight ${insightId} with ${evidence.length} sentences (senti=${derived.dominant_sentiment_score})`);
+        }
+
+        // Mark used sentences as processed; queued-but-unused revert to unprocessed
+        const used = Array.from(usedSentenceIds);
+        await markQueueUsed(enriched.map(s => s.sentence_id), used, runId);
+
+        await finishRun(runId, raw, "completed");
+
+        log("info", "BATCH", `Batch result: ${createdCount} insights created, ${rejectedCount} rejected`);
+        if (createdCount > 0) {
+            document.getElementById("insightBadge").textContent = "new";
+        }
+    }
+
+    function validateInsight(ins, inputById) {
+        const issues = [];
+        const summary = String(ins?.summary_plain || "").trim();
+        if (!summary || summary.length < 10) issues.push("summary_plain missing/too short");
+
+        if (!Array.isArray(ins?.evidence) || ins.evidence.length === 0) {
+            issues.push("insight has no evidence");
+            return issues;
+        }
+
+        let hasGoodQuote = false;
+        for (const ev of ins.evidence) {
+            if (!ev || !ev.sentence_id) { issues.push("evidence item missing sentence_id"); continue; }
+            if (!inputById.has(ev.sentence_id)) issues.push(`evidence sentence_id not in input: ${ev.sentence_id}`);
+
+            const qr = parseInt(ev.quote_rank);
+            if (isNaN(qr) || qr < 0 || qr > 3) issues.push(`invalid quote_rank for ${ev.sentence_id}`);
+            if (qr >= 2) hasGoodQuote = true;
+
+            const role = String(ev.support_role || "");
+            if (!["direct_quote","evidence","context","counterpoint"].includes(role)) {
+                issues.push(`invalid support_role for ${ev.sentence_id}`);
+            }
+        }
+        if (!hasGoodQuote) issues.push("no evidence sentence has quote_rank >= 2");
+
+        return issues;
+    }
+
+    function computeDerivedFromEvidence(evidence, inputById) {
+        const scores = [];
+        const flags = { is_problem:false, is_solution:false, is_explanation:false, is_workaround:false };
+
+        for (const ev of evidence) {
+            const s = inputById.get(ev.sentence_id);
+            if (!s) continue;
+            scores.push(clampInt(parseInt(s.sentiment_score) || 0, -2, 2));
+            flags.is_problem     = flags.is_problem     || !!parseInt(s.is_problem);
+            flags.is_solution    = flags.is_solution    || !!parseInt(s.is_solution);
+            flags.is_explanation = flags.is_explanation || !!parseInt(s.is_explanation);
+            flags.is_workaround  = flags.is_workaround  || !!parseInt(s.is_workaround);
+        }
+
+        const mean = scores.length ? scores.reduce((a,b)=>a+b,0) / scores.length : 0;
+        const dominant = clampInt(Math.round(mean), -2, 2);
+        return { dominant_sentiment_score: dominant, flags };
+    }
+
+    async function insertInsight(i) {
+        try {
+            const sp = (i.summary_plain || "").replace(/'/g, "''");
+            const sl = i.summary_long ? i.summary_long.replace(/'/g, "''") : null;
+            const runId = i.created_by_run_id ? parseInt(i.created_by_run_id) : "NULL";
+            await DBHelper.query(APP_NAME, `
+                INSERT INTO insights (
+                    summary_plain, summary_long, dominant_sentiment_score,
+                    is_problem, is_solution, is_explanation, is_workaround,
+                    created_by_run_id
+                ) VALUES (
+                    '${sp}',
+                    ${sl ? `'${sl}'` : 'NULL'},
+                    ${clampInt(parseInt(i.dominant_sentiment_score)||0,-2,2)},
+                    ${i.is_problem ? 1 : 0},
+                    ${i.is_solution ? 1 : 0},
+                    ${i.is_explanation ? 1 : 0},
+                    ${i.is_workaround ? 1 : 0},
+                    ${runId}
+                )
+            `);
+            const idRes = await DBHelper.query(APP_NAME, "SELECT LAST_INSERT_ID() AS id");
+            return parseInt(idRes?.rows?.[0]?.id || 0) || null;
+        } catch (e) {
+            log("err", "DB", "Insert insight failed: " + e.message);
+            return null;
+        }
+    }
+
+    async function insertInsightSentences(insightId, evidence) {
+        try {
+            for (const ev of evidence) {
+                const sid = String(ev.sentence_id).replace(/'/g, "''");
+                const qr = clampInt(parseInt(ev.quote_rank) || 0, 0, 3);
+                const role = ["direct_quote","evidence","context","counterpoint"].includes(ev.support_role)
+                    ? ev.support_role
+                    : "evidence";
+                const notes = ev.notes ? String(ev.notes).substring(0, 500).replace(/'/g, "''") : null;
+
+                await DBHelper.query(APP_NAME, `
+                    INSERT INTO insight_sentences (insight_id, sentence_id, quote_rank, support_role, notes)
+                    VALUES (${parseInt(insightId)}, '${sid}', ${qr}, '${role}', ${notes ? `'${notes}'` : 'NULL'})
+                `);
+            }
+            return true;
+        } catch (e) {
+            log("err", "DB", "Insert insight_sentences failed: " + e.message);
+            return false;
+        }
+    }
+
+    async function markQueue(sentences, status, runId) {
+        for (const s of sentences) {
+            const sid = (s.sentence_id || s).replace(/'/g, "''");
+            try {
+                await DBHelper.query(APP_NAME, `
+                    UPDATE sentence_synthesis_queue
+                    SET status='${status}', last_run_id=${runId ? parseInt(runId) : 'NULL'}
+                    WHERE sentence_id='${sid}'
+                `);
+            } catch(_) {}
+        }
+    }
+
+    async function markQueueUsed(allIds, usedIds, runId) {
+        const usedSet = new Set(usedIds);
+        for (const sid0 of allIds) {
+            const sid = sid0.replace(/'/g, "''");
+            const newStatus = usedSet.has(sid0) ? "processed" : "unprocessed";
+            try {
+                await DBHelper.query(APP_NAME, `
+                    UPDATE sentence_synthesis_queue
+                    SET status='${newStatus}', last_run_id=${runId ? parseInt(runId) : 'NULL'}
+                    WHERE sentence_id='${sid}'
+                `);
+            } catch(_) {}
+        }
+    }
+
+    async function finishRun(runId, outputJson, status) {
+        if (!runId) return;
+        try {
+            const safe = (outputJson || "").substring(0, 8000).replace(/'/g, "''");
+            await DBHelper.query(APP_NAME, `
+                UPDATE ai_runs
+                SET status='${status}', output_json='${safe}'
+                WHERE run_id=${parseInt(runId)}
+            `);
+        } catch(_) {}
+    }
+
+    window.loadInsights = async function() {
+        switchTab("insights");
+        try {
+            const res = await DBHelper.query(APP_NAME, `
+                SELECT insight_id, summary_plain, dominant_sentiment_score,
+                       is_problem, is_solution, is_explanation, is_workaround,
+                       created_at
+                FROM insights
+                ORDER BY insight_id DESC
+                LIMIT 50
+            `);
+            const insights = res?.rows || [];
+            document.getElementById("insightBadge").textContent = insights.length;
+            if (insights.length === 0) {
+                document.getElementById("insightFeed").innerHTML =
+                    `<div class="empty-state"><div class="empty-icon">🧠</div><div>No insights yet.</div></div>`;
+                return;
+            }
+
+            const ids = insights.map(i => i.insight_id).join(",");
+            const linkRes = await DBHelper.query(APP_NAME, `
+                SELECT isx.insight_id, isx.sentence_id, isx.quote_rank, isx.support_role,
+                       s.raw_text, s.clean_text, s.timestamp_block, s.speaker
+                FROM insight_sentences isx
+                JOIN sentences s ON s.sentence_id = isx.sentence_id
+                WHERE isx.insight_id IN (${ids})
+                ORDER BY isx.insight_id DESC, isx.quote_rank DESC
+            `);
+            const links = linkRes?.rows || [];
+            const byInsight = {};
+            for (const l of links) {
+                if (!byInsight[l.insight_id]) byInsight[l.insight_id] = [];
+                byInsight[l.insight_id].push(l);
+            }
+
+            let html = "";
+            for (const i of insights) {
+                const ev = byInsight[i.insight_id] || [];
+                html += renderInsightCard(i, ev);
+            }
+
+            document.getElementById("insightFeed").innerHTML = html;
+        } catch (e) {
+            document.getElementById("insightFeed").innerHTML =
+                `<div class="empty-state"><div>Error loading insights: ${escHtml(e.message)}</div></div>`;
+        }
+    };
+
+    function renderInsightCard(i, evidenceLinks) {
+        const id = i.insight_id;
+        const flags = [
+            ["problem", !!parseInt(i.is_problem)],
+            ["solution", !!parseInt(i.is_solution)],
+            ["explain", !!parseInt(i.is_explanation)],
+            ["workaround", !!parseInt(i.is_workaround)]
+        ].filter(x => x[1]).map(x => x[0]).join(", ") || "(no flags)";
+
+        const senti = parseInt(i.dominant_sentiment_score) || 0;
+        const sentiColor = senti < 0 ? "var(--danger)" : senti > 0 ? "var(--accent)" : "var(--muted)";
+
+        const evHtml = evidenceLinks.map(ev => {
+            const quote = ev.clean_text || ev.raw_text || "";
+            return `
+            <div class="evidence-item">
+                <div class="ev-head">
+                    <span class="ev-id">${ev.sentence_id}</span>
+                    <span>${ev.timestamp_block || ""} ${ev.speaker ? `• ${escHtml(ev.speaker)}` : ""} • rank ${ev.quote_rank} • ${ev.support_role}</span>
+                </div>
+                <div class="ev-quote">"${escHtml(quote.substring(0, 260))}${quote.length > 260 ? '…' : ''}"</div>
+            </div>`;
+        }).join("") || `<div style="color:var(--muted); font-size:11px;">No evidence links found</div>`;
+
+        return `
+        <div class="insight-card">
+            <div class="insight-meta">
+                <span class="insight-id">INSIGHT ${id}</span>
+                <span class="pill" style="background:${senti < 0 ? 'rgba(218,54,51,0.15)' : senti > 0 ? 'rgba(35,134,54,0.15)' : 'rgba(139,148,158,0.15)'}; color:${sentiColor}">
+                    senti ${senti > 0 ? '+' : ''}${senti}
+                </span>
+            </div>
+            <div class="insight-summary">${escHtml(i.summary_plain || "")}</div>
+            <div style="font-size:11px; color:var(--muted); margin-bottom:8px;">flags: ${escHtml(flags)}</div>
+            <div class="evidence-list">${evHtml}</div>
+        </div>`;
+    }
+
+    window.runSmokeTests = async function() {
+        switchTab("validation");
+        const results = [];
+        let passed = 0;
+        let failed = 0;
+
+        async function test(name, fn) {
+            try {
+                const { ok, detail } = await fn();
+                results.push({ name, ok, detail });
+                ok ? passed++ : failed++;
+            } catch(e) {
+                results.push({ name, ok: false, detail: e.message });
+                failed++;
+            }
+        }
+
+        // Orphan check: no insight without any evidence links
+        await test("Orphan Check (no insight with 0 sentences)", async () => {
+            const res = await DBHelper.query(APP_NAME, `
+                SELECT COUNT(*) AS cnt
+                FROM insights i
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM insight_sentences isx
+                    WHERE isx.insight_id = i.insight_id
+                )
+            `);
+            const cnt = parseInt(res?.rows?.[0]?.cnt || 0);
+            return { ok: cnt === 0, detail: cnt === 0 ? "No orphan insights" : `${cnt} orphan insights found` };
+        });
+
+        // Rank check: each insight has at least one quote_rank >= 2
+        await test("Rank Check (>=1 good quote per insight)", async () => {
+            const res = await DBHelper.query(APP_NAME, `
+                SELECT COUNT(*) AS cnt
+                FROM insights i
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM insight_sentences isx
+                    WHERE isx.insight_id = i.insight_id
+                      AND isx.quote_rank >= 2
+                )
+            `);
+            const cnt = parseInt(res?.rows?.[0]?.cnt || 0);
+            return { ok: cnt === 0, detail: cnt === 0 ? "All insights have a good quote" : `${cnt} insights missing quote_rank>=2` };
+        });
+
+        // Support role enum check
+        await test("Support Role Enum", async () => {
+            const res = await DBHelper.query(APP_NAME, `
+                SELECT COUNT(*) AS cnt
+                FROM insight_sentences
+                WHERE support_role NOT IN ('direct_quote','evidence','context','counterpoint')
+            `);
+            const cnt = parseInt(res?.rows?.[0]?.cnt || 0);
+            return { ok: cnt === 0, detail: cnt === 0 ? "All support_role values valid" : `${cnt} invalid support_role rows` };
+        });
+
+        // Quote rank bounds check
+        await test("Quote Rank Bounds (0..3)", async () => {
+            const res = await DBHelper.query(APP_NAME, `
+                SELECT COUNT(*) AS cnt
+                FROM insight_sentences
+                WHERE quote_rank < 0 OR quote_rank > 3
+            `);
+            const cnt = parseInt(res?.rows?.[0]?.cnt || 0);
+            return { ok: cnt === 0, detail: cnt === 0 ? "All quote_rank values valid" : `${cnt} out-of-bounds quote_rank rows` };
+        });
+
+        // Traceability: every linked sentence exists
+        await test("Traceability (linked sentences exist)", async () => {
+            const res = await DBHelper.query(APP_NAME, `
+                SELECT COUNT(*) AS cnt
+                FROM insight_sentences isx
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM sentences s WHERE s.sentence_id = isx.sentence_id
+                )
+            `);
+            const cnt = parseInt(res?.rows?.[0]?.cnt || 0);
+            return { ok: cnt === 0, detail: cnt === 0 ? "All links point to real sentences" : `${cnt} dangling insight_sentences` };
+        });
+
+        // Render
+        let html = `<div style="margin-bottom:16px; font-size:13px; color:var(--muted);">
+            Results: <span style="color:var(--accent)">${passed} passed</span>
+            ${failed > 0 ? ` / <span style="color:var(--danger)">${failed} failed</span>` : ''}
+        </div>`;
+
+        for (const r of results) {
+            const icon = r.ok ? "✅" : "❌";
+            const bg   = r.ok ? "var(--accent-dim)" : "rgba(218,54,51,0.1)";
+            const bc   = r.ok ? "var(--accent)" : "var(--danger)";
+            html += `<div style="background:${bg}; border:1px solid ${bc}; border-radius:6px; padding:12px; margin-bottom:8px;">
+                <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+                    <span>${icon}</span>
+                    <strong style="font-size:12px;">${escHtml(r.name)}</strong>
+                </div>
+                <div style="font-size:11px; color:var(--muted); font-family:var(--mono);">${escHtml(r.detail)}</div>
+            </div>`;
+        }
+
+        document.getElementById("valResults").innerHTML = html;
+        document.getElementById("valBadge").textContent = failed > 0 ? `${failed} ❌` : "✓";
+        log(failed > 0 ? "warn" : "ok", "SMOKE", `Tests: ${passed} passed, ${failed} failed`);
+    };
+
+    /* UI helpers */
+    window.switchTab = function(tabId) {
+        document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === tabId));
+        document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.id === "tab-" + tabId));
+        if (tabId === "insights") loadInsights();
+    };
+
+    function log(level, tag, msg) {
+        logCount++;
+        document.getElementById("logBadge").textContent = logCount;
+
+        const feed = document.getElementById("logFeed");
+        const empty = feed.querySelector(".empty-state");
+        if (empty) empty.remove();
+
+        const now = new Date();
+        const ts = now.toTimeString().substring(0,8);
+        const levelClass = {
+            ok: "log-level-ok", err: "log-level-err",
+            warn: "log-level-warn", info: "log-level-info"
+        }[level] || "log-level-info";
+        const levelLabel = { ok:"  OK", err:" ERR", warn:"WARN", info:"INFO" }[level] || "INFO";
+
+        const el = document.createElement("div");
+        el.className = "log-entry";
+        el.innerHTML = `<span class="log-time">${ts}</span><span class="${levelClass}">[${levelLabel}]</span><span style="color:var(--warning); font-family:var(--mono); min-width:70px;">${escHtml(tag)}</span><span class="log-msg">${escHtml(msg)}</span>`;
+
+        feed.insertBefore(el, feed.firstChild);
+        while (feed.children.length > 500) feed.removeChild(feed.lastChild);
+    }
+
+    function setText(id, val) {
+        const el = document.getElementById(id);
+        if (el) el.textContent = val;
+    }
+
+    function setDot(dotId, color, statusText) {
+        const dot = document.getElementById(dotId);
+        if (!dot) return;
+        dot.className = "status-dot dot-" + color;
+        const parent = dot.parentElement;
+        if (parent) parent.textContent = "";
+        if (dot && parent) {
+            parent.appendChild(dot);
+            parent.appendChild(document.createTextNode(" " + statusText));
+        }
+    }
+
+    function escHtml(s) {
+        return String(s)
+            .replace(/&/g,"&amp;")
+            .replace(/</g,"&lt;")
+            .replace(/>/g,"&gt;")
+            .replace(/"/g,"&quot;");
+    }
+
+    function clampInt(n, min, max) {
+        return Math.max(min, Math.min(max, n));
+    }
+
+    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+    init();
+</script>
+</body>
+</html>
