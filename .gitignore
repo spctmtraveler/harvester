@@ -20,3 +20,9 @@ dist/
 .pytest_cache/
 __pycache__/
 
+# Sensitive source material (do not commit)
+Reference Docs/Source transcript files for reference/
+
+# Images (often include sensitive content)
+Reference Docs/screenshots/
+

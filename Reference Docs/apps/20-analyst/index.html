@@ -1,0 +1,1670 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analyst — Sentence Coder v1</title>
+    <style>
+        :root {
+            --bg: #0d1117;
+            --panel: #161b22;
+            --panel2: #21262d;
+            --border: #30363d;
+            --text: #c9d1d9;
+            --muted: #8b949e;
+            --accent: #238636;
+            --accent-dim: rgba(35,134,54,0.15);
+            --blue: #1f6feb;
+            --blue-dim: rgba(31,111,235,0.15);
+            --danger: #da3633;
+            --warning: #d29922;
+            --warning-dim: rgba(210,153,34,0.15);
+            --purple: #8957e5;
+            --font: 'Segoe UI', system-ui, sans-serif;
+            --mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+        }
+
+        *, *::before, *::after { box-sizing: border-box; }
+
+        body {
+            font-family: var(--font);
+            background: var(--bg);
+            color: var(--text);
+            margin: 0;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+            font-size: 13px;
+        }
+
+        /* ── SIDEBAR ───────────────────────────────── */
+        .sidebar {
+            width: 300px;
+            min-width: 300px;
+            background: #010409;
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            padding: 16px;
+            gap: 16px;
+            overflow-y: auto;
+        }
+
+        .app-title { font-size: 15px; font-weight: 700; color: var(--text); }
+        .app-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+        .status-dot {
+            display: inline-block; width: 8px; height: 8px;
+            border-radius: 50%; margin-right: 6px;
+        }
+        .dot-green { background: var(--accent); }
+        .dot-red { background: var(--danger); }
+        .dot-yellow { background: var(--warning); }
+        .dot-grey { background: #555; }
+
+        .section-label {
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            font-size: 10px;
+            color: var(--muted);
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+
+        .ctrl-section {
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 16px;
+        }
+
+        .stat-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .stat-box {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 10px;
+            text-align: center;
+        }
+        .stat-num { font-size: 22px; font-weight: 700; color: var(--text); font-family: var(--mono); }
+        .stat-lbl { font-size: 10px; color: var(--muted); margin-top: 2px; }
+
+        .progress-wrap {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            height: 6px;
+            overflow: hidden;
+        }
+        .progress-bar {
+            height: 100%;
+            background: var(--accent);
+            width: 0%;
+            transition: width 0.4s ease;
+        }
+
+        label.field-label { display: block; color: var(--muted); font-size: 11px; margin-bottom: 5px; }
+
+        select, input[type=number] {
+            width: 100%;
+            background: var(--panel2);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 7px 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            font-family: var(--font);
+            margin-bottom: 10px;
+        }
+
+        button {
+            width: 100%;
+            padding: 9px 14px;
+            border-radius: 6px;
+            border: none;
+            font-weight: 600;
+            font-size: 12px;
+            cursor: pointer;
+            margin-bottom: 6px;
+            transition: opacity 0.2s;
+        }
+        button:disabled { opacity: 0.4; cursor: not-allowed; }
+        button.btn-primary { background: var(--accent); color: #fff; }
+        button.btn-blue { background: var(--blue); color: #fff; }
+        button.btn-danger { background: var(--danger); color: #fff; }
+        button.btn-warning { background: var(--warning); color: #000; }
+        button.btn-ghost {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text);
+        }
+
+        .sys-status {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 10px;
+            font-size: 11px;
+            line-height: 1.8;
+        }
+
+        /* ── MAIN AREA ─────────────────────────────── */
+        .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+        .tabs {
+            display: flex;
+            background: var(--panel);
+            border-bottom: 1px solid var(--border);
+            padding: 0 4px;
+        }
+        .tab {
+            padding: 12px 16px;
+            cursor: pointer;
+            color: var(--muted);
+            font-size: 12px;
+            font-weight: 600;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -1px;
+            white-space: nowrap;
+        }
+        .tab:hover { color: var(--text); }
+        .tab.active { color: var(--text); border-bottom-color: var(--accent); }
+        .tab .badge {
+            background: var(--panel2);
+            color: var(--muted);
+            padding: 2px 6px;
+            border-radius: 10px;
+            font-size: 10px;
+            margin-left: 5px;
+        }
+
+        .view { flex: 1; overflow-y: auto; padding: 20px; display: none; }
+        .view.active { display: block; }
+
+        /* ── LOG FEED ──────────────────────────────── */
+        .log-entry {
+            display: flex;
+            gap: 10px;
+            padding: 6px 0;
+            border-bottom: 1px solid #1e242b;
+            align-items: flex-start;
+            font-family: var(--mono);
+            font-size: 11px;
+            line-height: 1.5;
+        }
+        .log-time { color: var(--muted); min-width: 55px; }
+        .log-level-ok { color: var(--accent); font-weight: 700; min-width: 60px; }
+        .log-level-err { color: var(--danger); font-weight: 700; min-width: 60px; }
+        .log-level-warn { color: var(--warning); font-weight: 700; min-width: 60px; }
+        .log-level-info { color: var(--blue); font-weight: 700; min-width: 60px; }
+        .log-msg { color: var(--text); }
+
+        /* ── SENTENCE CARD ─────────────────────────── */
+        .sentence-card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 14px;
+            margin-bottom: 10px;
+        }
+        .sentence-card.status-finalized { border-left: 3px solid var(--accent); }
+        .sentence-card.status-needs_human_review { border-left: 3px solid var(--warning); }
+        .sentence-card.status-error { border-left: 3px solid var(--danger); }
+        .sentence-card.status-unprocessed { border-left: 3px solid #555; }
+        .sentence-card.status-queued { border-left: 3px solid var(--blue); }
+
+        .card-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            font-size: 11px;
+            color: var(--muted);
+        }
+        .card-id { font-family: var(--mono); font-weight: 700; color: var(--text); }
+        .status-pill {
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 10px;
+            font-weight: 600;
+        }
+        .pill-finalized { background: var(--accent-dim); color: var(--accent); }
+        .pill-needs_human_review { background: var(--warning-dim); color: var(--warning); }
+        .pill-unprocessed { background: #333; color: #888; }
+        .pill-queued { background: var(--blue-dim); color: var(--blue); }
+        .pill-error { background: rgba(218,54,51,0.15); color: var(--danger); }
+
+        .card-text {
+            color: var(--text);
+            line-height: 1.6;
+            margin-bottom: 10px;
+            font-style: italic;
+            border-left: 2px solid var(--border);
+            padding-left: 10px;
+        }
+
+        .card-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
+        .tag-chip {
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 600;
+            font-family: var(--mono);
+            background: var(--panel2);
+            border: 1px solid var(--border);
+            color: var(--text);
+        }
+        .tag-chip.cat-roles { border-color: #58a6ff55; color: #58a6ff; }
+        .tag-chip.cat-groups { border-color: #bc8cff55; color: var(--purple); }
+        .tag-chip.cat-meetings { border-color: #ffa65755; color: #ffa657; }
+        .tag-chip.cat-tools_docs { border-color: #56d36455; color: #56d364; }
+        .tag-chip.cat-actions { border-color: var(--accent); color: var(--accent); }
+        .tag-chip.cat-org_tags { border-color: #d2992255; color: var(--warning); }
+        .tag-chip.cat-catch_all { border-color: var(--danger); color: var(--danger); }
+
+        .card-flags {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-bottom: 8px;
+            font-size: 10px;
+        }
+        .flag-chip {
+            padding: 2px 7px;
+            border-radius: 4px;
+            font-weight: 600;
+            font-family: var(--mono);
+        }
+        .flag-on { background: rgba(56,211,100,0.15); color: #3dd363; }
+        .flag-off { background: #333; color: #555; }
+
+        .card-sentiment {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 11px;
+            font-family: var(--mono);
+        }
+        .senti-bar { display: flex; gap: 3px; }
+        .senti-dot {
+            width: 12px; height: 12px; border-radius: 2px;
+            background: var(--panel2);
+            border: 1px solid var(--border);
+        }
+        .senti-dot.active-neg { background: var(--danger); }
+        .senti-dot.active-pos { background: var(--accent); }
+        .senti-dot.active-neu { background: var(--muted); }
+
+        .card-edit-area { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+        .edit-row { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; flex-wrap: wrap; }
+        .edit-row label { font-size: 11px; color: var(--muted); min-width: 80px; }
+        .edit-row select, .edit-row input[type=number] {
+            margin: 0; flex: 1; min-width: 140px;
+        }
+        .checkbox-group { display: flex; gap: 10px; flex-wrap: wrap; }
+        .checkbox-group label { min-width: unset; display: flex; align-items: center; gap: 4px; cursor: pointer; color: var(--text); }
+
+        /* ── COVERAGE DASHBOARD ────────────────────── */
+        .coverage-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        .cov-card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 12px;
+            text-align: center;
+        }
+        .cov-num { font-size: 28px; font-weight: 700; font-family: var(--mono); }
+        .cov-lbl { font-size: 11px; color: var(--muted); margin-top: 3px; }
+
+        .tag-freq-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        .tag-freq-table th {
+            text-align: left;
+            padding: 8px 10px;
+            background: var(--panel2);
+            border-bottom: 1px solid var(--border);
+            color: var(--muted);
+            font-size: 11px;
+            text-transform: uppercase;
+        }
+        .tag-freq-table td { padding: 7px 10px; border-bottom: 1px solid #1e242b; }
+        .tag-freq-bar {
+            display: inline-block;
+            height: 8px;
+            background: var(--accent);
+            border-radius: 2px;
+            min-width: 2px;
+            vertical-align: middle;
+        }
+
+        .val-error {
+            background: rgba(218,54,51,0.1);
+            border: 1px solid var(--danger);
+            border-radius: 6px;
+            padding: 12px;
+            font-size: 12px;
+            margin-bottom: 10px;
+            font-family: var(--mono);
+        }
+
+        h2 { font-size: 14px; font-weight: 700; margin: 0 0 12px 0; }
+        h3 { font-size: 12px; font-weight: 600; color: var(--muted); margin: 16px 0 8px 0; text-transform: uppercase; letter-spacing: 0.5px; }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--muted);
+        }
+        .empty-icon { font-size: 40px; margin-bottom: 10px; }
+
+        @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+        .pulsing { animation: pulse 1.5s infinite; }
+    </style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════ SIDEBAR -->
+<aside class="sidebar">
+    <div>
+        <div class="app-title">❤️ Analyst</div>
+        <div class="app-sub">Job 2 — Sentence Coder v1</div>
+    </div>
+
+    <div class="ctrl-section">
+        <div class="section-label">System Status</div>
+        <div class="sys-status" id="sysStatus">
+            <div><span class="status-dot dot-grey" id="dot-db"></span>DB — checking…</div>
+            <div><span class="status-dot dot-grey" id="dot-tags"></span>Tag library — checking…</div>
+            <div><span class="status-dot dot-grey" id="dot-schema"></span>Schema — checking…</div>
+        </div>
+    </div>
+
+    <div class="ctrl-section">
+        <div class="section-label">Coverage</div>
+        <div class="stat-grid">
+            <div class="stat-box">
+                <div class="stat-num" id="statTotal">—</div>
+                <div class="stat-lbl">Total</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-num" id="statUnprocessed">—</div>
+                <div class="stat-lbl">Queued</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-num" id="statFinalized">—</div>
+                <div class="stat-lbl">Finalized</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-num" id="statReview">—</div>
+                <div class="stat-lbl">Needs Review</div>
+            </div>
+        </div>
+        <div style="margin-top: 8px;">
+            <div style="display:flex; justify-content:space-between; font-size:10px; color:var(--muted); margin-bottom:4px;">
+                <span>Completion</span>
+                <span id="pctLabel">0%</span>
+            </div>
+            <div class="progress-wrap"><div class="progress-bar" id="coveragePct"></div></div>
+        </div>
+    </div>
+
+    <div class="ctrl-section">
+        <div class="section-label">Run Settings</div>
+        <label class="field-label">Batch Size</label>
+        <input type="number" id="batchSize" value="10" min="1" max="30">
+        <label class="field-label">Model</label>
+        <select id="modelSelect">
+            <option value="gpt-4o">gpt-4o (accurate)</option>
+            <option value="gpt-4o-mini" selected>gpt-4o-mini (fast)</option>
+            <option value="gemini">Gemini</option>
+        </select>
+        <button class="btn-primary" id="btnStart" disabled onclick="startProcessing()">▶ Start Coding</button>
+        <button class="btn-ghost" id="btnStop" disabled onclick="stopProcessing()">⏹ Stop</button>
+        <button class="btn-ghost" onclick="refreshStats()">↻ Refresh Stats</button>
+    </div>
+
+    <div class="ctrl-section">
+        <div class="section-label">Validation</div>
+        <button class="btn-blue" onclick="runValidation()">🔍 Run Smoke Tests</button>
+    </div>
+
+    <div>
+        <div class="section-label">Danger Zone</div>
+        <button class="btn-danger" onclick="resetAllCoding()">⚠ Reset All Coding</button>
+    </div>
+</aside>
+
+<!-- ═══════════════════════════════════════════════ MAIN -->
+<main class="main">
+    <nav class="tabs">
+        <div class="tab active" data-tab="log" onclick="switchTab('log')">Processing Log <span class="badge" id="logBadge">0</span></div>
+        <div class="tab" data-tab="review" onclick="switchTab('review')">Review Queue <span class="badge" id="reviewBadge">0</span></div>
+        <div class="tab" data-tab="coverage" onclick="switchTab('coverage')">Coverage Dashboard</div>
+        <div class="tab" data-tab="validation" onclick="switchTab('validation')">Smoke Tests <span class="badge" id="valBadge">0</span></div>
+    </nav>
+
+    <!-- ── LOG TAB ── -->
+    <div id="tab-log" class="view active">
+        <div id="logFeed">
+            <div class="empty-state">
+                <div class="empty-icon">📋</div>
+                <div>Processing log will appear here.</div>
+                <div style="font-size:11px; margin-top:5px;">Load sentences and click Start Coding.</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── REVIEW TAB ── -->
+    <div id="tab-review" class="view">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+            <h2>Sentence Review Queue</h2>
+            <div style="display:flex; gap:8px;">
+                <select id="filterStatus" onchange="loadReviewQueue()" style="width:auto; margin:0;">
+                    <option value="all">All Statuses</option>
+                    <option value="needs_human_review">Needs Review</option>
+                    <option value="finalized">Finalized</option>
+                    <option value="unprocessed">Unprocessed</option>
+                    <option value="error">Error</option>
+                </select>
+                <button class="btn-ghost" style="width:auto; margin:0; padding:7px 12px;" onclick="loadReviewQueue()">Refresh</button>
+            </div>
+        </div>
+        <div id="reviewFeed">
+            <div class="empty-state">
+                <div class="empty-icon">🔍</div>
+                <div>No sentences loaded. Run processing first.</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── COVERAGE TAB ── -->
+    <div id="tab-coverage" class="view">
+        <h2>Coverage Dashboard</h2>
+        <div class="coverage-grid" id="covGrid">
+            <div class="cov-card"><div class="stat-num" id="cov-total">—</div><div class="cov-lbl">Total Sentences</div></div>
+            <div class="cov-card"><div class="stat-num" id="cov-finalized" style="color:var(--accent)">—</div><div class="cov-lbl">Finalized</div></div>
+            <div class="cov-card"><div class="stat-num" id="cov-review" style="color:var(--warning)">—</div><div class="cov-lbl">Needs Human Review</div></div>
+            <div class="cov-card"><div class="stat-num" id="cov-unprocessed" style="color:var(--muted)">—</div><div class="cov-lbl">Unprocessed</div></div>
+            <div class="cov-card"><div class="stat-num" id="cov-error" style="color:var(--danger)">—</div><div class="cov-lbl">Errors</div></div>
+            <div class="cov-card"><div class="stat-num" id="cov-pct" style="color:var(--blue)">—</div><div class="cov-lbl">% Complete</div></div>
+        </div>
+
+        <h3>Tag Frequency</h3>
+        <div id="tagFreqArea">
+            <div class="empty-state" style="padding:20px;">
+                <div>Click "Refresh Stats" or run processing to see tag distribution.</div>
+            </div>
+        </div>
+
+        <h3>Sentiment Distribution</h3>
+        <div id="sentimentDistArea" style="display:flex; gap:12px; flex-wrap:wrap; margin-top:8px;">
+        </div>
+    </div>
+
+    <!-- ── VALIDATION TAB ── -->
+    <div id="tab-validation" class="view">
+        <h2>Smoke Tests</h2>
+        <div id="valResults">
+            <div class="empty-state">
+                <div class="empty-icon">✅</div>
+                <div>Click "Run Smoke Tests" in the sidebar to validate data integrity.</div>
+            </div>
+        </div>
+    </div>
+</main>
+
+<script type="module">
+    import { DBHelper } from "https://happydo.xyz/api_auto_db/db_helper.js";
+    import { askAI } from "https://happydo.xyz/api/ailnl.js";
+
+    /* ══════════════════════════════════════════════════════
+       CONSTANTS
+    ══════════════════════════════════════════════════════ */
+    const APP_NAME = "HWIE_v1";  // Shared DB with all HWIE apps
+
+    // Full canonical tag library (tag_key → category_key)
+    const TAG_LIBRARY = {
+        role_executive_director:          "roles",
+        role_development_director:        "roles",
+        role_senior_development_director: "roles",
+        role_vice_president:              "roles",
+        role_senior_vice_president:       "roles",
+        role_consultant:                  "roles",
+        role_national_staff:              "roles",
+        role_elt_chair:                   "roles",
+        role_elt_member:                  "roles",
+        role_market_board_member:         "roles",
+        role_corporate_executive:         "roles",
+        role_executive_assistant:         "roles",
+        role_team_captain:                "roles",
+        role_participant_walker:          "roles",
+        group_aha_national:               "groups",
+        group_aha_market:                 "groups",
+        group_elt:                        "groups",
+        group_market_board:               "groups",
+        group_volunteer_leadership:       "groups",
+        group_internal_staff:             "groups",
+        group_participant_company:        "groups",
+        group_corporate_prospect:         "groups",
+        group_sponsor:                    "groups",
+        group_team:                       "groups",
+        meeting_elt_meeting:              "meetings",
+        meeting_gap_meeting:              "meetings",
+        meeting_strategy_meeting:         "meetings",
+        meeting_orientation_onboarding:   "meetings",
+        meeting_internal_coordination:    "meetings",
+        meeting_exec_networking_breakfast:"meetings",
+        tool_salesforce:                  "tools_docs",
+        tool_sharepoint:                  "tools_docs",
+        tool_reporting_dashboard:         "tools_docs",
+        doc_impact_plan:                  "tools_docs",
+        doc_pipeline_tracker:             "tools_docs",
+        doc_planning_document:            "tools_docs",
+        doc_volunteer_job_description:    "tools_docs",
+        doc_annotated_agenda:             "tools_docs",
+        doc_slide_deck:                   "tools_docs",
+        doc_email_template:               "tools_docs",
+        doc_call_script:                  "tools_docs",
+        doc_text_template:                "tools_docs",
+        action_recruit:                   "actions",
+        action_onboard:                   "actions",
+        action_orient:                    "actions",
+        action_train:                     "actions",
+        action_engage:                    "actions",
+        action_prospect:                  "actions",
+        action_cultivate:                 "actions",
+        action_solicit:                   "actions",
+        action_close:                     "actions",
+        action_follow_up:                 "actions",
+        action_track:                     "actions",
+        action_coordinate:                "actions",
+        action_steward:                   "actions",
+        action_recognize:                 "actions",
+        action_communicate:               "actions",
+        action_plan:                      "actions",
+        action_convene:                   "actions",
+        org_accountability:               "org_tags",
+        org_ownership:                    "org_tags",
+        org_decision_making:              "org_tags",
+        org_governance:                   "org_tags",
+        org_incentives:                   "org_tags",
+        org_motivation:                   "org_tags",
+        org_communication:                "org_tags",
+        org_reporting:                    "org_tags",
+        org_data_hygiene:                 "org_tags",
+        org_workflow:                     "org_tags",
+        org_process:                      "org_tags",
+        org_resource_allocation:          "org_tags",
+        org_capacity_bandwidth:           "org_tags",
+        org_time_scheduling:              "org_tags",
+        org_relationship_management:      "org_tags",
+        catch_miscellaneous:              "catch_all",
+        catch_irrelevant:                 "catch_all"
+    };
+
+    const VALID_TAG_KEYS = new Set(Object.keys(TAG_LIBRARY));
+
+    // Sentiment labels
+    const SENTIMENT_LABELS = {
+        "-2": "Strong Negative",
+        "-1": "Mild Negative",
+         "0": "Neutral",
+         "1": "Mild Positive",
+         "2": "Strong Positive"
+    };
+
+    // Heart Walk Systems Overview (injected into every AI prompt)
+    const HW_SYSTEMS_OVERVIEW = `
+Heart Walk is a market-based fundraising and engagement campaign by the American Heart Association (AHA).
+Goals: generate corporate sponsorship revenue, engage companies/community leaders, activate employee participation, build long-term leadership pipelines.
+
+Organizational Structure:
+- National Level: sets strategy, develops resources, provides reporting systems, offers regional oversight
+- Market Level: executes Heart Walk locally, recruits/manages volunteer leadership, manages corporate relationships, coordinates meetings/events
+
+Internal AHA Leadership (paid staff): Executive Director (ED), Development Director (DD), Senior Development Director, Senior Vice President (SVP), Director
+  Responsibilities: recruit volunteer leadership, coach outreach, prepare agendas/materials, track revenue pipeline, coordinate reporting
+
+External Volunteer Leadership: ELT Chair, ELT Members, Market Board Members, Corporate Executives, Team Captains
+  Responsibilities: open access to corporate decision-makers, make sponsorship asks, recruit additional leaders, mobilize company participation
+
+Core Campaign Components:
+- Leadership Recruitment: identify/recruit ELT Chair + members, align volunteer leaders with campaign goals
+- Corporate Engagement: identify prospects, conduct sponsorship asks, recruit company teams
+- Meetings & Cadence: ELT meetings (multi-session), GAP meetings (pipeline vs target review), strategy meetings, internal coordination meetings, executive networking breakfasts
+- Tools/Systems: Salesforce (CRM), SharePoint (resources), pipeline tracker spreadsheets, impact plans, annotated agendas, slide decks, email/call/text templates
+`.trim();
+
+    /* ══════════════════════════════════════════════════════
+       STATE
+    ══════════════════════════════════════════════════════ */
+    let isRunning = false;
+    let shouldStop = false;
+    let logCount = 0;
+    let reviewBadgeCount = 0;
+
+    /* ══════════════════════════════════════════════════════
+       INIT
+    ══════════════════════════════════════════════════════ */
+    async function init() {
+        log("info", "BOOT", "Initializing Analyst v1…");
+        try {
+            await DBHelper.init(APP_NAME);
+            setDot("dot-db", "green", "DB — connected ✓");
+            log("ok", "DB", "Connected to " + APP_NAME);
+        } catch (e) {
+            setDot("dot-db", "red", "DB — FAILED");
+            log("err", "DB", "Connection failed: " + e.message);
+            return;
+        }
+
+        await ensureSchema();
+        await refreshStats();
+        log("ok", "BOOT", "Analyst ready.");
+    }
+
+    /* ── Schema Migration ── */
+    async function ensureSchema() {
+        log("info", "SCHEMA", "Checking schema…");
+        try {
+            // Sentences table
+            await DBHelper.query(APP_NAME, `
+                CREATE TABLE IF NOT EXISTS sentences (
+                    sentence_id     VARCHAR(50)  PRIMARY KEY,
+                    interview_id    VARCHAR(50),
+                    timestamp_block VARCHAR(20),
+                    speaker         VARCHAR(100),
+                    raw_text        TEXT         NOT NULL,
+                    clean_text      TEXT,
+                    sentiment_score TINYINT      DEFAULT 0,
+                    is_problem      TINYINT(1)   DEFAULT 0,
+                    is_solution     TINYINT(1)   DEFAULT 0,
+                    is_explanation  TINYINT(1)   DEFAULT 0,
+                    is_workaround   TINYINT(1)   DEFAULT 0,
+                    review_status   VARCHAR(30)  DEFAULT 'unprocessed',
+                    created_at      TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
+                )
+            `);
+
+            // Tags table
+            await DBHelper.query(APP_NAME, `
+                CREATE TABLE IF NOT EXISTS tags (
+                    tag_id        INT          PRIMARY KEY AUTO_INCREMENT,
+                    tag_key       VARCHAR(80)  UNIQUE NOT NULL,
+                    tag_name      VARCHAR(120),
+                    category_key  VARCHAR(40),
+                    is_canonical  TINYINT(1)   DEFAULT 1
+                )
+            `);
+
+            // SentenceTag join table
+            await DBHelper.query(APP_NAME, `
+                CREATE TABLE IF NOT EXISTS sentence_tags (
+                    sentence_id   VARCHAR(50) NOT NULL,
+                    tag_id        INT         NOT NULL,
+                    PRIMARY KEY (sentence_id, tag_id)
+                )
+            `);
+
+            // AI_Run audit table
+            await DBHelper.query(APP_NAME, `
+                CREATE TABLE IF NOT EXISTS ai_runs (
+                    run_id        INT          PRIMARY KEY AUTO_INCREMENT,
+                    purpose       VARCHAR(60)  DEFAULT 'tag_sentences',
+                    model_name    VARCHAR(60),
+                    batch_size    INT,
+                    input_ids     TEXT,
+                    output_json   MEDIUMTEXT,
+                    status        VARCHAR(30)  DEFAULT 'completed',
+                    created_at    TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
+                )
+            `);
+
+            setDot("dot-schema", "green", "Schema — OK ✓");
+            log("ok", "SCHEMA", "All tables present.");
+
+            // Seed tags if empty
+            await seedTagsIfEmpty();
+
+        } catch (e) {
+            setDot("dot-schema", "red", "Schema — FAILED");
+            log("err", "SCHEMA", e.message);
+        }
+    }
+
+    async function seedTagsIfEmpty() {
+        const res = await DBHelper.query(APP_NAME, "SELECT COUNT(*) AS cnt FROM tags");
+        const count = res?.rows?.[0]?.cnt || 0;
+        if (count > 0) {
+            setDot("dot-tags", "green", `Tag library — ${count} tags ✓`);
+            log("ok", "TAGS", `Tag library seeded (${count} tags).`);
+            return;
+        }
+
+        log("info", "TAGS", "Seeding canonical tag library…");
+
+        const tagDefs = [
+            [1001,"role_executive_director","Executive Director (ED)","roles"],
+            [1002,"role_development_director","Development Director (DD)","roles"],
+            [1003,"role_senior_development_director","Senior Development Director","roles"],
+            [1004,"role_vice_president","Vice President (VP)","roles"],
+            [1005,"role_senior_vice_president","Senior Vice President (SVP)","roles"],
+            [1006,"role_consultant","Consultant","roles"],
+            [1007,"role_national_staff","National Staff","roles"],
+            [1101,"role_elt_chair","ELT Chair","roles"],
+            [1102,"role_elt_member","ELT Member","roles"],
+            [1103,"role_market_board_member","Market Board Member","roles"],
+            [1104,"role_corporate_executive","Corporate Executive","roles"],
+            [1105,"role_executive_assistant","Executive Assistant","roles"],
+            [1106,"role_team_captain","Team Captain","roles"],
+            [1107,"role_participant_walker","Participant / Walker","roles"],
+            [2001,"group_aha_national","AHA National","groups"],
+            [2002,"group_aha_market","AHA Market (Local Office)","groups"],
+            [2003,"group_elt","ELT (Executive Leadership Team)","groups"],
+            [2004,"group_market_board","Market Board","groups"],
+            [2005,"group_volunteer_leadership","Volunteer Leadership (general)","groups"],
+            [2006,"group_internal_staff","Internal Staff (general)","groups"],
+            [2007,"group_participant_company","Participant Company","groups"],
+            [2008,"group_corporate_prospect","Corporate Prospect","groups"],
+            [2009,"group_sponsor","Sponsor","groups"],
+            [2010,"group_team","Team (company team)","groups"],
+            [3001,"meeting_elt_meeting","ELT Meeting","meetings"],
+            [3002,"meeting_gap_meeting","GAP Meeting","meetings"],
+            [3003,"meeting_strategy_meeting","Strategy Meeting","meetings"],
+            [3004,"meeting_orientation_onboarding","Orientation / Onboarding Meeting","meetings"],
+            [3005,"meeting_internal_coordination","Internal Coordination Meeting","meetings"],
+            [3006,"meeting_exec_networking_breakfast","Executive Networking Breakfast","meetings"],
+            [4001,"tool_salesforce","Salesforce","tools_docs"],
+            [4002,"tool_sharepoint","SharePoint","tools_docs"],
+            [4003,"tool_reporting_dashboard","Reporting Dashboard","tools_docs"],
+            [4101,"doc_impact_plan","Impact Plan","tools_docs"],
+            [4102,"doc_pipeline_tracker","Pipeline Tracker / Spreadsheet","tools_docs"],
+            [4103,"doc_planning_document","Planning Document / Planner","tools_docs"],
+            [4201,"doc_volunteer_job_description","Job Description (Volunteer Role Description)","tools_docs"],
+            [4202,"doc_annotated_agenda","Annotated Agenda","tools_docs"],
+            [4203,"doc_slide_deck","Slide Deck","tools_docs"],
+            [4204,"doc_email_template","Email Template","tools_docs"],
+            [4205,"doc_call_script","Call Script","tools_docs"],
+            [4206,"doc_text_template","Text Template","tools_docs"],
+            [5001,"action_recruit","Recruit","actions"],
+            [5002,"action_onboard","Onboard","actions"],
+            [5003,"action_orient","Orient","actions"],
+            [5004,"action_train","Train","actions"],
+            [5005,"action_engage","Engage","actions"],
+            [5006,"action_prospect","Prospect","actions"],
+            [5007,"action_cultivate","Cultivate","actions"],
+            [5008,"action_solicit","Solicit","actions"],
+            [5009,"action_close","Close","actions"],
+            [5010,"action_follow_up","Follow-Up","actions"],
+            [5011,"action_track","Track","actions"],
+            [5012,"action_coordinate","Coordinate","actions"],
+            [5013,"action_steward","Steward","actions"],
+            [5014,"action_recognize","Recognize","actions"],
+            [5015,"action_communicate","Communicate","actions"],
+            [5016,"action_plan","Plan","actions"],
+            [5017,"action_convene","Convene","actions"],
+            [6001,"org_accountability","Accountability","org_tags"],
+            [6002,"org_ownership","Ownership","org_tags"],
+            [6003,"org_decision_making","Decision-Making","org_tags"],
+            [6004,"org_governance","Governance","org_tags"],
+            [6005,"org_incentives","Incentives","org_tags"],
+            [6006,"org_motivation","Motivation","org_tags"],
+            [6007,"org_communication","Communication","org_tags"],
+            [6008,"org_reporting","Reporting","org_tags"],
+            [6009,"org_data_hygiene","Data Hygiene","org_tags"],
+            [6010,"org_workflow","Workflow","org_tags"],
+            [6011,"org_process","Process","org_tags"],
+            [6012,"org_resource_allocation","Resource Allocation","org_tags"],
+            [6013,"org_capacity_bandwidth","Capacity / Bandwidth","org_tags"],
+            [6014,"org_time_scheduling","Time / Scheduling","org_tags"],
+            [6015,"org_relationship_management","Relationship Management","org_tags"],
+            [7001,"catch_miscellaneous","miscellaneous","catch_all"],
+            [7002,"catch_irrelevant","irrelevant","catch_all"]
+        ];
+
+        let seeded = 0;
+        for (const [id, key, name, cat] of tagDefs) {
+            try {
+                const safeName = name.replace(/'/g, "''");
+                await DBHelper.query(APP_NAME,
+                    `INSERT IGNORE INTO tags (tag_id, tag_key, tag_name, category_key, is_canonical)
+                     VALUES (${id}, '${key}', '${safeName}', '${cat}', 1)`
+                );
+                seeded++;
+            } catch(_) { /* ignore individual duplicates */ }
+        }
+
+        setDot("dot-tags", "green", `Tag library — seeded ${seeded} tags ✓`);
+        log("ok", "TAGS", `Seeded ${seeded} canonical tags.`);
+    }
+
+    /* ══════════════════════════════════════════════════════
+       STATS
+    ══════════════════════════════════════════════════════ */
+    window.refreshStats = async function() {
+        try {
+            const res = await DBHelper.query(APP_NAME, `
+                SELECT review_status, COUNT(*) AS cnt
+                FROM sentences
+                GROUP BY review_status
+            `);
+            const rows = res?.rows || [];
+            const counts = {};
+            rows.forEach(r => { counts[r.review_status] = parseInt(r.cnt); });
+
+            const total      = Object.values(counts).reduce((a,b) => a+b, 0);
+            const finalized  = counts["finalized"] || 0;
+            const review     = counts["needs_human_review"] || 0;
+            const unproc     = (counts["unprocessed"] || 0) + (counts["queued"] || 0) + (counts["processed"] || 0);
+            const errors     = counts["error"] || 0;
+            const done       = finalized + review;
+            const pct        = total > 0 ? Math.round((done / total) * 100) : 0;
+
+            setText("statTotal",       total);
+            setText("statUnprocessed", unproc);
+            setText("statFinalized",   finalized);
+            setText("statReview",      review);
+            setText("pctLabel",        pct + "%");
+            document.getElementById("coveragePct").style.width = pct + "%";
+
+            // Coverage tab
+            setText("cov-total",       total);
+            setText("cov-finalized",   finalized);
+            setText("cov-review",      review);
+            setText("cov-unprocessed", unproc);
+            setText("cov-error",       errors);
+            setText("cov-pct",         pct + "%");
+
+            // Enable start if there are unprocessed sentences
+            const canStart = unproc > 0 && !isRunning;
+            document.getElementById("btnStart").disabled = !canStart;
+
+            await loadTagFrequency();
+            await loadSentimentDistribution();
+        } catch (e) {
+            log("warn", "STATS", "Could not load stats: " + e.message);
+        }
+    };
+
+    async function loadTagFrequency() {
+        try {
+            const res = await DBHelper.query(APP_NAME, `
+                SELECT t.tag_key, t.tag_name, t.category_key, COUNT(*) AS cnt
+                FROM sentence_tags st
+                JOIN tags t ON st.tag_id = t.tag_id
+                GROUP BY t.tag_key, t.tag_name, t.category_key
+                ORDER BY cnt DESC
+                LIMIT 30
+            `);
+            const rows = res?.rows || [];
+            if (rows.length === 0) return;
+
+            const maxCnt = Math.max(...rows.map(r => parseInt(r.cnt)));
+            let html = `<table class="tag-freq-table">
+                <thead><tr><th>Tag</th><th>Category</th><th>Count</th><th style="width:200px">Distribution</th></tr></thead>
+                <tbody>`;
+            for (const r of rows) {
+                const cat = r.category_key || "other";
+                const barW = Math.round((parseInt(r.cnt) / maxCnt) * 180);
+                html += `<tr>
+                    <td><span class="tag-chip cat-${cat}">${r.tag_key}</span></td>
+                    <td style="color:var(--muted)">${cat}</td>
+                    <td style="font-family:var(--mono)">${r.cnt}</td>
+                    <td><span class="tag-freq-bar" style="width:${barW}px"></span></td>
+                </tr>`;
+            }
+            html += "</tbody></table>";
+            document.getElementById("tagFreqArea").innerHTML = html;
+        } catch(_) {}
+    }
+
+    async function loadSentimentDistribution() {
+        try {
+            const res = await DBHelper.query(APP_NAME, `
+                SELECT sentiment_score, COUNT(*) AS cnt
+                FROM sentences
+                WHERE review_status = 'finalized'
+                GROUP BY sentiment_score
+                ORDER BY sentiment_score
+            `);
+            const rows = res?.rows || [];
+            if (rows.length === 0) return;
+
+            let html = "";
+            for (const r of rows) {
+                const score = parseInt(r.sentiment_score);
+                const color = score < 0 ? "var(--danger)" : score > 0 ? "var(--accent)" : "var(--muted)";
+                const label = SENTIMENT_LABELS[String(score)] || score;
+                html += `<div class="cov-card" style="min-width:100px;">
+                    <div class="stat-num" style="color:${color}">${r.cnt}</div>
+                    <div class="cov-lbl">${label} (${score > 0 ? '+':''}${score})</div>
+                </div>`;
+            }
+            document.getElementById("sentimentDistArea").innerHTML = html;
+        } catch(_) {}
+    }
+
+    /* ══════════════════════════════════════════════════════
+       MAIN PROCESSING LOOP
+    ══════════════════════════════════════════════════════ */
+    window.startProcessing = async function() {
+        if (isRunning) return;
+        isRunning = true;
+        shouldStop = false;
+        document.getElementById("btnStart").disabled = true;
+        document.getElementById("btnStop").disabled = false;
+
+        switchTab("log");
+
+        const batchSize = parseInt(document.getElementById("batchSize").value) || 10;
+        const model = document.getElementById("modelSelect").value;
+
+        log("ok", "START", `Processing started. Batch=${batchSize}, Model=${model}`);
+
+        while (!shouldStop) {
+            // Load next batch of unprocessed sentences
+            let res;
+            try {
+                res = await DBHelper.query(APP_NAME, `
+                    SELECT sentence_id, raw_text, clean_text, timestamp_block, speaker, interview_id
+                    FROM sentences
+                    WHERE review_status IN ('unprocessed','queued','processed')
+                    LIMIT ${batchSize}
+                `);
+            } catch (e) {
+                log("err", "LOAD", "DB query failed: " + e.message);
+                break;
+            }
+
+            const batch = res?.rows || [];
+            if (batch.length === 0) {
+                log("ok", "DONE", "All sentences processed. Queue empty.");
+                break;
+            }
+
+            // Mark batch as queued to prevent double-processing
+            const batchIds = batch.map(r => `'${r.sentence_id.replace(/'/g,"''")}'`).join(",");
+            try {
+                await DBHelper.query(APP_NAME,
+                    `UPDATE sentences SET review_status='queued' WHERE sentence_id IN (${batchIds})`
+                );
+            } catch(e) {
+                log("warn", "LOCK", "Could not lock batch: " + e.message);
+            }
+
+            log("info", "BATCH", `Processing ${batch.length} sentences…`);
+            await processBatch(batch, model);
+            await refreshStats();
+
+            // Brief pause between batches
+            await sleep(600);
+        }
+
+        isRunning = false;
+        shouldStop = false;
+        document.getElementById("btnStart").disabled = false;
+        document.getElementById("btnStop").disabled = true;
+        log("ok", "FINISH", "Processing loop ended.");
+        await refreshStats();
+    };
+
+    window.stopProcessing = function() {
+        shouldStop = true;
+        log("warn", "STOP", "Stop requested — finishing current batch…");
+        document.getElementById("btnStop").disabled = true;
+    };
+
+    /* ── Build AI Prompt ── */
+    function buildPrompt(batch) {
+        const tagList = Object.keys(TAG_LIBRARY);
+        const batchText = batch.map(s =>
+            `{"sentence_id":"${s.sentence_id}","text":${JSON.stringify(s.clean_text || s.raw_text)},"timestamp":"${s.timestamp_block || ''}","speaker":"${s.speaker || ''}"}`
+        ).join("\n");
+
+        return `You are a strict sentence classifier for the "Heart Walk" research analysis system.
+
+== HEART WALK SYSTEMS OVERVIEW ==
+${HW_SYSTEMS_OVERVIEW}
+
+== TASK ==
+For each sentence below, output a JSON object with:
+1. One or more canonical tags from the ALLOWED TAGS list below.
+   - EXCEPTION: "catch_miscellaneous" and "catch_irrelevant" are EXCLUSIVE — if used, they must be the ONLY tag.
+   - "catch_irrelevant" = not relevant to Heart Walk operations at all.
+   - "catch_miscellaneous" = relevant to Heart Walk but no specific canonical tag fits. Prefer specific tags.
+2. sentiment_score: integer from -2 (strong negative) to +2 (strong positive), 0 = neutral.
+3. Boolean flags (true/false each):
+   - is_problem: sentence describes a complaint or existing problem
+   - is_solution: sentence describes an idea for improvement or solution
+   - is_explanation: sentence provides context or explains how something works
+   - is_workaround: sentence describes a workaround for something broken
+   RULE: If tag is "catch_irrelevant", ALL four flags must be false.
+
+== ALLOWED TAGS (canonical tag_keys only — no others permitted) ==
+${tagList.map(k => `  "${k}"`).join(",\n")}
+
+== INPUT SENTENCES ==
+${batchText}
+
+== REQUIRED OUTPUT FORMAT ==
+Return a JSON array ONLY — no commentary, no markdown fences. Array length must equal input count.
+[
+  {
+    "sentence_id": "...",
+    "tags": ["tag_key_1", "tag_key_2"],
+    "sentiment_score": 0,
+    "is_problem": false,
+    "is_solution": false,
+    "is_explanation": true,
+    "is_workaround": false
+  }
+]
+
+== SELF-CHECK BEFORE OUTPUT ==
+1. Verify every input sentence_id appears exactly once in your output.
+2. Verify every tag_key in "tags" exists in the ALLOWED TAGS list.
+3. Verify catch_irrelevant/catch_miscellaneous are never combined with other tags.
+4. Verify catch_irrelevant sentences have all boolean flags set to false.`;
+    }
+
+    /* ── Process One Batch ── */
+    async function processBatch(batch, model) {
+        const prompt = buildPrompt(batch);
+        let rawOutput = null;
+
+        try {
+            rawOutput = await askAI(prompt, model, { temperature: 0.1 });
+        } catch (e) {
+            log("err", "AI", "AI call failed: " + e.message);
+            await markBatchStatus(batch, "error");
+            return;
+        }
+
+        // Parse JSON from response
+        let results = null;
+        try {
+            const match = rawOutput.match(/\[[\s\S]*\]/);
+            if (!match) throw new Error("No JSON array found in response");
+            results = JSON.parse(match[0]);
+        } catch (e) {
+            log("err", "PARSE", "JSON parse failed: " + e.message);
+            log("warn", "PARSE", "Raw: " + rawOutput.substring(0, 200));
+            await markBatchStatus(batch, "error");
+            return;
+        }
+
+        // Log AI run for audit
+        try {
+            const inputIds = JSON.stringify(batch.map(s => s.sentence_id));
+            const safeOutput = (rawOutput || "").substring(0, 5000).replace(/'/g, "''");
+            const safeInput = inputIds.replace(/'/g, "''");
+            await DBHelper.query(APP_NAME, `
+                INSERT INTO ai_runs (purpose, model_name, batch_size, input_ids, output_json, status)
+                VALUES ('tag_sentences', '${model}', ${batch.length}, '${safeInput}', '${safeOutput}', 'completed')
+            `);
+        } catch(_) {}
+
+        // Validate and save each result
+        const inputIdSet = new Set(batch.map(s => s.sentence_id));
+        const outputIdSet = new Set();
+        let savedOk = 0;
+        let savedReview = 0;
+        let savedError = 0;
+
+        for (const result of results) {
+            const sid = result.sentence_id;
+            if (!sid) { log("warn", "VAL", "Result missing sentence_id — skipping"); continue; }
+            if (!inputIdSet.has(sid)) { log("warn", "VAL", `Unknown sentence_id in response: ${sid}`); continue; }
+            if (outputIdSet.has(sid)) { log("warn", "VAL", `Duplicate sentence_id in response: ${sid} — skipping duplicate`); continue; }
+            outputIdSet.add(sid);
+
+            const validationIssues = validateResult(result);
+
+            if (validationIssues.length > 0) {
+                log("warn", "VAL", `${sid}: ${validationIssues.join("; ")} → needs_human_review`);
+                await saveSentenceResult(result, "needs_human_review");
+                savedReview++;
+            } else {
+                await saveSentenceResult(result, "finalized");
+                const tagStr = result.tags.join(", ");
+                log("ok", "SAVED", `${sid} → [${tagStr}] senti=${result.sentiment_score}`);
+                savedOk++;
+            }
+        }
+
+        // Mark any sentences not returned as error
+        for (const s of batch) {
+            if (!outputIdSet.has(s.sentence_id)) {
+                log("err", "MISSING", `${s.sentence_id} missing from AI response → error`);
+                await DBHelper.query(APP_NAME,
+                    `UPDATE sentences SET review_status='error' WHERE sentence_id='${s.sentence_id.replace(/'/g,"''")}'`
+                );
+                savedError++;
+            }
+        }
+
+        log("info", "BATCH", `Batch done: ${savedOk} finalized, ${savedReview} needs review, ${savedError} errors`);
+    }
+
+    /* ── Validate One AI Result ── */
+    function validateResult(r) {
+        const issues = [];
+
+        // Tags present
+        if (!Array.isArray(r.tags) || r.tags.length === 0) {
+            issues.push("no tags returned");
+            return issues;
+        }
+
+        // All tags must be canonical
+        const badTags = r.tags.filter(t => !VALID_TAG_KEYS.has(t));
+        if (badTags.length > 0) issues.push(`invalid tags: ${badTags.join(", ")}`);
+
+        // Catch-all exclusivity
+        const hasMisc = r.tags.includes("catch_miscellaneous");
+        const hasIrr  = r.tags.includes("catch_irrelevant");
+        if ((hasMisc || hasIrr) && r.tags.length > 1) {
+            issues.push("catch_all tag must be exclusive (no other tags)");
+        }
+        if (hasMisc && hasIrr) {
+            issues.push("catch_miscellaneous and catch_irrelevant cannot both be assigned");
+        }
+
+        // Irrelevant must have all flags false
+        if (hasIrr) {
+            if (r.is_problem || r.is_solution || r.is_explanation || r.is_workaround) {
+                issues.push("catch_irrelevant requires all boolean flags = false");
+            }
+        }
+
+        // Sentiment range
+        const score = parseInt(r.sentiment_score);
+        if (isNaN(score) || score < -2 || score > 2) {
+            issues.push(`invalid sentiment_score: ${r.sentiment_score}`);
+        }
+
+        return issues;
+    }
+
+    /* ── Save One Sentence Result ── */
+    async function saveSentenceResult(result, status) {
+        const sid = result.sentence_id.replace(/'/g, "''");
+        const score = Math.max(-2, Math.min(2, parseInt(result.sentiment_score) || 0));
+        const isProblem  = result.is_problem  ? 1 : 0;
+        const isSolution = result.is_solution ? 1 : 0;
+        const isExpl     = result.is_explanation ? 1 : 0;
+        const isWork     = result.is_workaround ? 1 : 0;
+
+        try {
+            // Update sentence row
+            await DBHelper.query(APP_NAME, `
+                UPDATE sentences
+                SET sentiment_score = ${score},
+                    is_problem      = ${isProblem},
+                    is_solution     = ${isSolution},
+                    is_explanation  = ${isExpl},
+                    is_workaround   = ${isWork},
+                    review_status   = '${status}'
+                WHERE sentence_id = '${sid}'
+            `);
+
+            // Remove old tags for this sentence (idempotent re-run support)
+            await DBHelper.query(APP_NAME,
+                `DELETE FROM sentence_tags WHERE sentence_id = '${sid}'`
+            );
+
+            // Insert new tags
+            for (const tagKey of (result.tags || [])) {
+                if (!VALID_TAG_KEYS.has(tagKey)) continue;
+                try {
+                    const safeKey = tagKey.replace(/'/g, "''");
+                    await DBHelper.query(APP_NAME, `
+                        INSERT INTO sentence_tags (sentence_id, tag_id)
+                        SELECT '${sid}', tag_id FROM tags WHERE tag_key = '${safeKey}'
+                    `);
+                } catch(_) {}
+            }
+        } catch (e) {
+            log("err", "SAVE", `Failed to save ${sid}: ${e.message}`);
+        }
+    }
+
+    /* ── Mark batch with error status ── */
+    async function markBatchStatus(batch, status) {
+        for (const s of batch) {
+            try {
+                await DBHelper.query(APP_NAME,
+                    `UPDATE sentences SET review_status='${status}' WHERE sentence_id='${s.sentence_id.replace(/'/g,"''")}'`
+                );
+            } catch(_) {}
+        }
+    }
+
+    /* ══════════════════════════════════════════════════════
+       REVIEW QUEUE
+    ══════════════════════════════════════════════════════ */
+    window.loadReviewQueue = async function() {
+        const filter = document.getElementById("filterStatus").value;
+        let where = "";
+        if (filter !== "all") where = `WHERE s.review_status = '${filter}'`;
+
+        try {
+            const res = await DBHelper.query(APP_NAME, `
+                SELECT s.sentence_id, s.raw_text, s.clean_text, s.timestamp_block, s.speaker,
+                       s.sentiment_score, s.is_problem, s.is_solution, s.is_explanation, s.is_workaround,
+                       s.review_status
+                FROM sentences s
+                ${where}
+                ORDER BY s.sentence_id
+                LIMIT 100
+            `);
+            const sentences = res?.rows || [];
+
+            // Load tags for these sentences
+            if (sentences.length === 0) {
+                document.getElementById("reviewFeed").innerHTML =
+                    `<div class="empty-state"><div class="empty-icon">✅</div><div>No sentences match this filter.</div></div>`;
+                document.getElementById("reviewBadge").textContent = 0;
+                return;
+            }
+
+            const sidList = sentences.map(s => `'${s.sentence_id.replace(/'/g,"''")}'`).join(",");
+            const tagRes = await DBHelper.query(APP_NAME, `
+                SELECT st.sentence_id, t.tag_key, t.category_key
+                FROM sentence_tags st
+                JOIN tags t ON st.tag_id = t.tag_id
+                WHERE st.sentence_id IN (${sidList})
+            `);
+            const tagRows = tagRes?.rows || [];
+            const tagMap = {};
+            for (const tr of tagRows) {
+                if (!tagMap[tr.sentence_id]) tagMap[tr.sentence_id] = [];
+                tagMap[tr.sentence_id].push({ key: tr.tag_key, cat: tr.category_key });
+            }
+
+            let html = "";
+            for (const s of sentences) {
+                const tags = tagMap[s.sentence_id] || [];
+                html += renderSentenceCard(s, tags);
+            }
+            document.getElementById("reviewFeed").innerHTML = html;
+            document.getElementById("reviewBadge").textContent = sentences.length;
+        } catch (e) {
+            document.getElementById("reviewFeed").innerHTML =
+                `<div class="empty-state"><div>Error loading queue: ${e.message}</div></div>`;
+        }
+    };
+
+    function renderSentenceCard(s, tags) {
+        const status = s.review_status || "unprocessed";
+        const text = s.clean_text || s.raw_text || "";
+        const score = parseInt(s.sentiment_score) || 0;
+        const sid = s.sentence_id;
+
+        const pillClass = `pill-${status}`;
+        const tagChips = tags.map(t =>
+            `<span class="tag-chip cat-${t.cat || 'other'}">${t.key}</span>`
+        ).join("") || `<span style="color:var(--muted); font-size:11px;">No tags yet</span>`;
+
+        const flags = ["is_problem","is_solution","is_explanation","is_workaround"];
+        const flagChips = flags.map(f => {
+            const on = parseInt(s[f]) === 1;
+            return `<span class="flag-chip ${on ? 'flag-on' : 'flag-off'}">${f.replace('is_','')}</span>`;
+        }).join("");
+
+        // Sentiment visual (5 dots: -2 to +2)
+        const sentiBars = [-2,-1,0,1,2].map(v => {
+            let cls = "senti-dot";
+            if (v === score) {
+                cls += score < 0 ? " active-neg" : score > 0 ? " active-pos" : " active-neu";
+            }
+            return `<span class="${cls}" title="${SENTIMENT_LABELS[String(v)]}"></span>`;
+        }).join("");
+
+        // Build tag select options
+        const tagOptions = Object.keys(TAG_LIBRARY).map(k =>
+            `<option value="${k}">${k}</option>`
+        ).join("");
+
+        return `
+        <div class="sentence-card status-${status}" id="card-${sid}">
+            <div class="card-meta">
+                <span class="card-id">${sid}</span>
+                <div style="display:flex; gap:8px; align-items:center;">
+                    <span style="color:var(--muted)">${s.timestamp_block || ''}</span>
+                    ${s.speaker ? `<span style="color:var(--muted)">${s.speaker}</span>` : ""}
+                    <span class="status-pill ${pillClass}">${status}</span>
+                </div>
+            </div>
+            <div class="card-text">"${escHtml(text.substring(0, 280))}${text.length > 280 ? '…' : ''}"</div>
+            <div class="card-tags">${tagChips}</div>
+            <div class="card-flags">${flagChips}</div>
+            <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+                <span style="font-size:10px; color:var(--muted);">SENTIMENT</span>
+                <div class="senti-bar">${sentiBars}</div>
+                <span style="font-size:11px; color:var(--muted); font-family:var(--mono);">${score > 0 ? '+' : ''}${score}</span>
+            </div>
+
+            <details>
+                <summary style="cursor:pointer; font-size:11px; color:var(--muted); user-select:none;">✏ Manual Edit</summary>
+                <div class="card-edit-area">
+                    <div class="edit-row">
+                        <label>Add Tag</label>
+                        <select id="addTag-${sid}" style="flex:1; min-width:200px;">
+                            <option value="">— select tag —</option>
+                            ${tagOptions}
+                        </select>
+                        <button class="btn-ghost" style="width:auto; padding:7px 12px; margin:0;"
+                            onclick="addTagManual('${sid}')">Add</button>
+                    </div>
+                    <div class="edit-row">
+                        <label>Sentiment</label>
+                        <select id="setSenti-${sid}" style="flex:1;">
+                            ${[-2,-1,0,1,2].map(v => `<option value="${v}" ${v===score?'selected':''}>${v > 0 ? '+' : ''}${v} — ${SENTIMENT_LABELS[String(v)]}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="edit-row">
+                        <label>Flags</label>
+                        <div class="checkbox-group">
+                            <label><input type="checkbox" id="fp-${sid}" ${parseInt(s.is_problem)   ? 'checked' : ''}>problem</label>
+                            <label><input type="checkbox" id="fs-${sid}" ${parseInt(s.is_solution)  ? 'checked' : ''}>solution</label>
+                            <label><input type="checkbox" id="fe-${sid}" ${parseInt(s.is_explanation)? 'checked' : ''}>explanation</label>
+                            <label><input type="checkbox" id="fw-${sid}" ${parseInt(s.is_workaround) ? 'checked' : ''}>workaround</label>
+                        </div>
+                    </div>
+                    <div style="display:flex; gap:8px;">
+                        <button class="btn-primary" style="width:auto; padding:7px 14px; margin:0;"
+                            onclick="saveManualEdit('${sid}')">💾 Save Changes</button>
+                        <button class="btn-ghost" style="width:auto; padding:7px 12px; margin:0;"
+                            onclick="clearTagsManual('${sid}')">🗑 Clear Tags</button>
+                    </div>
+                </div>
+            </details>
+        </div>`;
+    }
+
+    /* ── Manual Edit Handlers ── */
+    window.addTagManual = async function(sid) {
+        const key = document.getElementById(`addTag-${sid}`)?.value;
+        if (!key) return;
+        const safeSid = sid.replace(/'/g, "''");
+        try {
+            await DBHelper.query(APP_NAME, `
+                INSERT IGNORE INTO sentence_tags (sentence_id, tag_id)
+                SELECT '${safeSid}', tag_id FROM tags WHERE tag_key = '${key}'
+            `);
+            log("ok", "EDIT", `Added tag '${key}' to ${sid}`);
+            loadReviewQueue();
+        } catch(e) { log("err", "EDIT", e.message); }
+    };
+
+    window.clearTagsManual = async function(sid) {
+        if (!confirm(`Clear all tags from ${sid}?`)) return;
+        const safeSid = sid.replace(/'/g, "''");
+        try {
+            await DBHelper.query(APP_NAME,
+                `DELETE FROM sentence_tags WHERE sentence_id = '${safeSid}'`
+            );
+            log("warn", "EDIT", `Cleared tags for ${sid}`);
+            loadReviewQueue();
+        } catch(e) { log("err", "EDIT", e.message); }
+    };
+
+    window.saveManualEdit = async function(sid) {
+        const safeSid = sid.replace(/'/g, "''");
+        const senti   = parseInt(document.getElementById(`setSenti-${sid}`)?.value) || 0;
+        const prob    = document.getElementById(`fp-${sid}`)?.checked ? 1 : 0;
+        const sol     = document.getElementById(`fs-${sid}`)?.checked ? 1 : 0;
+        const expl    = document.getElementById(`fe-${sid}`)?.checked ? 1 : 0;
+        const work    = document.getElementById(`fw-${sid}`)?.checked ? 1 : 0;
+
+        try {
+            await DBHelper.query(APP_NAME, `
+                UPDATE sentences
+                SET sentiment_score = ${senti},
+                    is_problem      = ${prob},
+                    is_solution     = ${sol},
+                    is_explanation  = ${expl},
+                    is_workaround   = ${work},
+                    review_status   = 'finalized'
+                WHERE sentence_id = '${safeSid}'
+            `);
+            log("ok", "EDIT", `Saved manual edits for ${sid} → finalized`);
+            loadReviewQueue();
+            refreshStats();
+        } catch(e) { log("err", "EDIT", e.message); }
+    };
+
+    /* ══════════════════════════════════════════════════════
+       VALIDATION / SMOKE TESTS
+    ══════════════════════════════════════════════════════ */
+    window.runValidation = async function() {
+        switchTab("validation");
+        const results = [];
+        let passed = 0;
+        let failed = 0;
+
+        async function test(name, fn) {
+            try {
+                const { ok, detail } = await fn();
+                results.push({ name, ok, detail });
+                ok ? passed++ : failed++;
+            } catch(e) {
+                results.push({ name, ok: false, detail: e.message });
+                failed++;
+            }
+        }
+
+        // Test 1: DB connectivity
+        await test("DB Connectivity", async () => {
+            const res = await DBHelper.query(APP_NAME, "SELECT 1 AS ping");
+            return { ok: res?.rows?.[0]?.ping == 1, detail: "SELECT 1" };
+        });
+
+        // Test 2: Tag library loaded
+        await test("Tag Library Seeded", async () => {
+            const res = await DBHelper.query(APP_NAME, "SELECT COUNT(*) AS cnt FROM tags WHERE is_canonical = 1");
+            const cnt = parseInt(res?.rows?.[0]?.cnt || 0);
+            return { ok: cnt >= 74, detail: `${cnt} canonical tags in DB (expected 74+)` };
+        });
+
+        // Test 3: Tag validity — no sentence_tags reference invalid tag_ids
+        await test("Tag Validity (all tags canonical)", async () => {
+            const res = await DBHelper.query(APP_NAME, `
+                SELECT COUNT(*) AS cnt
+                FROM sentence_tags st
+                WHERE NOT EXISTS (SELECT 1 FROM tags t WHERE t.tag_id = st.tag_id AND t.is_canonical = 1)
+            `);
+            const cnt = parseInt(res?.rows?.[0]?.cnt || 0);
+            return { ok: cnt === 0, detail: cnt === 0 ? "No invalid tag references found" : `${cnt} sentence_tags reference non-canonical tag_ids` };
+        });
+
+        // Test 4: Completeness — every sentence has at least 1 tag (finalized ones)
+        await test("Completeness (finalized → has tags)", async () => {
+            const res = await DBHelper.query(APP_NAME, `
+                SELECT COUNT(*) AS cnt
+                FROM sentences s
+                WHERE s.review_status = 'finalized'
+                AND NOT EXISTS (SELECT 1 FROM sentence_tags st WHERE st.sentence_id = s.sentence_id)
+            `);
+            const cnt = parseInt(res?.rows?.[0]?.cnt || 0);
+            return { ok: cnt === 0, detail: cnt === 0 ? "All finalized sentences have ≥1 tag" : `${cnt} finalized sentences have no tags` };
+        });
+
+        // Test 5: catch_irrelevant sentences have all flags = false
+        await test("catch_irrelevant → all flags false", async () => {
+            const res = await DBHelper.query(APP_NAME, `
+                SELECT COUNT(*) AS cnt
+                FROM sentences s
+                JOIN sentence_tags st ON st.sentence_id = s.sentence_id
+                JOIN tags t ON t.tag_id = st.tag_id
+                WHERE t.tag_key = 'catch_irrelevant'
+                AND (s.is_problem = 1 OR s.is_solution = 1 OR s.is_explanation = 1 OR s.is_workaround = 1)
+            `);
+            const cnt = parseInt(res?.rows?.[0]?.cnt || 0);
+            return { ok: cnt === 0, detail: cnt === 0 ? "All catch_irrelevant sentences have flags=false" : `${cnt} catch_irrelevant sentences have improper boolean flags` };
+        });
+
+        // Test 6: catch_all exclusivity
+        await test("catch_all Exclusivity", async () => {
+            const res = await DBHelper.query(APP_NAME, `
+                SELECT COUNT(DISTINCT st.sentence_id) AS cnt
+                FROM sentence_tags st
+                JOIN tags t ON t.tag_id = st.tag_id
+                WHERE t.tag_key IN ('catch_miscellaneous','catch_irrelevant')
+                AND (
+                    SELECT COUNT(*) FROM sentence_tags st2
+                    WHERE st2.sentence_id = st.sentence_id
+                ) > 1
+            `);
+            const cnt = parseInt(res?.rows?.[0]?.cnt || 0);
+            return { ok: cnt === 0, detail: cnt === 0 ? "No catch_all violations found" : `${cnt} sentences have catch_all + other tags (violation)` };
+        });
+
+        // Test 7: Sentiment range
+        await test("Sentiment Score Range (-2 to +2)", async () => {
+            const res = await DBHelper.query(APP_NAME, `
+                SELECT COUNT(*) AS cnt FROM sentences
+                WHERE sentiment_score < -2 OR sentiment_score > 2
+            `);
+            const cnt = parseInt(res?.rows?.[0]?.cnt || 0);
+            return { ok: cnt === 0, detail: cnt === 0 ? "All sentiment scores in valid range" : `${cnt} out-of-range sentiment scores` };
+        });
+
+        // Test 8: Output == Input (coverage)
+        await test("Coverage (output count == input count)", async () => {
+            const total = await DBHelper.query(APP_NAME, "SELECT COUNT(*) AS cnt FROM sentences");
+            const done  = await DBHelper.query(APP_NAME, "SELECT COUNT(*) AS cnt FROM sentences WHERE review_status IN ('finalized','needs_human_review')");
+            const t = parseInt(total?.rows?.[0]?.cnt || 0);
+            const d = parseInt(done?.rows?.[0]?.cnt || 0);
+            const rem = t - d;
+            return {
+                ok: rem === 0,
+                detail: rem === 0
+                    ? `All ${t} sentences are finalized or in review queue`
+                    : `${rem} of ${t} sentences still unprocessed`
+            };
+        });
+
+        // Render results
+        let html = `<div style="margin-bottom:16px; font-size:13px; color:var(--muted);">
+            Results: <span style="color:var(--accent)">${passed} passed</span>
+            ${failed > 0 ? ` / <span style="color:var(--danger)">${failed} failed</span>` : ''}
+        </div>`;
+        for (const r of results) {
+            const icon = r.ok ? "✅" : "❌";
+            const bg   = r.ok ? "var(--accent-dim)" : "rgba(218,54,51,0.1)";
+            const bc   = r.ok ? "var(--accent)" : "var(--danger)";
+            html += `<div style="background:${bg}; border:1px solid ${bc}; border-radius:6px; padding:12px; margin-bottom:8px;">
+                <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+                    <span>${icon}</span>
+                    <strong style="font-size:12px;">${r.name}</strong>
+                </div>
+                <div style="font-size:11px; color:var(--muted); font-family:var(--mono);">${r.detail}</div>
+            </div>`;
+        }
+
+        document.getElementById("valResults").innerHTML = html;
+        document.getElementById("valBadge").textContent = failed > 0 ? `${failed} ❌` : "✓";
+
+        log(failed > 0 ? "warn" : "ok", "SMOKE", `Tests: ${passed} passed, ${failed} failed`);
+    };
+
+    /* ══════════════════════════════════════════════════════
+       DANGER ZONE
+    ══════════════════════════════════════════════════════ */
+    window.resetAllCoding = async function() {
+        if (!confirm("Reset ALL sentence coding?\n\nThis will:\n• Delete all sentence_tags\n• Reset all sentiment scores to 0\n• Reset all boolean flags to false\n• Reset all review_status to 'unprocessed'\n\nThis CANNOT be undone.")) return;
+        if (!confirm("Are you absolutely sure? This will erase all AI coding results.")) return;
+
+        try {
+            await DBHelper.query(APP_NAME, "DELETE FROM sentence_tags");
+            await DBHelper.query(APP_NAME, `
+                UPDATE sentences
+                SET sentiment_score=0, is_problem=0, is_solution=0,
+                    is_explanation=0, is_workaround=0, review_status='unprocessed'
+            `);
+            log("warn", "RESET", "All coding reset. Sentences set back to unprocessed.");
+            await refreshStats();
+        } catch(e) { log("err", "RESET", e.message); }
+    };
+
+    /* ══════════════════════════════════════════════════════
+       UI HELPERS
+    ══════════════════════════════════════════════════════ */
+    window.switchTab = function(tabId) {
+        document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === tabId));
+        document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.id === "tab-" + tabId));
+        if (tabId === "review")   loadReviewQueue();
+        if (tabId === "coverage") refreshStats();
+    };
+
+    function log(level, tag, msg) {
+        logCount++;
+        document.getElementById("logBadge").textContent = logCount;
+
+        const feed = document.getElementById("logFeed");
+        // Remove empty state
+        const empty = feed.querySelector(".empty-state");
+        if (empty) empty.remove();
+
+        const now = new Date();
+        const ts = now.toTimeString().substring(0,8);
+        const levelClass = {
+            ok: "log-level-ok", err: "log-level-err",
+            warn: "log-level-warn", info: "log-level-info"
+        }[level] || "log-level-info";
+        const levelLabel = { ok:"  OK", err:" ERR", warn:"WARN", info:"INFO" }[level] || "INFO";
+
+        const el = document.createElement("div");
+        el.className = "log-entry";
+        el.innerHTML = `<span class="log-time">${ts}</span><span class="${levelClass}">[${levelLabel}]</span><span style="color:var(--warning); font-family:var(--mono); min-width:60px;">${tag}</span><span class="log-msg">${escHtml(msg)}</span>`;
+
+        feed.insertBefore(el, feed.firstChild);
+
+        // Cap log at 500 entries
+        while (feed.children.length > 500) feed.removeChild(feed.lastChild);
+    }
+
+    function setText(id, val) {
+        const el = document.getElementById(id);
+        if (el) el.textContent = val;
+    }
+
+    function setDot(dotId, color, statusText) {
+        const dot = document.getElementById(dotId);
+        if (!dot) return;
+        dot.className = "status-dot dot-" + color;
+        const parent = dot.parentElement;
+        if (parent) parent.textContent = "";
+        if (dot && parent) {
+            parent.appendChild(dot);
+            parent.appendChild(document.createTextNode(" " + statusText));
+        }
+    }
+
+    function escHtml(s) {
+        return String(s)
+            .replace(/&/g,"&amp;")
+            .replace(/</g,"&lt;")
+            .replace(/>/g,"&gt;")
+            .replace(/"/g,"&quot;");
+    }
+
+    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+    /* ══════════════════════════════════════════════════════
+       BOOT
+    ══════════════════════════════════════════════════════ */
+    init();
+
+</script>
+</body>
+</html>
