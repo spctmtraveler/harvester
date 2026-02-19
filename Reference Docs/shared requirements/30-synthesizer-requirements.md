@@ -6,6 +6,19 @@ Source: `Reference Docs/requirements.md` (v3.1)
 
 Extract concise insights from coded semantic blocks and preserve evidence linkage.
 
+## Implementation Status
+
+Progress: **8/8 complete (100%)**
+
+- [x] Ingests coded semantic block rows from `Sentence` + `SentenceTag`.
+- [x] Creates `Insight` rows with concise summaries.
+- [x] Creates `InsightSentence` evidence links.
+- [x] Stores `quote_rank` (0..3) for evidence quality.
+- [x] Stores `support_role` for evidence semantics.
+- [x] Computes/stores dominant sentiment from supporting blocks.
+- [x] Enforces evidence-backed insights (no orphan insights).
+- [x] Prevents non-canonical topic invention by grounding on supporting block tags.
+
 ## Inputs
 
 - Coded semantic block rows in `Sentence` + `SentenceTag`

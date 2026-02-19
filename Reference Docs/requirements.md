@@ -1,10 +1,19 @@
 # HWIE Requirements v3.1 — Zero‑Loss Relational Evidence Engine (SQL DB)
 
+## Current Implementation Snapshot (2026-02-18)
+
+- [x] Job 1 Gatekeeper implemented (semantic block ingest + stable IDs + reset control)
+- [x] Job 2 Analyst implemented (canonical coding + explanation requirement + editable prompt template)
+- [x] Job 3 Synthesizer implemented (insight extraction + evidence links + editable prompt template)
+- [ ] Job 4 Reporter implementation pending
+
+See `Reference Docs/shared requirements/README.md` for per-app and overall completion percentages.
+
 ## North Star ⭐
 
 **Zero‑Loss, Fully Traceable Synthesis.**
 
-Transform raw interview transcripts into a rigorous research output where **every insight, claim, and recommendation is traceable to specific, timestamped source sentences**.
+Transform raw interview transcripts into a rigorous research output where **every insight, claim, and recommendation is traceable to specific, timestamped source semantic blocks**.
 
 We are not building a summarizer. We are building an **evidence database**.
 
@@ -14,13 +23,13 @@ We are not building a summarizer. We are building an **evidence database**.
 
 1. **Zero Loss / Full Coverage**
 
-* Every sentence ingested becomes a row in the database.
-* Every sentence must end in a final disposition (tagged + flagged), so nothing is silently dropped.
+* Every semantic block ingested becomes a row in the database.
+* Every semantic block must end in a final disposition (tagged + flagged), so nothing is silently dropped.
 
 2. **Strict Traceability**
 
-* Every insight must link to supporting sentences via a relational table.
-* The system must support click-through from an insight to the exact source sentences (with timestamps).
+* Every insight must link to supporting semantic blocks via a relational table.
+* The system must support click-through from an insight to the exact source semantic blocks (with timestamps).
 
 3. **Context-Aware**
 
@@ -52,7 +61,7 @@ Stores metadata about each interview.
 
 ### B) Sentence (Source of Truth)
 
-Stores *every* sentence as a durable record.
+Stores *every* semantic block as a durable record.
 
 * `sentence_id` (PK, e.g., `LV.001`, `SR.024.s`)
 * `interview_id` (FK)
@@ -85,21 +94,21 @@ All allowed tags live here.
 
 ### D) SentenceTag (Join)
 
-Many-to-many links between sentences and canonical tags.
+Many-to-many links between semantic blocks and canonical tags.
 
 * `sentence_id` (FK)
 * `tag_id` (FK)
 
 **Rules:**
 
-* Each sentence must have ≥1 tag.
+* Each semantic block must have ≥1 tag.
 * `catch_miscellaneous` and `catch_irrelevant` are **exclusive catch-alls**:
 
   * If either is used, it must be the **only** tag on that sentence.
 
 ### E) Insight (Derived)
 
-An insight is a concise finding derived from one or more sentences.
+An insight is a concise finding derived from one or more semantic blocks.
 
 * `insight_id` (PK)
 * `summary_plain` (one sentence, concise)
@@ -113,12 +122,12 @@ An insight is a concise finding derived from one or more sentences.
 
 Insight tagging rule:
 
-* Insights are derived from linked sentences and inherit topic semantics from their supporting sentence tags.
+* Insights are derived from linked semantic blocks and inherit topic semantics from their supporting tags.
 * Do not invent separate non-canonical insight topic labels.
 
 ### F) InsightSentence (Join + QuoteRank)
 
-Relational link between insights and supporting sentences.
+Relational link between insights and supporting semantic blocks.
 
 * `insight_id` (FK)
 * `sentence_id` (FK)
@@ -159,8 +168,8 @@ Tracks model/prompt/schema versions for each batch operation.
 
 **Coverage rule:** You cannot consider an interview “done” until:
 
-* 100% of its sentences are `finalized` (or explicitly `needs_human_review` with a queue).
-* If a sentence is tagged `catch_irrelevant`, all four booleans (`is_problem`, `is_solution`, `is_explanation`, `is_workaround`) must be `false`.
+* 100% of its semantic blocks are `finalized` (or explicitly `needs_human_review` with a queue).
+* If a block is tagged `catch_irrelevant`, all four booleans (`is_problem`, `is_solution`, `is_explanation`, `is_workaround`) must be `false`.
 
 ---
 
@@ -169,7 +178,7 @@ Tracks model/prompt/schema versions for each batch operation.
 ### Job 1: Gatekeeper (Ingest)
 
 **Input:** raw transcript/markdown.
-**Output:** sentence rows in DB.
+**Output:** semantic block rows in DB.
 
 Requirements:
 
@@ -178,47 +187,48 @@ Requirements:
 * Optionally store conservative cleanup as `clean_text`.
 * Do **not delete** filler/noise; instead, allow `irrelevant` tagging later.
 
-### Job 2: Analyst (Sentence Coding)
+### Job 2: Analyst (Semantic Block Coding)
 
-**Input:** sentence rows.
-**Output:** for every sentence:
+**Input:** semantic block rows.
+**Output:** for every semantic block:
 
 * 1+ canonical tags (or exclusive `catch_miscellaneous`/`catch_irrelevant`)
 * sentiment_score (-2..+2)
 * boolean flags (problem/solution/explanation/workaround)
+* explanation field (required, <=30 words)
 
 Hard constraints:
 
 * Use only tags from `tag` table.
-* Every sentence must be output exactly once.
+* Every semantic block must be output exactly once.
 * Self-check counts and invalid tags before commit.
 
 ### Job 3: Synthesizer (Insight Extraction)
 
-**Input:** coded sentences.
+**Input:** coded semantic blocks.
 **Output:** insights + evidence links.
 
 Requirements:
 
 * Create discrete insights with concise statements.
 * For each insight, populate `InsightSentence` links.
-* Assign `quote_rank` (0–3) per linked sentence.
-* Compute or assign `dominant_sentiment_score` from supporting sentences (math allowed).
+* Assign `quote_rank` (0–3) per linked semantic block.
+* Compute or assign `dominant_sentiment_score` from supporting semantic blocks (math allowed).
 
 ### Job 4: Reporter (Cited Output)
 
 **Input:** approved insights.
-**Output:** report/deck copy where each claim can show its supporting sentence set instantly.
+**Output:** report/deck copy where each claim can show its supporting semantic block set instantly.
 
 ---
 
 ## Sentiment Math (Guideline)
 
-Sentence sentiment uses -2..+2.
+Semantic block sentiment uses -2..+2.
 
 For an insight:
 
-* Default computation: **rounded mean** of supporting sentence sentiment scores.
+* Default computation: **rounded mean** of supporting semantic block sentiment scores.
 * Optionally weight by `quote_rank` (e.g., 0,1,2,3 weights) when computing dominant sentiment.
 
 ---
@@ -231,6 +241,8 @@ Every AI prompt must include:
 2. **Canonical Tag Dictionary** (allowed tags)
 3. Strict output schema (JSON)
 4. A required self-check section (no missing IDs, no invalid tags)
+
+Additionally, app UIs should expose visible, editable prompt/template text before and during processing.
 
 ---
 

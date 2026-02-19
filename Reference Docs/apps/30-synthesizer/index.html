@@ -51,6 +51,7 @@
 
         .app-title { font-size: 15px; font-weight: 700; color: var(--text); }
         .app-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+        .app-meta { font-size: 11px; color: var(--muted); margin-top: 4px; font-family: var(--mono); }
 
         .ctrl-section { border-bottom: 1px solid var(--border); padding-bottom: 16px; }
         .section-label {
@@ -253,6 +254,7 @@
     <div>
         <div class="app-title">🧩 Synthesizer</div>
         <div class="app-sub">Job 3 — Insight Extractor v1</div>
+        <div class="app-meta" id="appMeta">Version v1.2 · Last updated —</div>
     </div>
 
     <div class="ctrl-section">
@@ -301,6 +303,11 @@
     <div class="ctrl-section">
         <div class="section-label">Validation</div>
         <button class="btn-blue" onclick="runSmokeTests()">🔍 Run Smoke Tests</button>
+    </div>
+
+    <div class="ctrl-section">
+        <div class="section-label">Danger Zone</div>
+        <button class="btn-danger" id="btnResetSynth" title="Deletes all Synthesizer outputs: insight_sentences links, insights rows, and resets sentence_synthesis_queue statuses to unprocessed. Also clears ai_runs entries created for extract_insights. Does not delete source transcript blocks or Analyst tags. Cannot be undone.">⚠ Reset Synthesizer Outputs</button>
     </div>
 
     <div>
@@ -354,6 +361,29 @@
 <script type="module">
     import { DBHelper } from "https://happydo.xyz/api_auto_db/db_helper.js";
     import { askAI } from "https://happydo.xyz/api/ailnl.js";
+
+    const APP_VERSION = "v1.2";
+    const APP_LAST_UPDATED_UTC = "2026-02-18T20:30:00Z";
+
+    function formatLocalLastUpdated(utcIso) {
+        const dt = new Date(utcIso);
+        return dt.toLocaleString(undefined, {
+            year: "numeric",
+            month: "short",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+            timeZoneName: "short"
+        });
+    }
+
+    function renderAppMeta() {
+        const el = document.getElementById("appMeta");
+        if (!el) return;
+        el.textContent = `Version ${APP_VERSION} · Last updated ${formatLocalLastUpdated(APP_LAST_UPDATED_UTC)}`;
+    }
+
+    renderAppMeta();
 
     const APP_NAME = "HWIE_v2"; // Fresh DB; legacy stays on HWIE_v1
 
@@ -419,6 +449,38 @@ Return ONLY a JSON array (no markdown, no commentary). Each array item is one in
     let isRunning = false;
     let shouldStop = false;
     let logCount = 0;
+
+    async function runButtonAction(button, pendingLabel, action) {
+        if (!button) return action();
+        const original = button.dataset.originalText || button.textContent;
+        button.dataset.originalText = original;
+        button.disabled = true;
+        button.textContent = pendingLabel;
+        try {
+            const result = await action();
+            button.textContent = "✅ Done";
+            setTimeout(() => {
+                button.textContent = original;
+                button.disabled = false;
+            }, 1400);
+            return result;
+        } catch (e) {
+            if (e?.cancelled) {
+                button.textContent = "↩ Cancelled";
+                setTimeout(() => {
+                    button.textContent = original;
+                    button.disabled = false;
+                }, 900);
+                return;
+            }
+            button.textContent = "❌ Failed";
+            setTimeout(() => {
+                button.textContent = original;
+                button.disabled = false;
+            }, 1800);
+            throw e;
+        }
+    }
 
     async function init() {
         log("info", "BOOT", "Initializing Synthesizer v1…");
@@ -604,6 +666,55 @@ Return ONLY a JSON array (no markdown, no commentary). Each array item is one in
         shouldStop = true;
         document.getElementById("btnStop").disabled = true;
         log("warn", "STOP", "Stop requested — finishing current batch…");
+    };
+
+    globalThis.resetSynthesisOutputs = window.resetSynthesisOutputs = async function(triggerBtn = null) {
+        const btn = triggerBtn || document.getElementById("btnResetSynth");
+        return runButtonAction(btn, "⏳ Resetting...", async () => {
+            if (!confirm("Reset ALL Synthesizer outputs?\n\nThis will:\n• Delete all insight_sentences links\n• Delete all insights\n• Reset sentence_synthesis_queue statuses to 'unprocessed'\n• Delete ai_runs rows where purpose='extract_insights'\n\nThis CANNOT be undone.")) {
+                throw { cancelled: true };
+            }
+            if (!confirm("Are you absolutely sure? This will erase all synthesized insights and evidence links.")) {
+                throw { cancelled: true };
+            }
+
+            await DBHelper.query(APP_NAME, "DELETE FROM insight_sentences");
+            await DBHelper.query(APP_NAME, "DELETE FROM insights");
+            await DBHelper.query(APP_NAME, "UPDATE sentence_synthesis_queue SET status='unprocessed', last_run_id=NULL");
+            try {
+                await DBHelper.query(APP_NAME, "DELETE FROM ai_runs WHERE purpose='extract_insights'");
+            } catch (_) {}
+
+            const verifyRes = await DBHelper.query(APP_NAME, `
+                SELECT
+                    (SELECT COUNT(*) FROM insights) AS insight_cnt,
+                    (SELECT COUNT(*) FROM insight_sentences) AS link_cnt,
+                    (SELECT COUNT(*) FROM sentence_synthesis_queue WHERE status <> 'unprocessed') AS queued_or_processed,
+                    (SELECT COUNT(*) FROM sentence_synthesis_queue) AS queue_total
+            `);
+            const row = verifyRes?.rows?.[0] || {};
+            const insightCnt = parseInt(row.insight_cnt || 0);
+            const linkCnt = parseInt(row.link_cnt || 0);
+            const queueNotUnprocessed = parseInt(row.queued_or_processed || 0);
+            const queueTotal = parseInt(row.queue_total || 0);
+
+            if (insightCnt === 0 && linkCnt === 0 && queueNotUnprocessed === 0) {
+                log("ok", "RESET", `Checked DB: insights=0, insight_sentences=0, queue non-unprocessed=0 (queue total ${queueTotal}).`);
+            } else {
+                log("warn", "RESET", `Checked DB after reset: insights=${insightCnt}, links=${linkCnt}, queue non-unprocessed=${queueNotUnprocessed}, queue total=${queueTotal}.`);
+            }
+
+            await refreshStats();
+            if (document.querySelector(".tab[data-tab='insights']")?.classList.contains("active")) {
+                await loadInsights();
+            }
+        }).catch((e) => {
+            if (e?.cancelled) {
+                log("info", "RESET", "Reset cancelled by user.");
+                return;
+            }
+            log("err", "RESET", e.message);
+        });
     };
 
     async function insertRun(purpose, model, inputIds) {
@@ -1153,6 +1264,11 @@ Return ONLY a JSON array (no markdown, no commentary). Each array item is one in
     }
 
     function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+    const btnResetSynth = document.getElementById("btnResetSynth");
+    if (btnResetSynth) {
+        btnResetSynth.addEventListener("click", () => window.resetSynthesisOutputs(btnResetSynth));
+    }
 
     init();
 </script>

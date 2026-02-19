@@ -1,0 +1,2969 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Gatekeeper: Ingest & Semantic Blocks</title>
+  <style>
+    :root{
+      --bg:#0b0f14;
+      --panel:#121824;
+      --panel2:#0f1520;
+      --border:#263244;
+      --text:#e6edf3;
+      --muted:#9fb0c2;
+      --accent:#28c26b;
+      --warn:#f2b84b;
+      --danger:#ff5c73;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+    }
+
+    body{margin:0;background:radial-gradient(1100px 700px at 20% 0%, #102235 0%, transparent 55%), var(--bg);color:var(--text);font-family:var(--sans);}
+    header{padding:18px 18px 10px;border-bottom:1px solid var(--border);background:linear-gradient(180deg, rgba(18,24,36,0.92), rgba(18,24,36,0.65));position:sticky;top:0;z-index:5;backdrop-filter: blur(8px);}
+    .title{display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap;}
+    .title h1{font-size:18px;margin:0;letter-spacing:0.3px;}
+    .title .sub{color:var(--muted);font-size:12px;}
+    .title .meta{color:var(--muted);font-size:11px;font-family:var(--mono);width:100%;margin-top:2px;}
+    .bar{display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap;}
+    button{border:1px solid var(--border);background:#162133;color:var(--text);padding:9px 12px;border-radius:10px;cursor:pointer;font-weight:650;}
+    button.primary{background:linear-gradient(180deg,#1fe16f,#12b45a);border-color:rgba(0,0,0,0);color:#05110a;}
+    button.primary:disabled{opacity:.5;cursor:not-allowed;}
+    button.ghost{background:transparent;}
+    button.danger{background:transparent;border-color:rgba(255,92,115,0.45);color:#ffb7c1;}
+    input, select, textarea{border:1px solid var(--border);background:#0f1520;color:var(--text);padding:8px 10px;border-radius:10px;}
+    input[type="text"]{min-width:220px;}
+    textarea{width:100%;min-height:160px;resize:vertical;line-height:1.4;font-family:var(--mono);}
+    .wrap{display:grid;grid-template-columns: 440px 1fr;gap:14px;padding:14px;}
+    @media (max-width: 980px){.wrap{grid-template-columns:1fr;}}
+    .panel{background:rgba(18,24,36,0.9);border:1px solid var(--border);border-radius:16px;overflow:hidden;}
+    .panel h2{margin:0;padding:12px 14px;border-bottom:1px solid var(--border);font-size:13px;letter-spacing:0.3px;text-transform:uppercase;color:var(--muted);display:flex;justify-content:space-between;align-items:center;}
+    .panel .body{padding:14px;}
+    .hint{color:var(--muted);font-size:12px;line-height:1.35;}
+    .kvs{display:grid;grid-template-columns: 1fr;gap:10px;margin-top:12px;}
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+    .row label{font-size:12px;color:var(--muted);}
+    .row .pill{font-family:var(--mono);font-size:12px;padding:5px 8px;border-radius:999px;background:#0f1520;border:1px solid var(--border);color:#cfe1f7;}
+    .files{display:flex;flex-direction:column;gap:10px;margin-top:12px;}
+    .file{border:1px solid var(--border);background:rgba(15,21,32,0.9);border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:10px;}
+    .file .meta{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;}
+    .file .name{font-family:var(--mono);font-size:12px;color:#cfe1f7;word-break:break-all;}
+    .file .stats{color:var(--muted);font-size:12px;}
+    .file .grid{display:grid;grid-template-columns: 1fr 1fr;gap:10px;}
+    @media (max-width: 980px){.file .grid{grid-template-columns:1fr;}}
+    .field{display:flex;flex-direction:column;gap:6px;}
+    .field label{font-size:12px;color:var(--muted);}
+    .field input{width:100%;}
+    .log{font-family:var(--mono);font-size:12px;line-height:1.45;background:#0b1019;border-top:1px solid var(--border);padding:12px;max-height:380px;overflow:auto;}
+    .log .ok{color:#7be7a2;}
+    .log .warn{color:#ffd18a;}
+    .log .bad{color:#ff9aac;}
+    .tag{display:inline-block;font-family:var(--mono);font-size:11px;padding:2px 6px;border-radius:999px;border:1px solid var(--border);background:#0f1520;color:#cfe1f7;}
+    .gear-btn{margin-left:auto;border:none;background:transparent;padding:6px;border-radius:999px;cursor:pointer;opacity:.55;transition:opacity .15s, background .15s;}
+    .gear-btn:hover{opacity:1;background:rgba(255,255,255,0.06);}
+    .gear-btn svg{width:18px;height:18px;fill:var(--muted);}
+    .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.55);display:none;align-items:flex-start;justify-content:flex-end;padding:18px;z-index:50;}
+    .modal-backdrop.open{display:flex;}
+    .modal{width:min(520px, calc(100vw - 36px));background:rgba(18,24,36,0.98);border:1px solid var(--border);border-radius:16px;overflow:hidden;box-shadow:0 25px 70px rgba(0,0,0,0.5);}
+    .modal header{position:static;backdrop-filter:none;padding:14px 14px 10px;border-bottom:1px solid var(--border);background:linear-gradient(180deg, rgba(15,21,32,0.98), rgba(15,21,32,0.86));}
+    .modal h3{margin:0;font-size:13px;letter-spacing:0.3px;text-transform:uppercase;color:var(--muted);display:flex;align-items:center;justify-content:space-between;gap:10px;}
+    .modal .content{padding:14px;}
+    .modal .footer{display:flex;gap:10px;justify-content:flex-end;padding:12px 14px;border-top:1px solid var(--border);background:rgba(15,21,32,0.9);}
+    .modal .close{border:1px solid var(--border);background:transparent;color:var(--text);}
+    .qa-summary{font-family:var(--mono);font-size:12px;line-height:1.45;background:#0b1019;border:1px solid var(--border);padding:12px;border-radius:10px;min-height:60px;}
+    .qa-list{display:flex;flex-direction:column;gap:10px;margin-top:10px;}
+    .qa-item{border:1px solid var(--border);background:rgba(15,21,32,0.9);border-radius:10px;padding:10px;}
+    .qa-head{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;}
+    .qa-text{font-size:12px;line-height:1.45;color:#cfe1f7;white-space:pre-wrap;}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="title">
+      <h1>Gatekeeper</h1>
+      <div class="sub">Ingest transcripts into durable semantic blocks (Auto-DB, deterministic IDs)</div>
+      <div class="meta" id="appMeta">Version v1.5 · Last updated —</div>
+    </div>
+    <div class="bar">
+      <button id="btnPick" class="primary">Load Transcript Files (0 loaded)</button>
+      <input id="fileInput" type="file" multiple accept=".txt,.md" style="display:none" />
+      <button id="btnIngest" class="primary" disabled>Ingest To DB</button>
+      <button id="btnStopIngest" class="danger" disabled>Stop Ingest</button>
+      <button id="btnDryRun" class="ghost" disabled>Dry Run (No DB Writes)</button>
+      <span class="tag" id="dbTag">DB: (not initialized)</span>
+      <span class="tag" id="appTag">App: (not initialized)</span>
+      <button id="btnSettings" class="gear-btn" title="Settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M19.14,12.94c0.04-0.31,0.06-0.63,0.06-0.94s-0.02-0.63-0.06-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.62l-1.92-3.32c-0.11-0.21-0.36-0.3-0.58-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.5,2.81C14.47,2.59,14.27,2.43,14.04,2.43h-3.84c-0.23,0-0.43,0.16-0.46,0.38L9.24,5.34C8.65,5.58,8.12,5.9,7.62,6.28L5.23,5.32C5.01,5.24,4.76,5.33,4.65,5.54L2.73,8.86C2.62,9.07,2.67,9.34,2.85,9.48l2.03,1.58C4.84,11.37,4.82,11.69,4.82,12s0.02,0.63,0.06,0.94L2.85,14.52c-0.18,0.14-0.23,0.41-0.12,0.62l1.92,3.32c0.11,0.21,0.36,0.3,0.58,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.5,2.53c0.03,0.22,0.23,0.38,0.46,0.38h3.84c0.23,0,0.43-0.16,0.46-0.38l0.5-2.53c0.59-0.24,1.12-0.56,1.62-0.94l2.39,0.96c0.22,0.08,0.47-0.01,0.58-0.22l1.92-3.32c0.11-0.21,0.06-0.48-0.12-0.62L19.14,12.94z M12.12,15.5c-1.93,0-3.5-1.57-3.5-3.5s1.57-3.5,3.5-3.5s3.5,1.57,3.5,3.5S14.05,15.5,12.12,15.5z" />
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="wrap" style="grid-template-columns:1fr;">
+    <div class="panel">
+      <h2>Files <span class="tag" id="fileCount">0</span></h2>
+      <div class="body">
+        <div id="files" class="files"></div>
+        <div class="hint" id="emptyHint">No files loaded yet.</div>
+      </div>
+      <div class="log" id="log"></div>
+    </div>
+
+    <div class="panel">
+      <h2>QA <span class="tag" id="qaTag">Ready</span></h2>
+      <div class="body">
+        <div class="row">
+          <button id="btnValidate" class="ghost" disabled>Run Post-Ingest Checks</button>
+          <label for="spotFile">Spot-check file</label>
+          <select id="spotFile" disabled style="min-width:280px"></select>
+          <button id="btnSpotCheck" class="ghost" disabled>Show Spot Check</button>
+          <button id="btnCopySpotAll" class="ghost" disabled>Copy All Spot Checks</button>
+        </div>
+        <div class="hint" style="margin-top:8px;">
+          Checks compare fresh segmentation against rows in DB by deterministic `sentence_uid`, and flag missing/extra blocks.
+        </div>
+        <div id="qaSummary" class="qa-summary" style="margin-top:10px;">No QA run yet.</div>
+        <div id="qaList" class="qa-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="settingsBackdrop" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+    <div class="modal">
+      <header>
+        <h3 id="settingsTitle">
+          Settings
+          <button id="btnCloseSettings" class="close">Close</button>
+        </h3>
+      </header>
+      <div class="content">
+        <div class="hint">
+          Advanced settings. Changing `Stable appName` switches which Auto-DB database this app uses.
+        </div>
+        <div class="kvs">
+          <div class="row">
+            <label>Stable appName</label>
+            <input id="appName" type="text" value="HWIE_v2" />
+          </div>
+          <div class="row">
+            <label>Tokenizer locale</label>
+            <input id="locale" type="text" value="en" />
+          </div>
+          <div class="row">
+            <label>Segmentation model</label>
+            <select id="segmentationModel">
+              <option value="gpt-4o-mini" selected>gpt-4o-mini (fast)</option>
+              <option value="gpt-4o">gpt-4o (accurate)</option>
+            </select>
+          </div>
+          <div class="row">
+            <label>Default source_type</label>
+            <select id="sourceType">
+              <option value="transcript">transcript</option>
+              <option value="summary_only">summary_only</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="segmentationPrompt">Segmentation Prompt (editable)</label>
+            <textarea id="segmentationPrompt" spellcheck="false"></textarea>
+            <div class="hint">This is the live AI prompt template used for semantic block boundaries. Keep `{{CHUNK_TURNS}}`, `{{SPEAKER_CONTEXT}}`, and `{{LOCALE}}` placeholders. Optional: `{{CHUNK_START_INDEX}}`, `{{CHUNK_END_INDEX}}`.</div>
+          </div>
+          <div class="row">
+            <label>Danger zone</label>
+            <button id="btnReset" class="danger" title="Deletes and recreates interviews + sentences tables in the current app DB. This permanently removes ingested transcript blocks for this app and cannot be undone.">Reset App Tables</button>
+          </div>
+        </div>
+      </div>
+      <div class="footer">
+        <button id="btnCloseSettings2" class="close">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { DBHelper } from "https://happydo.xyz/api_auto_db/db_helper.js";
+    import { askAI } from "https://happydo.xyz/api/ailnl.js";
+
+    const APP_VERSION = "v1.6";
+    const APP_LAST_UPDATED_UTC = "2026-02-20T04:00:00Z";
+    const DEFAULT_HEURISTIC_RULES_TEXT = [
+      "# Internal fallback-only heuristic rules",
+      "topic:chair: chair",
+      "topic:elt: elt | executive leadership team",
+      "topic:corporate: executive champion | company leader | team captain | corporate",
+      "topic:systems: salesforce | sharepoint | tableau | financial policy | onboarding | training | timeline",
+      "topic:internal: gap meeting | vp | executive director | internal leadership",
+      "process: first step is | next step is | from there we | then we move to | after that we | another channel is | separately | on the other hand",
+      "friction: blocker | constraint | workaround | gap | broken | friction | pain point | issue",
+      "question_starters: what | why | how | when | where | who | which | can | could | would | should | do | does | did"
+    ].join("\n");
+    const DEFAULT_SEGMENTATION_PROMPT = [
+      "You are segmenting interview transcript turns into coherent semantic blocks for qualitative research coding.",
+      "",
+      "Output STRICT JSON only (no markdown fencing):",
+      "{",
+      "  \"blocks\": [",
+      "    {",
+      "      \"start_turn\": 1,",
+      "      \"end_turn\": 4,",
+      "      \"topic_label\": \"short label\",",
+      "      \"boundary_reason\": \"why this block ends here\",",
+      "      \"diagnostics\": {",
+      "        \"filler_terms_removed\": [\"um\", \"you know\"],",
+      "        \"ended_at_sentence_boundary\": \"yes|no\",",
+      "        \"ended_at_sentence_boundary_why\": \"...\",",
+      "        \"ended_with_interviewee\": \"yes|no\",",
+      "        \"ended_with_interviewee_why\": \"...\"",
+      "      }",
+      "    }",
+      "  ]",
+      "}",
+      "",
+      "CRITICAL — Turn numbering:",
+      "- Turns below are numbered sequentially: 1, 2, 3, ... (the number before the period on each line).",
+      "- start_turn and end_turn in your output MUST use these sequential numbers exactly.",
+      "- First block: start_turn=1. Last block: end_turn must equal the highest turn number below.",
+      "- No gaps or overlaps between blocks.",
+      "",
+      "Rules:",
+      "1) Each block covers a contiguous range of turns sharing a coherent topic or discussion thread.",
+      "2) Split when topic, process, or discussion focus changes clearly — not on every speaker change.",
+      "3) Aim for 5–20 turns per block. Blocks over 25 turns likely need splitting; blocks under 3 turns should be merged.",
+      "4) Merge short acknowledgements and backchannels into the surrounding substantive block.",
+      "5) Do not end a block mid-sentence or mid-thought.",
+      "6) Strongly prefer ending each block on an interviewee turn, not an interviewer turn.",
+      "7) Keep interviewer setup/question lines attached to the interviewee response in the same block.",
+      "8) Avoid interviewer-only blocks — merge them with the nearest interviewee response.",
+      "9) Do not rewrite any text; this is segmentation only (boundary decisions).",
+      "",
+      "Context:",
+      "locale={{LOCALE}}",
+      "speaker_context={{SPEAKER_CONTEXT}}",
+      "",
+      "Turns (sequential, 1-based):",
+      "{{CHUNK_TURNS}}",
+      "",
+      "Return JSON now."
+    ].join("\n");
+
+    function formatLocalLastUpdated(utcIso) {
+      const dt = new Date(utcIso);
+      return dt.toLocaleString(undefined, {
+        year: "numeric",
+        month: "short",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        timeZoneName: "short"
+      });
+    }
+
+    function renderAppMeta() {
+      const el = document.getElementById("appMeta");
+      if (!el) return;
+      el.textContent = `Version ${APP_VERSION} · Last updated ${formatLocalLastUpdated(APP_LAST_UPDATED_UTC)}`;
+    }
+
+    renderAppMeta();
+
+    const $ = (id) => document.getElementById(id);
+    const logEl = $("log");
+    const filesEl = $("files");
+    const emptyHintEl = $("emptyHint");
+    const qaSummaryEl = $("qaSummary");
+    const qaListEl = $("qaList");
+
+    const state = {
+      initialized: false,
+      dbName: null,
+      files: [],
+      dbSpotOptions: [],
+      resetSpinTimer: null,
+      segmentationRules: parseSegmentationPrompt(DEFAULT_HEURISTIC_RULES_TEXT),
+      aiSegmentationTemplate: DEFAULT_SEGMENTATION_PROMPT,
+      ingestStopRequested: false,
+      ingestRunning: false,
+    };
+
+    const AI_SEG_MAX_TURNS = 70;
+    const AI_SEG_MAX_CHARS = 14000;
+    const AI_SEG_TEMPERATURE = 0.0;
+    const AI_SEG_MAX_RETRIES = 2;
+
+    const INTERVIEWER_SPEAKER_HINTS = [
+      "robin krieglstein",
+      "robin"
+    ];
+
+    const FILLER_TERMS = [
+      "um",
+      "uh",
+      "erm",
+      "mm",
+      "mhm",
+      "mmhm",
+      "you know",
+      "i mean",
+      "kind of",
+      "sort of"
+    ];
+
+    function escapeRegex(text) {
+      return String(text || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    }
+
+    function parseTokenList(value) {
+      return String(value || "")
+        .split("|")
+        .map(x => x.trim().toLowerCase())
+        .filter(Boolean);
+    }
+
+    function buildAnyTokenRegex(tokens) {
+      if (!Array.isArray(tokens) || tokens.length === 0) return null;
+      return new RegExp(`\\b(?:${tokens.map(escapeRegex).join("|")})\\b`, "i");
+    }
+
+    function buildLineStartTokenRegex(tokens) {
+      if (!Array.isArray(tokens) || tokens.length === 0) return null;
+      return new RegExp(`^(?:${tokens.map(escapeRegex).join("|")})\\b`, "i");
+    }
+
+    function parseSegmentationPrompt(text) {
+      const base = {
+        topics: {
+          chair: ["chair"],
+          elt: ["elt", "executive leadership team"],
+          corporate: ["executive champion", "company leader", "team captain", "corporate"],
+          systems: ["salesforce", "sharepoint", "tableau", "financial policy", "onboarding", "training", "timeline"],
+          internal: ["gap meeting", "vp", "executive director", "internal leadership"],
+        },
+        process: ["first step is", "next step is", "from there we", "then we move to", "after that we", "another channel is", "separately", "on the other hand"],
+        friction: ["blocker", "constraint", "workaround", "gap", "broken", "friction", "pain point", "issue"],
+        question_starters: ["what", "why", "how", "when", "where", "who", "which", "can", "could", "would", "should", "do", "does", "did"],
+      };
+
+      for (const rawLine of String(text || "").split(/\r?\n/)) {
+        const line = rawLine.trim();
+        if (!line || line.startsWith("#")) continue;
+
+        let m = line.match(/^topic:([a-z0-9_]+)\s*:\s*(.+)$/i);
+        if (m) {
+          const key = m[1].toLowerCase();
+          const tokens = parseTokenList(m[2]);
+          if (tokens.length) base.topics[key] = tokens;
+          continue;
+        }
+
+        m = line.match(/^(process|friction|question_starters)\s*:\s*(.+)$/i);
+        if (m) {
+          const key = m[1].toLowerCase();
+          const tokens = parseTokenList(m[2]);
+          if (tokens.length) base[key] = tokens;
+        }
+      }
+
+      const topicOrder = Object.keys(base.topics);
+      return {
+        topicRegexes: topicOrder
+          .map(key => ({ key, re: buildAnyTokenRegex(base.topics[key]) }))
+          .filter(x => !!x.re),
+        processRe: buildAnyTokenRegex(base.process),
+        frictionRe: buildAnyTokenRegex(base.friction),
+        questionStartRe: buildLineStartTokenRegex(base.question_starters),
+      };
+    }
+
+    function normalizePromptTemplate(raw, fallback) {
+      const t = String(raw || "").trim();
+      return t || String(fallback || "").trim();
+    }
+
+    function getSegmentationPromptTemplate() {
+      return normalizePromptTemplate(state.aiSegmentationTemplate, DEFAULT_SEGMENTATION_PROMPT);
+    }
+
+    function getSegmentationModel() {
+      return $("segmentationModel")?.value || "gpt-4o-mini";
+    }
+
+    function buildChunkTurnsText(chunkTurns, chunkStartIdx) {
+      return chunkTurns.map((turn, idx) => {
+        const local = idx + 1;
+        return `${local}. [${turn.timestamp_block || "--:--"}] [${turn.speaker || "Unknown"}|${turn.speaker_role}] ${turn.text}`;
+      }).join("\n");
+    }
+
+    function buildSpeakerContextText(speakerContext) {
+      if (!speakerContext) return "(none)";
+      return JSON.stringify({
+        interviewer_hints: speakerContext.interviewerHints || [],
+        interviewee_name: speakerContext.intervieweeName || "",
+        interviewee_first: speakerContext.intervieweeFirst || "",
+        interviewee_last: speakerContext.intervieweeLast || ""
+      });
+    }
+
+    function normalizeAiDiagObject(diag) {
+      const d = (diag && typeof diag === "object" && !Array.isArray(diag)) ? diag : {};
+      const fillerTerms = Array.isArray(d.filler_terms_removed)
+        ? d.filler_terms_removed.map(x => String(x || "").trim()).filter(Boolean)
+        : [];
+      return {
+        filler_terms_removed: Array.from(new Set(fillerTerms)).slice(0, 20),
+        ended_at_sentence_boundary: String(d.ended_at_sentence_boundary || "").trim().toLowerCase(),
+        ended_at_sentence_boundary_why: String(d.ended_at_sentence_boundary_why || "").trim(),
+        ended_with_interviewee: String(d.ended_with_interviewee || "").trim().toLowerCase(),
+        ended_with_interviewee_why: String(d.ended_with_interviewee_why || "").trim(),
+      };
+    }
+
+    function extractJsonObject(raw) {
+      const s = String(raw || "").trim();
+      if (!s) throw new Error("Empty AI response");
+      const first = s.indexOf("{");
+      if (first < 0) throw new Error("No JSON object found in AI response");
+      let depth = 0;
+      let inString = false;
+      let escape = false;
+      for (let i = first; i < s.length; i++) {
+        const ch = s[i];
+        if (inString) {
+          if (escape) {
+            escape = false;
+          } else if (ch === "\\") {
+            escape = true;
+          } else if (ch === "\"") {
+            inString = false;
+          }
+          continue;
+        }
+        if (ch === "\"") {
+          inString = true;
+          continue;
+        }
+        if (ch === "{") depth += 1;
+        if (ch === "}") {
+          depth -= 1;
+          if (depth === 0) {
+            return s.slice(first, i + 1);
+          }
+        }
+      }
+      throw new Error("Unclosed JSON object in AI response");
+    }
+
+    function parseAiSegmentationResult(rawOutput, turnCount, chunkStartGlobal) {
+      const json = extractJsonObject(rawOutput);
+      const parsed = JSON.parse(json);
+      const blocks = Array.isArray(parsed?.blocks) ? parsed.blocks : null;
+      if (!blocks || blocks.length === 0) throw new Error("AI response missing blocks[]");
+
+      let normalized = [];
+      for (const b of blocks) {
+        const start = Number(b?.start_turn);
+        const end = Number(b?.end_turn);
+        if (!Number.isInteger(start) || !Number.isInteger(end)) {
+          throw new Error("AI block has non-integer start_turn/end_turn");
+        }
+        normalized.push({
+          start_turn: start,
+          end_turn: end,
+          topic_label: String(b?.topic_label || "").trim(),
+          boundary_reason: String(b?.boundary_reason || "").trim(),
+          diagnostics: normalizeAiDiagObject(b?.diagnostics)
+        });
+      }
+
+      // Auto-correct global→local indices: if AI returned global turn numbers
+      // instead of chunk-local 1-based numbers, shift them back.
+      const anyOutOfRange = normalized.some(b => b.start_turn < 1 || b.end_turn > turnCount);
+      if (anyOutOfRange && typeof chunkStartGlobal === "number" && chunkStartGlobal > 0) {
+        const shifted = normalized.map(b => ({
+          ...b,
+          start_turn: b.start_turn - chunkStartGlobal,
+          end_turn: b.end_turn - chunkStartGlobal
+        }));
+        const shiftedValid = shifted.every(b =>
+          b.start_turn >= 1 && b.end_turn <= turnCount && b.end_turn >= b.start_turn
+        );
+        if (shiftedValid) {
+          console.warn(`[Gatekeeper] Auto-corrected AI turn indices from global to local (shifted by ${chunkStartGlobal})`);
+          normalized = shifted;
+        }
+      }
+
+      // Validate ranges
+      for (const b of normalized) {
+        if (b.start_turn < 1 || b.end_turn < b.start_turn || b.end_turn > turnCount) {
+          throw new Error(`AI block range invalid: ${b.start_turn}..${b.end_turn} (turnCount=${turnCount})`);
+        }
+      }
+
+      normalized.sort((a, b) => a.start_turn - b.start_turn || a.end_turn - b.end_turn);
+      if (normalized[0].start_turn !== 1) throw new Error("AI coverage invalid: first block must start at 1");
+      if (normalized[normalized.length - 1].end_turn !== turnCount) throw new Error("AI coverage invalid: last block must end at turnCount");
+      for (let i = 1; i < normalized.length; i++) {
+        const prev = normalized[i - 1];
+        const cur = normalized[i];
+        if (cur.start_turn !== prev.end_turn + 1) {
+          throw new Error("AI coverage invalid: gaps/overlaps between blocks");
+        }
+      }
+      return normalized;
+    }
+
+    function chunkTurnsForAi(turns, maxTurns = AI_SEG_MAX_TURNS, maxChars = AI_SEG_MAX_CHARS) {
+      const out = [];
+      let i = 0;
+      while (i < turns.length) {
+        let j = i;
+        let chars = 0;
+        while (j < turns.length && (j - i) < maxTurns) {
+          const add = String(turns[j]?.text || "").length + 32;
+          if (j > i && chars + add > maxChars) break;
+          chars += add;
+          j += 1;
+        }
+        if (j === i) j = i + 1;
+        out.push({ start: i, end: j, turns: turns.slice(i, j) });
+        i = j;
+      }
+      return out;
+    }
+
+    function buildSegmentationAIPrompt(chunkInfo, speakerContext, locale) {
+      const template = getSegmentationPromptTemplate();
+      const chunkTurnsText = buildChunkTurnsText(chunkInfo.turns, chunkInfo.start);
+      return template
+        .replaceAll("{{LOCALE}}", String(locale || "en"))
+        .replaceAll("{{SPEAKER_CONTEXT}}", buildSpeakerContextText(speakerContext))
+        .replaceAll("{{CHUNK_START_INDEX}}", String(chunkInfo.start + 1))
+        .replaceAll("{{CHUNK_END_INDEX}}", String(chunkInfo.end))
+        .replaceAll("{{CHUNK_TURNS}}", chunkTurnsText);
+    }
+
+    async function runButtonAction(buttonId, pendingLabel, action, options = {}) {
+      const btn = $(buttonId);
+      if (!btn) return action();
+
+      const original = btn.dataset.originalText || btn.textContent;
+      btn.dataset.originalText = original;
+
+      const disableIds = options.disableIds || ["btnPick", "btnIngest", "btnDryRun", "btnValidate", "btnSpotCheck", "btnCopySpotAll"];
+      const snapshot = disableIds
+        .map(id => ({ el: $(id), disabled: $(id)?.disabled ?? false }))
+        .filter(x => x.el);
+
+      snapshot.forEach(x => { x.el.disabled = true; });
+      btn.textContent = pendingLabel;
+
+      try {
+        const result = await action();
+        btn.textContent = options.doneLabel || "✅ Done";
+        setTimeout(() => {
+          btn.textContent = original;
+          snapshot.forEach(x => { x.el.disabled = x.disabled; });
+        }, options.doneDelayMs || 1200);
+        return result;
+      } catch (err) {
+        btn.textContent = options.failLabel || "❌ Failed";
+        setTimeout(() => {
+          btn.textContent = original;
+          snapshot.forEach(x => { x.el.disabled = x.disabled; });
+        }, options.failDelayMs || 1800);
+        throw err;
+      }
+    }
+
+    function log(msg, level = "ok") {
+      const line = document.createElement("div");
+      line.className = level;
+      line.textContent = msg;
+      logEl.prepend(line);
+    }
+
+    function invalidateSegmentationCache() {
+      for (const f of state.files) {
+        f.lastSegmentation = null;
+      }
+    }
+
+    function updateLoadButtonLabel() {
+      const btn = $("btnPick");
+      if (!btn) return;
+      btn.textContent = `Load Transcript Files (${state.files.length} loaded)`;
+    }
+
+    function setIngestStopEnabled(enabled) {
+      const btn = $("btnStopIngest");
+      if (!btn) return;
+      btn.disabled = !enabled;
+    }
+
+    function normalizeFileName(name) {
+      return (name || "").trim().toLowerCase().replace(/\\/g, "/");
+    }
+
+    // Small deterministic hash to keep IDs short (not for security).
+    function fnv1a32(str) {
+      let h = 0x811c9dc5;
+      for (let i = 0; i < str.length; i++) {
+        h ^= str.charCodeAt(i);
+        h = Math.imul(h, 0x01000193) >>> 0;
+      }
+      return h >>> 0;
+    }
+
+    function toBase36(n) {
+      return (n >>> 0).toString(36).toUpperCase();
+    }
+
+    function pad4(n) {
+      return String(n).padStart(4, "0");
+    }
+
+    function sanitizeCode(code) {
+      const c = (code || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 2);
+      return c.length === 2 ? c : (c + "X").slice(0, 2);
+    }
+
+    function extractNameFromFileName(fileName) {
+      const stem = (fileName || "").replace(/\.[^.]+$/, "").trim();
+      if (!stem) return "";
+      const words = stem.split(/\s+/).map(w => w.replace(/[^A-Za-z'-]/g, "")).filter(Boolean);
+      if (words.length >= 2) return `${words[0]} ${words[words.length - 1]}`;
+      return words[0] || stem;
+    }
+
+    function defaultCodeFromFile(fileName) {
+      const name = extractNameFromFileName(fileName);
+      const words = name.split(/\s+/).filter(Boolean);
+      if (words.length >= 2) {
+        const initials = `${words[0][0] || ""}${words[words.length - 1][0] || ""}`;
+        return sanitizeCode(initials || "XX");
+      }
+      const letters = name.replace(/[^A-Za-z]/g, "");
+      return sanitizeCode(letters.slice(0, 2) || "XX");
+    }
+
+    function pad2(n) {
+      const s = String(n);
+      return s.length >= 2 ? s : ("0" + s);
+    }
+
+    function buildInterviewId(code2, interviewNum) {
+      return `${sanitizeCode(code2)}${pad2(interviewNum)}`;
+    }
+
+    function buildInterviewPrefix(interviewId) {
+      return interviewId;
+    }
+
+    async function ensureColumnExists(appName, tableName, columnName, addSql) {
+      const check = await DBHelper.query(appName, `
+        SELECT COUNT(*) AS cnt
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = ?
+          AND COLUMN_NAME = ?
+      `, [tableName, columnName]);
+      const exists = Number(check?.rows?.[0]?.cnt || 0) > 0;
+      if (!exists) {
+        await DBHelper.query(appName, addSql);
+      }
+    }
+
+    async function ensureSchema(appName) {
+      // Keep table names aligned with the other HWIE apps (Analyst/Synthesizer).
+      // Adding extra columns is safe; other apps will ignore them.
+      await DBHelper.query(appName, `
+        CREATE TABLE IF NOT EXISTS interviews (
+          interview_id     VARCHAR(50) PRIMARY KEY,
+          interviewee_name TEXT,
+          interviewee_code VARCHAR(8),
+          interview_prefix VARCHAR(32),
+          interview_num    INT,
+          date             DATE,
+          source_type      VARCHAR(32),
+          source_file      TEXT,
+          created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+
+      await DBHelper.query(appName, `
+        CREATE TABLE IF NOT EXISTS sentences (
+          sentence_id     VARCHAR(50)  PRIMARY KEY,
+          interview_id    VARCHAR(50),
+          timestamp_block VARCHAR(20),
+          speaker         VARCHAR(100),
+          raw_text        TEXT         NOT NULL,
+          clean_text      TEXT,
+          sentiment_score TINYINT      DEFAULT 0,
+          is_problem      TINYINT(1)   DEFAULT 0,
+          is_solution     TINYINT(1)   DEFAULT 0,
+          is_explanation  TINYINT(1)   DEFAULT 0,
+          is_workaround   TINYINT(1)   DEFAULT 0,
+          review_status   VARCHAR(30)  DEFAULT 'unprocessed',
+          created_at      TIMESTAMP    DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+
+      // Add optional columns only if missing to avoid noisy duplicate-column 500s.
+      await ensureColumnExists(appName, "sentences", "sentence_uid",
+        "ALTER TABLE sentences ADD COLUMN sentence_uid CHAR(40) UNIQUE");
+      await ensureColumnExists(appName, "sentences", "interview_prefix",
+        "ALTER TABLE sentences ADD COLUMN interview_prefix VARCHAR(32)");
+      await ensureColumnExists(appName, "sentences", "source_file",
+        "ALTER TABLE sentences ADD COLUMN source_file TEXT");
+      await ensureColumnExists(appName, "interviews", "interview_num",
+        "ALTER TABLE interviews ADD COLUMN interview_num INT");
+    }
+
+    function detectIntlSegmenter() {
+      return typeof Intl !== "undefined" && typeof Intl.Segmenter === "function";
+    }
+
+    function countWords(text) {
+      const m = String(text || "").trim().match(/[A-Za-z0-9']+/g);
+      return m ? m.length : 0;
+    }
+
+    function normalizeSpeakerName(name) {
+      return String(name || "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, " ")
+        .trim();
+    }
+
+    function endsWithSentenceBoundary(text) {
+      return /[.!?]["')\]]?$/.test(String(text || "").trim());
+    }
+
+    function isLikelyFragment(text) {
+      const t = String(text || "").trim();
+      if (!t) return true;
+      const wc = countWords(t);
+      if (wc <= 2 && !endsWithSentenceBoundary(t)) return true;
+      if (/[,:;\-]$/.test(t)) return true;
+      return /\b(and|or|but|so|because|if|then|that|which|who|where|when|to|for|of|with|in|on|at|by|from|as)\b$/i.test(t);
+    }
+
+    function parseIntervieweeHint(fullText, fileName, intervieweeNameHint) {
+      const explicit = String(intervieweeNameHint || "").trim();
+      if (explicit) return explicit;
+      const text = String(fullText || "");
+      const m = text.match(/heart walk staff interview\s*\(([^)]+)\)/i);
+      if (m && m[1]) return m[1].trim();
+      return extractNameFromFileName(fileName || "");
+    }
+
+    function buildSpeakerContext(fullText, fileName, intervieweeNameHint) {
+      const interviewee = parseIntervieweeHint(fullText, fileName, intervieweeNameHint);
+      const parts = String(interviewee || "").split(/\s+/).filter(Boolean);
+      return {
+        interviewerHints: INTERVIEWER_SPEAKER_HINTS.map(normalizeSpeakerName),
+        intervieweeName: interviewee || null,
+        intervieweeFirst: parts[0] ? normalizeSpeakerName(parts[0]) : "",
+        intervieweeLast: parts.length > 1 ? normalizeSpeakerName(parts[parts.length - 1]) : "",
+        intervieweeFull: normalizeSpeakerName(interviewee || ""),
+      };
+    }
+
+    function isInterviewerSpeaker(speaker, speakerContext) {
+      const n = normalizeSpeakerName(speaker);
+      if (!n) return false;
+      const hints = Array.isArray(speakerContext?.interviewerHints)
+        ? speakerContext.interviewerHints
+        : INTERVIEWER_SPEAKER_HINTS.map(normalizeSpeakerName);
+      return hints.some(h => h && (n === h || n.startsWith(h + " ")));
+    }
+
+    function isIntervieweeSpeaker(speaker, speakerContext) {
+      const n = normalizeSpeakerName(speaker);
+      if (!n || !speakerContext) return false;
+      if (speakerContext.intervieweeFull && (n === speakerContext.intervieweeFull || n.startsWith(speakerContext.intervieweeFull + " "))) {
+        return true;
+      }
+      if (speakerContext.intervieweeFirst && (n === speakerContext.intervieweeFirst || n.startsWith(speakerContext.intervieweeFirst + " "))) {
+        return true;
+      }
+      if (speakerContext.intervieweeFirst && speakerContext.intervieweeFirst.length >= 4) {
+        const shortFirst = speakerContext.intervieweeFirst.slice(0, 4);
+        if (n === shortFirst || n.startsWith(shortFirst + " ")) return true;
+      }
+      if (speakerContext.intervieweeLast && n.endsWith(" " + speakerContext.intervieweeLast)) {
+        return true;
+      }
+      return false;
+    }
+
+    function classifySpeakerRole(speaker, speakerContext) {
+      if (!speaker) return "unknown";
+      if (isInterviewerSpeaker(speaker, speakerContext)) return "interviewer";
+      if (isIntervieweeSpeaker(speaker, speakerContext)) return "interviewee";
+      return "other";
+    }
+
+    function parseTimestampAndStrip(text) {
+      // Accept: [00:12], 00:12, [00:12:33], 00:12:33
+      const re = /^(?:\[(\d{1,2}:\d{2}(?::\d{2})?)\]|(\d{1,2}:\d{2}(?::\d{2})?))\s*/;
+      const m = String(text || "").match(re);
+      if (!m) return { timestamp: null, rest: text };
+      const ts = (m[1] || m[2] || "").trim();
+      const rest = String(text || "").slice(m[0].length);
+      return { timestamp: ts || null, rest };
+    }
+
+    function parseSpeakerAndStrip(text) {
+      const markdownRe = /^\*\*([^*]{1,80})\*\*\s*:\s*(.*)$/;
+      const upperRe = /^([A-Z][A-Z0-9 _]{1,40})(?:\s*[:\-])\s+(.*)$/;
+      const titleRe = /^([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})(?:\s*[:\-])\s+(.*)$/;
+      let m = String(text || "").match(markdownRe);
+      if (!m) m = String(text || "").match(upperRe);
+      if (!m) m = String(text || "").match(titleRe);
+      if (!m) return { speaker: null, rest: text };
+      const speaker = m[1].trim();
+      const rest = m[2].trimStart();
+      return { speaker, rest };
+    }
+
+    function preprocessTranscriptLines(fullText) {
+      const norm = String(fullText || "")
+        .replace(/\r\n/g, "\n")
+        .replace(/\r/g, "\n")
+        .replace(/\u00A0/g, " ")
+        .replace(/\t/g, " ")
+        .replace(/\\(?=[\-#.:()])/g, "");
+
+      const lines = norm.split("\n");
+      const out = [];
+
+      for (let rawLine of lines) {
+        let l = String(rawLine || "").trim();
+        if (!l) continue;
+
+        l = l
+          .replace(/^#{1,6}\s*/, "")
+          .replace(/^\u2022\s*/, "")
+          .replace(/\*\*(\d{1,2}:\d{2}(?::\d{2})?)\*\*/g, "$1")
+          .replace(/\*\*([^*]+)\*\*\s*:/g, "$1:")
+          .replaceAll("**", "")
+          .replace(/\s+/g, " ")
+          .trim();
+
+        if (!l) continue;
+        if (/^transcription ended after\b/i.test(l)) continue;
+        if (/^\*?this editable transcript was computer generated/i.test(l)) continue;
+        if (/^\*?people can also change the text after it was created/i.test(l)) continue;
+        if (/^heart walk staff interview\b.+\btranscript\b/i.test(l)) continue;
+
+        // Split inline timestamp+speaker fragments into separate lines.
+        l = l.replace(/(\b\d{1,2}:\d{2}(?::\d{2})?\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3}\s*:)/g, "\n$1");
+        // Split only if a sentence boundary likely happened before a speaker label.
+        l = l.replace(/([.!?])\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3}\s*:)/g, "$1\n$2");
+        // Also split on comma/semicolon boundaries where speaker tags are frequently inlined.
+        l = l.replace(/([,;])\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3}\s*:)/g, "$1\n$2");
+
+        const parts = l.split("\n").map(x => x.trim()).filter(Boolean);
+        for (const p of parts) out.push(p);
+      }
+      return out;
+    }
+
+    function isBackchannelTurn(text) {
+      const t = String(text || "").trim().toLowerCase();
+      if (!t) return false;
+      const compact = t.replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+      if (!compact) return false;
+      if (compact.length > 40) return false;
+      if (compact.split(" ").length > 6) return false;
+      return /^(mhm|mmhm|mm hmm|uh huh|uh-huh|huh|hmm|hm|yeah|yep|yup|right|okay|ok|got it|sure|exactly|absolutely|wow|nice|cool|great|perfect|good|thanks|thank you|i see|makes sense|sounds good|all right|alright|true)$/.test(compact);
+    }
+
+    function collectFillerHits(text) {
+      const t = String(text || "").toLowerCase();
+      const hits = [];
+      if (/\bum+\b/i.test(t)) hits.push("um");
+      if (/\buh+\b/i.test(t)) hits.push("uh");
+      if (/\berm+\b/i.test(t)) hits.push("erm");
+      if (/\bmm+\b/i.test(t)) hits.push("mm");
+      if (/\bmhm+\b/i.test(t) || /\bmmhm\b/i.test(t)) hits.push("mhm");
+      if (/\buh[\s-]?huh\b/i.test(t)) hits.push("uh huh");
+      for (const term of FILLER_TERMS) {
+        if (/^(um|uh|erm|mm|mhm|mmhm)$/.test(term)) continue;
+        const re = new RegExp(`\\b${escapeRegex(term).replace(/\\ /g, "\\s+")}\\b`, "i");
+        if (re.test(t)) hits.push(term);
+      }
+      return Array.from(new Set(hits));
+    }
+
+    function extractRemovedFillerTerms(rawText, cleanText) {
+      const rawHits = collectFillerHits(rawText);
+      const cleanHits = collectFillerHits(cleanText);
+      return rawHits.filter(h => !cleanHits.includes(h));
+    }
+
+    function stripDisfluencies(text) {
+      return String(text || "")
+        .replace(/\b(?:um+|uh+|erm+|mm+|hmm+|mhm+|uh-huh|uh huh|mm-hmm)\b[,.!?]*/gi, " ")
+        .replace(/\b(?:you know|i mean|kind of|sort of)\b[,.!?]*/gi, " ");
+    }
+
+    function normalizeStutters(text) {
+      let out = String(text || "");
+      for (let i = 0; i < 3; i++) {
+        const next = out
+          .replace(/\b(i|we|you|they|he|she|it|the|a|an|to|and|or|but|that|this|is|are|was|were|so|well|like)\s+\1\b/gi, "$1")
+          .replace(/\b([A-Za-z]{1,12})\s+\1\s+\1\b/g, "$1");
+        if (next === out) break;
+        out = next;
+      }
+      return out;
+    }
+
+    function trimDanglingCleanTail(text) {
+      let out = String(text || "").trim();
+      if (!out) return "";
+      out = out.replace(/[,:;\-]+$/g, "").trim();
+      out = out.replace(/\s+\b(and|or|but|so|because|if|then|that|which|who|where|when|to|for|of|with|in|on|at|by|from|as)\b$/i, "").trim();
+      return out;
+    }
+
+    function cleanTurnText(text) {
+      return trimDanglingCleanTail(
+        normalizeStutters(
+          stripDisfluencies(String(text || "")
+            .replaceAll("**", "")
+            .replace(/`+/g, "")
+            .replace(/^#{1,6}\s*/g, "")
+            .replace(/\[(\d{1,2}:\d{2}(?::\d{2})?)\]/g, " ")
+            .replace(/\b\d{1,2}:\d{2}(?::\d{2})?\b/g, " ")
+            .replace(/\s+/g, " ")
+            .replace(/\s+([,.;!?])/g, "$1")
+            .trim())
+        )
+          .replace(/\s+/g, " ")
+          .trim()
+      );
+    }
+
+    function choosePrimarySpeaker(turns, speakerContext) {
+      const score = new Map();
+      const addScore = (speaker, w) => {
+        const key = String(speaker || "");
+        if (!key) return;
+        score.set(key, (score.get(key) || 0) + Math.max(1, w));
+      };
+
+      for (const turn of turns) {
+        if (!turn?.speaker || turn.is_backchannel || turn.is_question) continue;
+        if (turn.speaker_role === "interviewer") continue;
+        addScore(turn.speaker, turn.word_count || countWords(turn.text));
+      }
+      if (!score.size) {
+        for (const turn of turns) {
+          if (!turn?.speaker || turn.is_backchannel || turn.is_question) continue;
+          addScore(turn.speaker, turn.word_count || countWords(turn.text));
+        }
+      }
+      if (!score.size) {
+        for (const turn of turns) {
+          if (turn?.speaker) addScore(turn.speaker, 1);
+        }
+      }
+
+      let best = null;
+      let bestScore = -1;
+      for (const [speaker, s] of score.entries()) {
+        if (s > bestScore) {
+          best = speaker;
+          bestScore = s;
+        } else if (s === bestScore && best && isIntervieweeSpeaker(speaker, speakerContext) && !isIntervieweeSpeaker(best, speakerContext)) {
+          best = speaker;
+        }
+      }
+      return best || null;
+    }
+
+    function buildIntervieweeNarrative(turns) {
+      // Build a readable narrative from the interviewee's contributions.
+      // Short interviewer interjections (< 6 words) and backchannels are transparent —
+      // they don't break the narrative flow.
+      // Substantive interviewer turns (>= 6 words, typically questions) mark segment
+      // boundaries. Short segments (< 4 words) are dropped as they tend to be
+      // reactive acknowledgments that read as non-sequiturs without context.
+      const INTERVIEWER_BREAK_WORDS = 6;
+      const MIN_SEGMENT_WORDS = 4;
+      const segments = [];
+      let current = [];
+
+      function commitSegment() {
+        if (current.length === 0) return;
+        let joined = current.filter(Boolean).join(" ").trim();
+        // Strip leading reactive prefix: "Yeah. ", "Right, ", "So, ", etc.
+        joined = joined.replace(/^(yeah|yes|right|okay|ok|sure|exactly|no|well|true|so)[.,!?\s]+/i, "").trim();
+        if (joined && countWords(joined) >= MIN_SEGMENT_WORDS) {
+          segments.push(joined);
+        }
+        current = [];
+      }
+
+      for (const turn of turns) {
+        if (turn.speaker_role === "interviewer") {
+          if (turn.is_backchannel) continue;
+          const wc = turn.word_count || countWords(turn.text);
+          if (wc < INTERVIEWER_BREAK_WORDS) continue; // short interjection, transparent
+          // Substantive interviewer turn — commit current interviewee segment
+          commitSegment();
+          continue;
+        }
+        // Interviewee or other speaker
+        if (turn.is_backchannel) continue;
+        const cleaned = cleanTurnText(turn.text);
+        if (cleaned) current.push(cleaned);
+      }
+      commitSegment();
+
+      return segments.join(" ").trim();
+    }
+
+    function buildCleanBlockText(turns, rawText, options = {}) {
+      let narrative = buildIntervieweeNarrative(turns);
+
+      // Fallback: if narrative is too short, include all non-backchannel turns
+      if (countWords(narrative) < 3) {
+        const anySubstantive = turns
+          .filter(t => !t.is_backchannel && (t.word_count || countWords(t.text)) >= 3)
+          .map(t => cleanTurnText(t.text))
+          .filter(Boolean)
+          .join(" ")
+          .trim();
+        narrative = anySubstantive || cleanTurnText(rawText);
+      }
+
+      let cleaned = trimDanglingCleanTail(narrative || "");
+      if (cleaned && !endsWithSentenceBoundary(cleaned) && !isLikelyFragment(cleaned)) {
+        cleaned = cleaned + ".";
+      }
+      return String(cleaned || "").slice(0, 4000);
+    }
+
+    function buildBlockItem(turns, options = {}) {
+      if (!Array.isArray(turns) || turns.length === 0) return null;
+      const speakerContext = options.speakerContext || null;
+      const rawText = turns
+        .map(t => (t.speaker ? `${t.speaker}: ${t.text}` : t.text))
+        .join("\n");
+      const cleanText = buildCleanBlockText(turns, rawText, { speakerContext });
+      const primarySpeaker = choosePrimarySpeaker(turns, speakerContext);
+      const endSpeaker = turns[turns.length - 1]?.speaker || null;
+      const endRole = classifySpeakerRole(endSpeaker, speakerContext);
+      const speakerTurns = {};
+      for (const t of turns) {
+        const key = t.speaker || "(unknown)";
+        speakerTurns[key] = (speakerTurns[key] || 0) + 1;
+      }
+      const removedFillers = extractRemovedFillerTerms(rawText, cleanText);
+      const substantiveIntervieweeTurns = turns.filter(t => t.speaker_role === "interviewee" && !t.is_backchannel && !isLikelyFragment(t.text)).length;
+      const substantiveNonInterviewerTurns = turns.filter(t => t.speaker_role !== "interviewer" && !t.is_backchannel && !isLikelyFragment(t.text)).length;
+      const substantiveInterviewerTurns = turns.filter(t => t.speaker_role === "interviewer" && !t.is_backchannel && !isLikelyFragment(t.text)).length;
+
+      return {
+        timestamp_block: turns.find(t => t.timestamp_block)?.timestamp_block || null,
+        speaker: primarySpeaker,
+        raw_text: rawText,
+        clean_text: cleanText,
+        debug: {
+          turnCount: turns.length,
+          speakerTurns,
+          speakerFlow: turns.map(t => t.speaker || "(unknown)").join(" -> "),
+          startSpeaker: turns[0]?.speaker || null,
+          endSpeaker,
+          endRole,
+          endsWithInterviewee: endRole === "interviewee" || (endRole === "other" && !isInterviewerSpeaker(endSpeaker, speakerContext)),
+          cleanEndsSentence: endsWithSentenceBoundary(cleanText),
+          cleanLooksFragment: isLikelyFragment(cleanText),
+          removedFillers,
+          removedFillersCount: removedFillers.length,
+          substantiveIntervieweeTurns,
+          substantiveNonInterviewerTurns,
+          substantiveInterviewerTurns,
+          interviewerOnlyBlock: substantiveNonInterviewerTurns === 0 && substantiveInterviewerTurns > 0,
+          startBoundaryReason: options.startBoundaryReason || "start_of_file",
+          endBoundaryReason: options.endBoundaryReason || null,
+          startBoundaryEvidence: options.startBoundaryEvidence || "",
+          endBoundaryEvidence: options.endBoundaryEvidence || "",
+          segmentationMode: options.segmentationMode || "heuristic",
+          aiTopicLabel: options.aiTopicLabel || "",
+          aiBoundaryReason: options.aiBoundaryReason || "",
+          aiChunkIndex: Number.isInteger(options.aiChunkIndex) ? (options.aiChunkIndex + 1) : null,
+          aiChunkCount: Number.isInteger(options.aiChunkCount) ? options.aiChunkCount : null,
+          aiModel: options.aiModel || "",
+          aiChunkStatus: options.aiChunkStatus || "",
+          aiFillerTermsRemoved: Array.isArray(options.aiDiag?.filler_terms_removed) ? options.aiDiag.filler_terms_removed : [],
+          aiEndedAtSentenceBoundary: String(options.aiDiag?.ended_at_sentence_boundary || "").trim().toLowerCase(),
+          aiEndedAtSentenceBoundaryWhy: options.aiDiag?.ended_at_sentence_boundary_why || "",
+          aiEndedWithInterviewee: String(options.aiDiag?.ended_with_interviewee || "").trim().toLowerCase(),
+          aiEndedWithIntervieweeWhy: options.aiDiag?.ended_with_interviewee_why || "",
+        }
+      };
+    }
+
+    function toTurns(fullText, options = {}) {
+      const rawLines = preprocessTranscriptLines(fullText);
+      const turns = [];
+      let lastTimestamp = null;
+      const questionStartRe = state.segmentationRules?.questionStartRe || /\b(what|why|how|when|where|who|which|can|could|would|should|do|does|did)\b/i;
+      const speakerContext = options.speakerContext || buildSpeakerContext(fullText, options.fileName, options.intervieweeNameHint);
+
+      for (const rawLine of rawLines) {
+        let line = rawLine;
+        const ts = parseTimestampAndStrip(line);
+        if (ts.timestamp) lastTimestamp = ts.timestamp;
+        line = ts.rest.trim();
+        if (!line) continue;
+
+        const sp = parseSpeakerAndStrip(line);
+        const speaker = sp.speaker || null;
+        const text = (sp.rest || "").trim();
+        if (!text) continue;
+
+        if (!speaker && turns.length === 0) {
+          continue;
+        }
+
+        if (!speaker) {
+          if (/^(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\s+\d{1,2},\s+\d{4}$/i.test(text)) {
+            continue;
+          }
+          const prev = turns[turns.length - 1];
+          prev.text = `${prev.text} ${text}`.replace(/\s+/g, " ").trim();
+          prev.word_count = countWords(prev.text);
+          prev.is_question = /\?\s*$/.test(prev.text) || questionStartRe.test(prev.text);
+          prev.is_backchannel = isBackchannelTurn(prev.text);
+          continue;
+        }
+
+        const role = classifySpeakerRole(speaker, speakerContext);
+        turns.push({
+          timestamp_block: lastTimestamp,
+          speaker,
+          text,
+          speaker_role: role,
+          word_count: countWords(text),
+          is_backchannel: isBackchannelTurn(text),
+          is_question: /\?\s*$/.test(text) || questionStartRe.test(text),
+        });
+      }
+      return turns;
+    }
+
+    function detectTopicGroup(text) {
+      const t = (text || "").toLowerCase();
+      const topicRegexes = state.segmentationRules?.topicRegexes || [];
+      for (const tDef of topicRegexes) {
+        if (tDef.re.test(t)) return tDef.key;
+      }
+      return "general";
+    }
+
+    function hasProcessBoundary(text) {
+      return !!(state.segmentationRules?.processRe && state.segmentationRules.processRe.test(text || ""));
+    }
+
+    function hasFrictionBoundary(text) {
+      return !!(state.segmentationRules?.frictionRe && state.segmentationRules.frictionRe.test(text || ""));
+    }
+
+    function isStrongProcessTransition(text) {
+      const t = String(text || "").trim().toLowerCase();
+      return /^(first|second|third|next|then|after that|from there|another channel|on the other hand|separately)\b/.test(t);
+    }
+
+    function shouldStartNewBlock(prevTurn, turn, currentBlock) {
+      if (!prevTurn || !currentBlock) return null;
+
+      const prevEndsSentence = endsWithSentenceBoundary(prevTurn.text);
+      const prevIsFragment = isLikelyFragment(prevTurn.text);
+      const turnIsFragment = isLikelyFragment(turn.text);
+      const hasIntervieweeContent = (currentBlock.interviewee_substantive_count || 0) > 0;
+      const substantiveCount = currentBlock.substantive_count || 0;
+
+      if (turn.is_question && turn.speaker_role === "interviewer" && hasIntervieweeContent && prevEndsSentence && !prevIsFragment) {
+        return { code: "new_interviewer_question", evidence: compactSingleLine(turn.text, 180) };
+      }
+
+      if (hasProcessBoundary(turn.text) && isStrongProcessTransition(turn.text) && substantiveCount >= 2 && prevEndsSentence && !turnIsFragment) {
+        return { code: "process_transition", evidence: compactSingleLine(turn.text, 180) };
+      }
+
+      const prevTopic = detectTopicGroup(prevTurn.text);
+      const topic = detectTopicGroup(turn.text);
+      if (
+        prevTopic !== "general"
+        && topic !== "general"
+        && prevTopic !== topic
+        && substantiveCount >= 3
+        && prevEndsSentence
+        && !turnIsFragment
+      ) {
+        return { code: `topic_shift:${prevTopic}->${topic}`, evidence: compactSingleLine(turn.text, 180) };
+      }
+
+      if (
+        turn.speaker_role === "interviewer"
+        && hasIntervieweeContent
+        && !turn.is_backchannel
+        && (turn.word_count || 0) >= 6
+        && prevEndsSentence
+        && substantiveCount >= 2
+      ) {
+        return { code: "interviewer_followup", evidence: compactSingleLine(turn.text, 180) };
+      }
+
+      if ((currentBlock.char_count || 0) > 2600 && prevEndsSentence && !turnIsFragment) {
+        return { code: "max_block_size", evidence: `${currentBlock.char_count} chars` };
+      }
+
+      return null;
+    }
+
+    function buildSentenceUid(interviewId, timestamp, speaker, rawText) {
+      const key = `${interviewId}|${timestamp || ""}|${speaker || ""}|${rawText}`;
+      const h = fnv1a32(key);
+      // Expand to 40 chars by mixing in length and a second pass.
+      const h2 = fnv1a32(key + "|" + String(key.length));
+      const a = toBase36(h).padStart(7, "0");
+      const b = toBase36(h2).padStart(7, "0");
+      // 14 chars, pad deterministically to 40.
+      return (a + b + (a + b + a + b)).slice(0, 40);
+    }
+
+    function renderFiles() {
+      filesEl.innerHTML = "";
+      $("fileCount").textContent = String(state.files.length);
+      emptyHintEl.style.display = state.files.length ? "none" : "block";
+
+      for (let idx = 0; idx < state.files.length; idx++) {
+        const f = state.files[idx];
+        const card = document.createElement("div");
+        card.className = "file";
+        card.setAttribute("data-file-idx", String(idx));
+
+        card.innerHTML = `
+          <div class="meta">
+            <div class="name">${escapeHtml(f.file.name)}</div>
+            <div class="stats"><span class="tag">${f.preview.blocks} blocks</span> <span class="tag">${escapeHtml(f.preview.segmentationMode || (f.preview.hasSegmenter ? "Intl.Segmenter" : "Heuristic"))}</span></div>
+          </div>
+          <div class="grid">
+            <div class="field">
+              <label>Interviewee name (optional)</label>
+              <input type="text" data-k="interviewee_name" value="${escapeAttr(f.meta.interviewee_name)}" />
+            </div>
+            <div class="field">
+              <label>Interview date (optional, YYYY-MM-DD)</label>
+              <input type="text" data-k="date" value="${escapeAttr(f.meta.date)}" placeholder="2026-02-17" />
+            </div>
+            <div class="field">
+              <label>Interviewee code (2 chars; prefix in IDs)</label>
+              <input type="text" data-k="interviewee_code" value="${escapeAttr(f.meta.interviewee_code)}" placeholder="e.g. KB" />
+            </div>
+            <div class="field">
+              <label>Derived IDs</label>
+              <div class="row" style="gap:8px;">
+                <span class="pill">interview_id: <span class="tag" data-derived="interview_id">${escapeHtml(f.derived.interview_id || "TBD")}</span></span>
+                <span class="pill">prefix: <span class="tag" data-derived="interview_prefix">${escapeHtml(f.derived.interview_prefix || "TBD")}</span></span>
+              </div>
+              <div class="hint" style="margin-top:6px;">Example sentence_id: <span class="tag" data-derived="sentence_example">${escapeHtml((f.derived.interview_prefix || "KB01") + ".0001")}</span></div>
+            </div>
+          </div>
+        `;
+
+        // Wire inputs
+        card.querySelectorAll("input[data-k]").forEach(inp => {
+          inp.addEventListener("input", () => {
+            const k = inp.getAttribute("data-k");
+            f.meta[k] = inp.value;
+            if (k === "interviewee_name") f.lastSegmentation = null;
+            updateDerivedDisplay(card, f);
+          });
+          inp.addEventListener("blur", () => {
+            if (inp.getAttribute("data-k") === "interviewee_code") {
+              const clean = sanitizeCode(inp.value);
+              inp.value = clean;
+              f.meta.interviewee_code = clean;
+              updateDerivedDisplay(card, f);
+            }
+          });
+        });
+
+        filesEl.appendChild(card);
+        updateDerivedDisplay(card, f);
+      }
+    }
+
+    function updateDerivedDisplay(card, f) {
+      const idEl = card.querySelector("[data-derived='interview_id']");
+      const pxEl = card.querySelector("[data-derived='interview_prefix']");
+      const exEl = card.querySelector("[data-derived='sentence_example']");
+      if (!idEl || !pxEl || !exEl) return;
+      idEl.textContent = f.derived.interview_id || "TBD";
+      pxEl.textContent = f.derived.interview_prefix || "TBD";
+      exEl.textContent = (f.derived.interview_prefix || "KB01") + ".0001";
+    }
+
+    function escapeHtml(s) {
+      return String(s || "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function escapeAttr(s) {
+      return escapeHtml(s);
+    }
+
+    async function initDB() {
+      const appName = $("appName").value.trim();
+      if (!appName) throw new Error("appName is required");
+      $("appTag").textContent = `App: ${appName}`;
+      const dbName = await DBHelper.init(appName);
+      state.dbName = dbName;
+      state.initialized = true;
+      $("dbTag").textContent = `DB: ${dbName}`;
+
+      await ensureSchema(appName);
+      await refreshSpotFileOptions();
+      log(`Initialized Auto-DB for appName='${appName}' using DB '${dbName}'.`, "ok");
+    }
+
+    async function resolveInterviewForFile(appName, meta, fileName) {
+      const sourceFile = fileName;
+      const existing = await DBHelper.query(appName,
+        "SELECT interview_id, interview_prefix, interviewee_code, interview_num FROM interviews WHERE source_file = ? LIMIT 1",
+        [sourceFile]
+      );
+      const row = existing?.rows?.[0];
+      if (row && row.interview_id) {
+        const interviewId = String(row.interview_id);
+        return {
+          interview_id: interviewId,
+          interview_prefix: String(row.interview_prefix || interviewId),
+          interviewee_code: String(row.interviewee_code || sanitizeCode(meta.interviewee_code)),
+          interview_num: Number(row.interview_num || null),
+        };
+      }
+
+      const code2 = sanitizeCode(meta.interviewee_code || defaultCodeFromFile(fileName));
+      const maxRes = await DBHelper.query(appName,
+        "SELECT MAX(interview_num) AS mx FROM interviews WHERE interviewee_code = ?",
+        [code2]
+      );
+      const mx = Number(maxRes?.rows?.[0]?.mx || 0);
+      const nextNum = mx + 1;
+      const interviewId = buildInterviewId(code2, nextNum);
+      return {
+        interview_id: interviewId,
+        interview_prefix: buildInterviewPrefix(interviewId),
+        interviewee_code: code2,
+        interview_num: nextNum,
+      };
+    }
+
+    function hasLikelyIntervieweeContent(turns) {
+      return (turns || []).some(t => !t.is_backchannel && !isLikelyFragment(t.text) && t.speaker_role !== "interviewer");
+    }
+
+    function startsWithLikelyInterviewee(turns) {
+      const firstSubstantive = (turns || []).find(t => !t.is_backchannel) || (turns || [])[0];
+      if (!firstSubstantive) return false;
+      return firstSubstantive.speaker_role !== "interviewer";
+    }
+
+    function splitTrailingInterviewerTurns(turns) {
+      if (!Array.isArray(turns) || turns.length === 0) return { head: [], tail: [] };
+      let cut = turns.length;
+      while (cut > 0) {
+        const t = turns[cut - 1];
+        if (!t) {
+          cut -= 1;
+          continue;
+        }
+        if (t.speaker_role === "interviewer") {
+          cut -= 1;
+          continue;
+        }
+        if (t.is_backchannel && turns[cut - 2]?.speaker_role === "interviewer") {
+          cut -= 1;
+          continue;
+        }
+        break;
+      }
+      return { head: turns.slice(0, cut), tail: turns.slice(cut) };
+    }
+
+    function rebalanceInterviewerFrames(frames) {
+      const out = (frames || []).map(f => ({ ...f, turns: [...(f.turns || [])] }));
+      for (let i = 0; i < out.length - 1; i++) {
+        const cur = out[i];
+        const next = out[i + 1];
+        if (!cur?.turns?.length || !next?.turns?.length) continue;
+        const split = splitTrailingInterviewerTurns(cur.turns);
+        if (!split.tail.length) continue;
+        if (split.head.length === 0) continue;
+        if (!hasLikelyIntervieweeContent(split.head)) continue;
+        if (!startsWithLikelyInterviewee(next.turns)) continue;
+
+        cur.turns = split.head;
+        next.turns = [...split.tail, ...next.turns];
+        next.startBoundaryReason = cur.endBoundaryReason || next.startBoundaryReason;
+        next.startBoundaryEvidence = cur.endBoundaryEvidence || next.startBoundaryEvidence;
+      }
+
+      for (let i = 0; i < out.length; i++) {
+        const cur = out[i];
+        if (!cur?.turns?.length) continue;
+        if (hasLikelyIntervieweeContent(cur.turns)) continue;
+
+        const next = out[i + 1];
+        if (next?.turns?.length && startsWithLikelyInterviewee(next.turns)) {
+          next.turns = [...cur.turns, ...next.turns];
+          next.startBoundaryReason = cur.startBoundaryReason || next.startBoundaryReason;
+          next.startBoundaryEvidence = cur.startBoundaryEvidence || next.startBoundaryEvidence;
+          cur.turns = [];
+          continue;
+        }
+
+        const prev = out[i - 1];
+        if (prev?.turns?.length) {
+          prev.turns = [...prev.turns, ...cur.turns];
+          prev.endBoundaryReason = cur.endBoundaryReason || prev.endBoundaryReason;
+          prev.endBoundaryEvidence = cur.endBoundaryEvidence || prev.endBoundaryEvidence;
+          cur.turns = [];
+        }
+      }
+
+      return out.filter(f => f?.turns?.length);
+    }
+
+    function appendEvidence(base, extra, maxLen = 360) {
+      const a = String(base || "").trim();
+      const b = String(extra || "").trim();
+      if (!a) return b.slice(0, maxLen);
+      if (!b) return a.slice(0, maxLen);
+      return `${a} | ${b}`.slice(0, maxLen);
+    }
+
+    function createFrame(startBoundaryReason, startBoundaryEvidence, options = {}) {
+      return {
+        turns: [],
+        substantive_count: 0,
+        interviewee_substantive_count: 0,
+        char_count: 0,
+        has_friction: false,
+        startBoundaryReason: startBoundaryReason || "continuation",
+        startBoundaryEvidence: startBoundaryEvidence || "",
+        endBoundaryReason: null,
+        endBoundaryEvidence: "",
+        segmentationMode: options.segmentationMode || "heuristic",
+        aiTopicLabel: options.aiTopicLabel || "",
+        aiBoundaryReason: options.aiBoundaryReason || "",
+        aiChunkIndex: Number.isInteger(options.aiChunkIndex) ? options.aiChunkIndex : null,
+        aiChunkCount: Number.isInteger(options.aiChunkCount) ? options.aiChunkCount : null,
+        aiModel: options.aiModel || "",
+        aiChunkStatus: options.aiChunkStatus || "",
+        aiDiag: options.aiDiag || null,
+      };
+    }
+
+    function addTurnToFrame(frame, turn) {
+      frame.turns.push(turn);
+      frame.char_count += String(turn?.text || "").length;
+      if (hasFrictionBoundary(turn?.text)) frame.has_friction = true;
+      const substantive = !turn?.is_backchannel && !isLikelyFragment(turn?.text);
+      if (substantive) {
+        frame.substantive_count += 1;
+        if (turn?.speaker_role === "interviewee" || turn?.speaker_role === "other") {
+          frame.interviewee_substantive_count += 1;
+        }
+      }
+    }
+
+    function segmentTurnsHeuristicFrames(turns, options = {}) {
+      const frames = [];
+      let current = null;
+      let prev = null;
+      const firstReason = options.startBoundaryReason || "start_of_file";
+      const firstEvidence = options.startBoundaryEvidence || "";
+
+      const pushCurrent = () => {
+        if (!current || current.turns.length === 0) return;
+        frames.push(current);
+      };
+
+      for (const turn of turns) {
+        if (!current) {
+          current = createFrame(firstReason, firstEvidence, options);
+        } else {
+          const boundary = shouldStartNewBlock(prev, turn, current);
+          if (boundary) {
+            current.endBoundaryReason = boundary.code;
+            current.endBoundaryEvidence = boundary.evidence || "";
+            pushCurrent();
+            current = createFrame(boundary.code, boundary.evidence || "", options);
+          }
+        }
+
+        addTurnToFrame(current, turn);
+        prev = turn;
+      }
+
+      if (current && !current.endBoundaryReason) {
+        current.endBoundaryReason = options.endBoundaryReason || "end_of_transcript";
+        current.endBoundaryEvidence = options.endBoundaryEvidence || "";
+      }
+      pushCurrent();
+      return frames;
+    }
+
+    function buildAiFramesFromBlocks(chunkInfo, aiBlocks, options = {}) {
+      const out = [];
+      const chunkTurns = chunkInfo.turns || [];
+      for (let i = 0; i < aiBlocks.length; i++) {
+        const b = aiBlocks[i];
+        const turns = chunkTurns.slice(b.start_turn - 1, b.end_turn);
+        if (!turns.length) continue;
+        const startReason = (i === 0)
+          ? (chunkInfo.start === 0 ? "start_of_file" : "ai_chunk_continuation")
+          : "ai_boundary";
+        const startEvidence = (i === 0)
+          ? (chunkInfo.start === 0 ? "" : `chunk_start:${chunkInfo.start + 1}`)
+          : (aiBlocks[i - 1]?.boundary_reason || "");
+        const endReason = (i === aiBlocks.length - 1)
+          ? (options.isLastChunk ? "end_of_transcript" : "ai_chunk_end")
+          : "ai_boundary";
+        const endEvidence = String(b.boundary_reason || b.topic_label || "").trim();
+        const frame = createFrame(startReason, startEvidence, {
+          segmentationMode: "ai",
+          aiTopicLabel: b.topic_label || "",
+          aiBoundaryReason: b.boundary_reason || "",
+          aiChunkIndex: options.chunkIndex,
+          aiChunkCount: options.chunkCount,
+          aiModel: options.model || "",
+          aiChunkStatus: "ai_ok",
+          aiDiag: b.diagnostics || null
+        });
+        for (const turn of turns) addTurnToFrame(frame, turn);
+        frame.endBoundaryReason = endReason;
+        frame.endBoundaryEvidence = endEvidence;
+        out.push(frame);
+      }
+      return out;
+    }
+
+    function stitchLikelyMidSentenceFrames(frames) {
+      const out = (frames || []).map(f => ({ ...f, turns: [...(f.turns || [])] }));
+      for (let i = 0; i < out.length - 1; i++) {
+        const cur = out[i];
+        const next = out[i + 1];
+        if (!cur?.turns?.length || !next?.turns?.length) continue;
+        const lastText = String(cur.turns[cur.turns.length - 1]?.text || "").trim();
+        if (!lastText) continue;
+        const midSentence = !endsWithSentenceBoundary(lastText) || isLikelyFragment(lastText);
+        if (!midSentence) continue;
+        cur.turns = [...cur.turns, ...next.turns];
+        cur.endBoundaryReason = next.endBoundaryReason || cur.endBoundaryReason;
+        cur.endBoundaryEvidence = appendEvidence(cur.endBoundaryEvidence, next.endBoundaryEvidence, 420);
+        if (cur.segmentationMode !== next.segmentationMode && next.segmentationMode) {
+          cur.segmentationMode = `${cur.segmentationMode}+${next.segmentationMode}`;
+        }
+        cur.aiTopicLabel = cur.aiTopicLabel || next.aiTopicLabel || "";
+        cur.aiBoundaryReason = cur.aiBoundaryReason || next.aiBoundaryReason || "";
+        cur.aiChunkStatus = cur.aiChunkStatus || next.aiChunkStatus || "";
+        cur.aiDiag = cur.aiDiag || next.aiDiag || null;
+        out.splice(i + 1, 1);
+        i -= 1;
+      }
+      return out.filter(f => f?.turns?.length);
+    }
+
+    function enforceNoInterviewerOnlyFrames(frames) {
+      const out = (frames || []).map(f => ({ ...f, turns: [...(f.turns || [])] }));
+      for (let i = 0; i < out.length; i++) {
+        const cur = out[i];
+        if (!cur?.turns?.length) continue;
+        if (hasLikelyIntervieweeContent(cur.turns)) continue;
+
+        const next = out[i + 1];
+        if (next?.turns?.length) {
+          next.turns = [...cur.turns, ...next.turns];
+          next.startBoundaryReason = cur.startBoundaryReason || next.startBoundaryReason;
+          next.startBoundaryEvidence = appendEvidence(cur.startBoundaryEvidence, next.startBoundaryEvidence, 420);
+          cur.turns = [];
+          continue;
+        }
+
+        const prev = out[i - 1];
+        if (prev?.turns?.length) {
+          prev.turns = [...prev.turns, ...cur.turns];
+          prev.endBoundaryReason = cur.endBoundaryReason || prev.endBoundaryReason;
+          prev.endBoundaryEvidence = appendEvidence(prev.endBoundaryEvidence, cur.endBoundaryEvidence, 420);
+          cur.turns = [];
+        }
+      }
+      return out.filter(f => f?.turns?.length);
+    }
+
+    async function segmentTurnsWithAI(turns, locale, options = {}) {
+      const model = getSegmentationModel();
+      const speakerContext = options.speakerContext || null;
+      const fileName = options.fileName || "(memory)";
+      const chunks = chunkTurnsForAi(turns);
+      const frames = [];
+      const chunkRuns = [];
+      let aiSuccessChunks = 0;
+      let fallbackChunks = 0;
+
+      for (let idx = 0; idx < chunks.length; idx++) {
+        const chunk = chunks[idx];
+        let parsedBlocks = null;
+        let lastErr = null;
+        let attempt = 0;
+
+        for (attempt = 1; attempt <= (AI_SEG_MAX_RETRIES + 1); attempt++) {
+          try {
+            const prompt = buildSegmentationAIPrompt(chunk, speakerContext, locale);
+            if (!options.silentLogs) {
+              log(`[${fileName}] AI segmentation chunk ${idx + 1}/${chunks.length} (turns ${chunk.start + 1}-${chunk.end}, attempt ${attempt}).`, "ok");
+            }
+            const raw = await askAI(prompt, model, { temperature: AI_SEG_TEMPERATURE });
+            parsedBlocks = parseAiSegmentationResult(raw, chunk.turns.length, chunk.start);
+            aiSuccessChunks += 1;
+            chunkRuns.push({
+              chunk_index: idx + 1,
+              chunk_turn_start: chunk.start + 1,
+              chunk_turn_end: chunk.end,
+              status: "ai_ok",
+              attempts: attempt,
+              block_count: parsedBlocks.length,
+              model,
+              error: ""
+            });
+            break;
+          } catch (err) {
+            lastErr = err;
+            if (attempt <= AI_SEG_MAX_RETRIES && !options.silentLogs) {
+              log(`[${fileName}] AI chunk ${idx + 1}/${chunks.length} retrying after parse/validation failure: ${err?.message || err}`, "warn");
+            }
+          }
+        }
+        const attemptsUsed = parsedBlocks ? attempt : (AI_SEG_MAX_RETRIES + 1);
+
+        if (parsedBlocks && parsedBlocks.length) {
+          const aiFrames = buildAiFramesFromBlocks(chunk, parsedBlocks, {
+            chunkIndex: idx,
+            chunkCount: chunks.length,
+            model,
+            isLastChunk: idx === chunks.length - 1
+          });
+          frames.push(...aiFrames);
+          continue;
+        }
+
+        fallbackChunks += 1;
+        const errMsg = compactSingleLine(lastErr?.message || String(lastErr || "AI segmentation failed"), 240);
+        if (!options.silentLogs) {
+          log(`[${fileName}] AI segmentation fallback to heuristic on chunk ${idx + 1}/${chunks.length}: ${errMsg}`, "warn");
+        }
+        const fallbackFrames = segmentTurnsHeuristicFrames(chunk.turns, {
+          startBoundaryReason: chunk.start === 0 ? "start_of_file" : "ai_chunk_fallback_start",
+          startBoundaryEvidence: `AI fallback chunk ${idx + 1}/${chunks.length}`,
+          endBoundaryReason: idx === chunks.length - 1 ? "end_of_transcript" : "ai_chunk_fallback_end",
+          endBoundaryEvidence: errMsg,
+          segmentationMode: "heuristic_fallback",
+          aiChunkIndex: idx,
+          aiChunkCount: chunks.length,
+          aiModel: model,
+          aiChunkStatus: "fallback",
+          aiDiag: null
+        });
+        frames.push(...fallbackFrames);
+          chunkRuns.push({
+            chunk_index: idx + 1,
+            chunk_turn_start: chunk.start + 1,
+            chunk_turn_end: chunk.end,
+            status: "fallback_heuristic",
+            attempts: attemptsUsed,
+            block_count: fallbackFrames.length,
+            model,
+            error: errMsg
+          });
+      }
+
+      const mode = fallbackChunks === 0
+        ? "ai"
+        : (aiSuccessChunks === 0 ? "heuristic_fallback" : "ai_with_fallback");
+      return {
+        frames,
+        mode,
+        aiDiag: {
+          mode,
+          chunk_count: chunks.length,
+          ai_success_chunks: aiSuccessChunks,
+          fallback_chunks: fallbackChunks,
+          model,
+          prompt_chars: getSegmentationPromptTemplate().length,
+          chunk_runs: chunkRuns
+        }
+      };
+    }
+
+    async function segmentSemanticBlocks(fullText, locale, options = {}) {
+      const speakerContext = options.speakerContext
+        || buildSpeakerContext(fullText, options.fileName, options.intervieweeNameHint);
+      const turns = toTurns(fullText, {
+        speakerContext,
+        fileName: options.fileName,
+        intervieweeNameHint: options.intervieweeNameHint
+      });
+
+      if (turns.length === 0) {
+        return {
+          blockItems: [],
+          hasSeg: detectIntlSegmenter(),
+          speakerContext,
+          segmentationMode: "empty",
+          aiDiag: {
+            mode: "empty",
+            chunk_count: 0,
+            ai_success_chunks: 0,
+            fallback_chunks: 0,
+            model: getSegmentationModel(),
+            prompt_chars: getSegmentationPromptTemplate().length,
+            chunk_runs: []
+          }
+        };
+      }
+
+      const useAI = options.useAI !== false;
+      let frames = [];
+      let segmentationMode = "heuristic";
+      let aiDiag = {
+        mode: "heuristic",
+        chunk_count: 0,
+        ai_success_chunks: 0,
+        fallback_chunks: 0,
+        model: getSegmentationModel(),
+        prompt_chars: getSegmentationPromptTemplate().length,
+        chunk_runs: []
+      };
+
+      if (useAI) {
+        const aiResult = await segmentTurnsWithAI(turns, locale, options);
+        frames = aiResult.frames || [];
+        segmentationMode = aiResult.mode || "ai";
+        aiDiag = aiResult.aiDiag || aiDiag;
+      } else {
+        frames = segmentTurnsHeuristicFrames(turns, {
+          startBoundaryReason: "start_of_file",
+          endBoundaryReason: "end_of_transcript",
+          segmentationMode: "heuristic_preview"
+        });
+        segmentationMode = "heuristic_preview";
+        aiDiag = {
+          mode: "heuristic_preview",
+          chunk_count: 0,
+          ai_success_chunks: 0,
+          fallback_chunks: 0,
+          model: getSegmentationModel(),
+          prompt_chars: getSegmentationPromptTemplate().length,
+          chunk_runs: []
+        };
+      }
+
+      const balancedFrames = enforceNoInterviewerOnlyFrames(
+        stitchLikelyMidSentenceFrames(rebalanceInterviewerFrames(frames))
+      );
+      const blockItems = balancedFrames
+        .map(frame => buildBlockItem(frame.turns, {
+          speakerContext,
+          startBoundaryReason: frame.startBoundaryReason,
+          endBoundaryReason: frame.endBoundaryReason,
+          startBoundaryEvidence: frame.startBoundaryEvidence,
+          endBoundaryEvidence: frame.endBoundaryEvidence,
+          segmentationMode: frame.segmentationMode,
+          aiTopicLabel: frame.aiTopicLabel,
+          aiBoundaryReason: frame.aiBoundaryReason,
+          aiChunkIndex: frame.aiChunkIndex,
+          aiChunkCount: frame.aiChunkCount,
+          aiModel: frame.aiModel,
+          aiChunkStatus: frame.aiChunkStatus,
+          aiDiag: frame.aiDiag
+        }))
+        .filter(Boolean);
+
+      return {
+        blockItems,
+        hasSeg: detectIntlSegmenter(),
+        speakerContext,
+        segmentationMode,
+        aiDiag
+      };
+    }
+
+    async function ingestAll({ dryRun, onProgress, shouldStop }) {
+      const appName = $("appName").value.trim();
+      if (!state.initialized) await initDB();
+
+      if (!state.files.length) {
+        log("No files loaded.", "warn");
+        return { totalParsed: 0, totalInserted: 0, totalSkipped: 0, processedFiles: 0, stopped: false };
+      }
+
+      let totalParsed = 0;
+      let totalInserted = 0;
+      let totalSkipped = 0;
+      let processedFiles = 0;
+      let stopped = false;
+      const totalFiles = state.files.length;
+      if (typeof onProgress === "function") onProgress({ processedFiles, totalFiles, phase: "start" });
+
+      for (let idx = 0; idx < state.files.length; idx++) {
+        if (typeof shouldStop === "function" && shouldStop()) {
+          stopped = true;
+          log(`Ingest stop requested. Halting before file ${idx + 1}/${totalFiles}.`, "warn");
+          break;
+        }
+        const f = state.files[idx];
+        if (typeof onProgress === "function") onProgress({ processedFiles, totalFiles, fileName: f.file.name, phase: "file_start" });
+        const meta = f.meta;
+        const derived = await resolveInterviewForFile(appName, meta, f.file.name);
+
+        // Read
+        const text = await f.file.text();
+        const tok = await segmentSemanticBlocks(text, $("locale").value.trim() || "en", {
+          fileName: f.file.name,
+          intervieweeNameHint: meta.interviewee_name
+        });
+        totalParsed += tok.blockItems.length;
+        f.lastSegmentation = tok;
+        log(`[${f.file.name}] Segmented ${tok.blockItems.length} semantic blocks (${tok.segmentationMode || "unknown"}; AI chunks ok=${tok.aiDiag?.ai_success_chunks ?? 0}, fallback=${tok.aiDiag?.fallback_chunks ?? 0}).`, "ok");
+        if (dryRun) {
+          processedFiles += 1;
+          if (typeof onProgress === "function") onProgress({ processedFiles, totalFiles, fileName: f.file.name, phase: "file_done" });
+          continue;
+        }
+
+        // Upsert interview metadata (optional but useful for lookup).
+        await DBHelper.query(appName, `
+          INSERT INTO interviews (interview_id, interviewee_name, interviewee_code, interview_prefix, interview_num, date, source_type, source_file)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE
+            interviewee_name=VALUES(interviewee_name),
+            interviewee_code=VALUES(interviewee_code),
+            interview_prefix=VALUES(interview_prefix),
+            interview_num=VALUES(interview_num),
+            date=VALUES(date),
+            source_type=VALUES(source_type),
+            source_file=VALUES(source_file)
+        `, [
+          derived.interview_id,
+          meta.interviewee_name || null,
+          derived.interviewee_code,
+          derived.interview_prefix,
+          derived.interview_num || null,
+          meta.date || null,
+          $("sourceType").value,
+          f.file.name,
+        ]);
+
+        // Load existing uid -> id mapping to preserve stable sentence_id numbering
+        const existing = await DBHelper.query(appName,
+          "SELECT sentence_uid, sentence_id FROM sentences WHERE interview_id = ? AND sentence_uid IS NOT NULL",
+          [derived.interview_id]
+        );
+        const uidToId = new Map((existing.rows || []).map(r => [String(r.sentence_uid), String(r.sentence_id)]));
+
+        // Determine next available sequence number for this interview_prefix
+        let maxSeq = 0;
+        for (const sid of uidToId.values()) {
+          const m = sid.match(/\.(\d{4})$/);
+          if (m) maxSeq = Math.max(maxSeq, parseInt(m[1], 10));
+        }
+
+        // Assign IDs for new blocks (reuse for existing)
+        let inserted = 0;
+        let skipped = 0;
+        for (const item of tok.blockItems) {
+          const uid = buildSentenceUid(derived.interview_id, item.timestamp_block, item.speaker, item.raw_text);
+          let sentenceId = uidToId.get(uid);
+          if (!sentenceId) {
+            maxSeq += 1;
+            sentenceId = `${derived.interview_prefix}.${pad4(maxSeq)}`;
+            uidToId.set(uid, sentenceId);
+          }
+
+          // Insert if not exists by sentence_uid.
+          try {
+            const res = await DBHelper.query(appName, `
+              INSERT IGNORE INTO sentences (
+                sentence_id, sentence_uid, interview_id, interview_prefix, source_file,
+                timestamp_block, speaker, raw_text, clean_text,
+                sentiment_score, is_problem, is_solution, is_explanation, is_workaround, review_status
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 0, 'unprocessed')
+            `, [
+              sentenceId,
+              uid,
+              derived.interview_id,
+              derived.interview_prefix,
+              f.file.name,
+              item.timestamp_block || null,
+              item.speaker || null,
+              item.raw_text,
+              item.clean_text || null
+            ]);
+
+            // DBHelper returns rows; for INSERT IGNORE we can infer by querying affected rows is not exposed.
+            // Cheap check: if uid was already present, it was skipped.
+            if (existing.rows && existing.rows.some(r => String(r.sentence_uid) === uid)) {
+              skipped += 1;
+            } else {
+              // Might still be duplicate within this ingest batch; treat as skipped if uid already in map AND seen.
+              inserted += 1;
+            }
+          } catch (e) {
+            // Most likely schema mismatch; surface and stop.
+            log(`[${f.file.name}] Insert failed: ${e.message || e}`, "bad");
+            throw e;
+          }
+        }
+
+        totalInserted += inserted;
+        totalSkipped += skipped;
+        log(`[${f.file.name}] Inserted ~${inserted}, skipped ~${skipped} (idempotent).`, "ok");
+
+        // Validation: count in DB for this interview vs segmented count (best-effort)
+        const cnt = await DBHelper.query(appName, "SELECT COUNT(*) AS c FROM sentences WHERE interview_id = ?", [derived.interview_id]);
+        const c = (cnt.rows && cnt.rows[0] && (cnt.rows[0].c ?? cnt.rows[0].C)) ? Number(cnt.rows[0].c ?? cnt.rows[0].C) : null;
+        if (Number.isFinite(c) && c < tok.blockItems.length) {
+          log(`[${f.file.name}] WARNING: DB has ${c} rows for interview_id=${derived.interview_id} but segmentation produced ${tok.blockItems.length}.`, "warn");
+        }
+        processedFiles += 1;
+        if (typeof onProgress === "function") onProgress({ processedFiles, totalFiles, fileName: f.file.name, phase: "file_done" });
+      }
+
+      if (dryRun) {
+        log(`Dry run complete. Segmented ${totalParsed} semantic blocks total.`, "ok");
+      } else if (!stopped) {
+        log(`Ingest complete. Segmented ${totalParsed}; inserted ~${totalInserted}; skipped ~${totalSkipped}.`, "ok");
+        await runPostIngestChecks();
+      } else {
+        log(`Ingest stopped after ${processedFiles}/${totalFiles} files. Parsed ${totalParsed}, inserted ~${totalInserted}, skipped ~${totalSkipped}.`, "warn");
+      }
+      return { totalParsed, totalInserted, totalSkipped, processedFiles, stopped, totalFiles };
+    }
+
+    async function resetTables() {
+      const appName = $("appName").value.trim();
+      if (!state.initialized) await initDB();
+      if (!confirm("This will delete Interview and Sentence tables for this app DB. Continue?")) return;
+
+      console.info("[Gatekeeper] Reset start", { appName });
+      log("Reset started: dropping and recreating app tables...", "warn");
+      setResetBusy(true);
+
+      try {
+        console.info("[Gatekeeper] Dropping table: sentences");
+        await DBHelper.query(appName, "DROP TABLE IF EXISTS sentences");
+        console.info("[Gatekeeper] Dropping table: interviews");
+        await DBHelper.query(appName, "DROP TABLE IF EXISTS interviews");
+        console.info("[Gatekeeper] Recreating schema");
+        await ensureSchema(appName);
+        const check = await DBHelper.query(appName, `
+          SELECT
+            (SELECT COUNT(*) FROM interviews) AS interviews_cnt,
+            (SELECT COUNT(*) FROM sentences) AS sentences_cnt
+        `);
+        const row = check?.rows?.[0] || {};
+        const interviewsCnt = Number(row.interviews_cnt || 0);
+        const sentencesCnt = Number(row.sentences_cnt || 0);
+        console.info("[Gatekeeper] Reset complete");
+        if (interviewsCnt === 0 && sentencesCnt === 0) {
+          log("Checked DB: interviews=0, sentences=0 after reset.", "ok");
+        } else {
+          log(`Checked DB after reset: interviews=${interviewsCnt}, sentences=${sentencesCnt}.`, "warn");
+        }
+        log("Reset complete: app tables recreated (interviews, sentences).", "ok");
+        setResetResult(true);
+      } catch (err) {
+        console.error("[Gatekeeper] Reset failed", err);
+        log("Reset failed: " + (err?.message || err), "bad");
+        setResetResult(false);
+      } finally {
+        setResetBusy(false);
+      }
+    }
+
+    function setResetBusy(isBusy) {
+      const btn = $("btnReset");
+      if (!btn) return;
+      if (isBusy) {
+        if (!btn.dataset.originalText) btn.dataset.originalText = btn.textContent;
+        btn.disabled = true;
+        const frames = ["Resetting.", "Resetting..", "Resetting..."];
+        let idx = 0;
+        btn.textContent = frames[idx];
+        if (state.resetSpinTimer) clearInterval(state.resetSpinTimer);
+        state.resetSpinTimer = setInterval(() => {
+          idx = (idx + 1) % frames.length;
+          btn.textContent = frames[idx];
+        }, 250);
+      } else {
+        if (state.resetSpinTimer) {
+          clearInterval(state.resetSpinTimer);
+          state.resetSpinTimer = null;
+        }
+        btn.textContent = btn.dataset.originalText || "Reset App Tables";
+        btn.disabled = false;
+      }
+    }
+
+    function setResetResult(ok) {
+      const btn = $("btnReset");
+      if (!btn) return;
+      const original = btn.dataset.originalText || "Reset App Tables";
+      btn.textContent = ok ? "✅ Reset Done" : "❌ Reset Failed";
+      setTimeout(() => {
+        btn.textContent = original;
+      }, ok ? 1400 : 1800);
+    }
+
+    function updateSegTag() {
+      const el = $("segTag");
+      if (el) el.textContent = detectIntlSegmenter() ? "Intl.Segmenter available" : "Intl.Segmenter missing";
+    }
+
+    async function fetchDbSpotOptions(appName) {
+      const res = await DBHelper.query(appName, `
+        SELECT
+          s.interview_id,
+          COALESCE(NULLIF(TRIM(s.source_file), ''), CONCAT('[', s.interview_id, ']')) AS source_file,
+          COUNT(*) AS sentence_count
+        FROM sentences s
+        GROUP BY s.interview_id, source_file
+        ORDER BY source_file ASC, s.interview_id ASC
+      `);
+      return (res?.rows || []).map(r => ({
+        interviewId: String(r.interview_id || ""),
+        sourceFile: String(r.source_file || ""),
+        sentenceCount: Number(r.sentence_count || 0)
+      })).filter(x => x.interviewId);
+    }
+
+    function setQABusy(isBusy, label) {
+      $("qaTag").textContent = label || (isBusy ? "Checking..." : "Ready");
+      $("btnValidate").disabled = isBusy;
+      $("btnSpotCheck").disabled = isBusy;
+      $("btnCopySpotAll").disabled = isBusy;
+    }
+
+    function setQASummary(lines) {
+      qaSummaryEl.textContent = lines.join("\n");
+    }
+
+    async function buildExpectedForFile(appName, f) {
+      const derived = await resolveInterviewForFile(appName, f.meta, f.file.name);
+      let tok = f.lastSegmentation || null;
+      if (!tok) {
+        const text = await f.file.text();
+        tok = await segmentSemanticBlocks(text, $("locale").value.trim() || "en", {
+          fileName: f.file.name,
+          intervieweeNameHint: f.meta?.interviewee_name
+        });
+        f.lastSegmentation = tok;
+      }
+      const expectedUids = tok.blockItems.map(item =>
+        buildSentenceUid(derived.interview_id, item.timestamp_block, item.speaker, item.raw_text)
+      );
+      return { derived, tok, expectedUids };
+    }
+
+    function getSpotCheckPicks(count, targetSamples = 12) {
+      if (count <= 0) return [];
+      if (count <= targetSamples) return Array.from({ length: count }, (_, i) => i);
+      return Array.from({ length: targetSamples }, (_, i) => Math.floor((i * (count - 1)) / (targetSamples - 1)));
+    }
+
+    function textHasFiller(text) {
+      return collectFillerHits(text).length > 0;
+    }
+
+    function compactSingleLine(text, maxLen = 360) {
+      return String(text || "").replace(/\s+/g, " ").trim().slice(0, maxLen);
+    }
+
+    async function buildSpotCheckDataForFile(appName, f, targetSamples = 12) {
+      const { derived, tok, expectedUids } = await buildExpectedForFile(appName, f);
+      const dbRes = await DBHelper.query(appName,
+        "SELECT sentence_id, sentence_uid, raw_text FROM sentences WHERE interview_id = ? ORDER BY sentence_id ASC",
+        [derived.interview_id]
+      );
+      const dbRows = dbRes?.rows || [];
+      const dbMap = new Map(dbRows.map(r => [String(r.sentence_uid || ""), r]));
+      const picks = getSpotCheckPicks(tok.blockItems.length, targetSamples);
+      const samples = picks.map((i) => {
+        const block = tok.blockItems[i];
+        const uid = expectedUids[i];
+        const row = dbMap.get(uid);
+        const raw = block.raw_text || "";
+        const clean = block.clean_text || "";
+        const debug = block.debug || {};
+        const removedFillers = Array.isArray(debug.removedFillers) ? debug.removedFillers : extractRemovedFillerTerms(raw, clean);
+        const cleanEndsSentence = typeof debug.cleanEndsSentence === "boolean" ? debug.cleanEndsSentence : endsWithSentenceBoundary(clean);
+        return {
+          index: i,
+          found: !!row,
+          sentenceId: row?.sentence_id ? String(row.sentence_id) : "no sentence_id",
+          uid,
+          raw,
+          clean,
+          rawLen: raw.length,
+          cleanLen: clean.length,
+          rawEqClean: compactSingleLine(raw, 1200).toLowerCase() === compactSingleLine(clean, 1200).toLowerCase(),
+          hasFillerRaw: textHasFiller(raw),
+          hasFillerClean: textHasFiller(clean),
+          removedFillers,
+          removedFillersCount: removedFillers.length,
+          cleanEndsSentence,
+          cleanLooksFragment: typeof debug.cleanLooksFragment === "boolean" ? debug.cleanLooksFragment : isLikelyFragment(clean),
+          endsWithInterviewee: typeof debug.endsWithInterviewee === "boolean" ? debug.endsWithInterviewee : false,
+          endSpeaker: debug.endSpeaker || null,
+          endRole: debug.endRole || "unknown",
+          interviewerOnlyBlock: !!debug.interviewerOnlyBlock,
+          speakerFlow: debug.speakerFlow || "",
+          turnCount: Number(debug.turnCount || 0),
+          startBoundaryReason: debug.startBoundaryReason || "",
+          endBoundaryReason: debug.endBoundaryReason || "",
+          startBoundaryEvidence: debug.startBoundaryEvidence || "",
+          endBoundaryEvidence: debug.endBoundaryEvidence || "",
+          segmentationMode: debug.segmentationMode || tok.segmentationMode || "unknown",
+          aiTopicLabel: debug.aiTopicLabel || "",
+          aiBoundaryReason: debug.aiBoundaryReason || "",
+          aiChunkIndex: Number(debug.aiChunkIndex || 0) || null,
+          aiChunkCount: Number(debug.aiChunkCount || 0) || null,
+          aiModel: debug.aiModel || tok.aiDiag?.model || "",
+          aiChunkStatus: debug.aiChunkStatus || "",
+          aiFillerTermsRemoved: Array.isArray(debug.aiFillerTermsRemoved) ? debug.aiFillerTermsRemoved : [],
+          aiEndedAtSentenceBoundary: debug.aiEndedAtSentenceBoundary || "",
+          aiEndedAtSentenceBoundaryWhy: debug.aiEndedAtSentenceBoundaryWhy || "",
+          aiEndedWithInterviewee: debug.aiEndedWithInterviewee || "",
+          aiEndedWithIntervieweeWhy: debug.aiEndedWithIntervieweeWhy || "",
+        };
+      });
+
+      const diag = {
+        missingSamples: samples.filter(s => !s.found).length,
+        rawEqCleanSamples: samples.filter(s => s.rawEqClean).length,
+        fillerRawSamples: samples.filter(s => s.hasFillerRaw).length,
+        fillerCleanSamples: samples.filter(s => s.hasFillerClean).length,
+        nonSentenceEndingSamples: samples.filter(s => !s.cleanEndsSentence).length,
+        fragmentCleanSamples: samples.filter(s => s.cleanLooksFragment).length,
+        interviewerOnlySamples: samples.filter(s => s.interviewerOnlyBlock).length,
+        endNotIntervieweeSamples: samples.filter(s => !s.endsWithInterviewee).length,
+        fillerNotRemovedSamples: samples.filter(s => s.hasFillerRaw && s.removedFillersCount === 0).length,
+        aiFallbackChunks: Number(tok.aiDiag?.fallback_chunks || 0),
+        aiSuccessChunks: Number(tok.aiDiag?.ai_success_chunks || 0),
+      };
+
+      return { file: f.file.name, derived, tok, dbRows, picks, samples, diag, targetSamples };
+    }
+
+    async function buildDbOnlySpotCheckDataForInterview(appName, interviewId, sourceFile, targetSamples = 12) {
+      const dbRes = await DBHelper.query(appName,
+        `SELECT sentence_id, sentence_uid, raw_text, clean_text
+         FROM sentences
+         WHERE interview_id = ?
+         ORDER BY sentence_id ASC`,
+        [interviewId]
+      );
+      const dbRows = dbRes?.rows || [];
+      const picks = getSpotCheckPicks(dbRows.length, targetSamples);
+      const samples = picks.map((idx) => {
+        const row = dbRows[idx] || {};
+        const raw = String(row.raw_text || "");
+        const clean = String(row.clean_text || "");
+        const removedFillers = extractRemovedFillerTerms(raw, clean);
+        return {
+          index: idx,
+          found: true,
+          sentenceId: String(row.sentence_id || "no sentence_id"),
+          uid: String(row.sentence_uid || ""),
+          raw,
+          clean,
+          rawLen: raw.length,
+          cleanLen: clean.length,
+          rawEqClean: compactSingleLine(raw, 1200).toLowerCase() === compactSingleLine(clean, 1200).toLowerCase(),
+          hasFillerRaw: textHasFiller(raw),
+          hasFillerClean: textHasFiller(clean),
+          removedFillers,
+          removedFillersCount: removedFillers.length,
+          cleanEndsSentence: endsWithSentenceBoundary(clean),
+          cleanLooksFragment: isLikelyFragment(clean),
+          endsWithInterviewee: false,
+          endSpeaker: null,
+          endRole: "unknown",
+          interviewerOnlyBlock: false,
+          speakerFlow: "",
+          turnCount: 0,
+          startBoundaryReason: "db_only",
+          endBoundaryReason: "db_only",
+          startBoundaryEvidence: "No loaded source file in this session.",
+          endBoundaryEvidence: "No loaded source file in this session.",
+          segmentationMode: "db_only",
+          aiTopicLabel: "",
+          aiBoundaryReason: "",
+          aiChunkIndex: null,
+          aiChunkCount: null,
+          aiModel: "",
+          aiChunkStatus: "db_only",
+          aiFillerTermsRemoved: [],
+          aiEndedAtSentenceBoundary: "",
+          aiEndedAtSentenceBoundaryWhy: "",
+          aiEndedWithInterviewee: "",
+          aiEndedWithIntervieweeWhy: "",
+        };
+      });
+
+      const diag = {
+        missingSamples: 0,
+        rawEqCleanSamples: samples.filter(s => s.rawEqClean).length,
+        fillerRawSamples: samples.filter(s => s.hasFillerRaw).length,
+        fillerCleanSamples: samples.filter(s => s.hasFillerClean).length,
+        nonSentenceEndingSamples: samples.filter(s => !s.cleanEndsSentence).length,
+        fragmentCleanSamples: samples.filter(s => s.cleanLooksFragment).length,
+        interviewerOnlySamples: 0,
+        endNotIntervieweeSamples: 0,
+        fillerNotRemovedSamples: samples.filter(s => s.hasFillerRaw && s.removedFillersCount === 0).length,
+        aiFallbackChunks: 0,
+        aiSuccessChunks: 0,
+      };
+
+      return {
+        mode: "db_only",
+        file: sourceFile || `[${interviewId}]`,
+        derived: { interview_id: interviewId },
+        tok: {
+          blockItems: [],
+          hasSeg: false,
+          segmentationMode: "db_only",
+          aiDiag: {
+            mode: "db_only",
+            chunk_count: 0,
+            ai_success_chunks: 0,
+            fallback_chunks: 0,
+            model: "",
+            prompt_chars: 0,
+            chunk_runs: []
+          }
+        },
+        dbRows,
+        picks,
+        samples,
+        diag,
+        targetSamples
+      };
+    }
+
+    async function copyTextToClipboard(text) {
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+        await navigator.clipboard.writeText(text);
+        return "navigator.clipboard";
+      }
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.setAttribute("readonly", "readonly");
+      ta.style.position = "fixed";
+      ta.style.left = "-9999px";
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(ta);
+      if (!ok) throw new Error("Clipboard copy failed");
+      return "execCommand";
+    }
+
+    async function runPostIngestChecks() {
+      const appName = $("appName").value.trim();
+      if (!state.initialized) await initDB();
+
+      console.info("[Gatekeeper] QA start", { appName, files: state.files.length });
+      setQABusy(true, "Checking...");
+      qaListEl.innerHTML = "";
+
+      let filesPass = 0;
+      let filesWarn = 0;
+      let totalExpected = 0;
+      let totalMatched = 0;
+
+      try {
+        if (state.files.length > 0) {
+          for (const f of state.files) {
+            const { derived, tok, expectedUids } = await buildExpectedForFile(appName, f);
+            totalExpected += expectedUids.length;
+            const expectedSet = new Set(expectedUids);
+
+            const dbRes = await DBHelper.query(appName,
+              "SELECT sentence_id, sentence_uid, raw_text FROM sentences WHERE interview_id = ?",
+              [derived.interview_id]
+            );
+            const dbRows = dbRes?.rows || [];
+            const dbUids = dbRows.map(r => String(r.sentence_uid || ""));
+            const dbSet = new Set(dbUids);
+            const matched = expectedUids.filter(uid => dbSet.has(uid)).length;
+            totalMatched += matched;
+            const missing = expectedUids.filter(uid => !dbSet.has(uid));
+            const extras = dbUids.filter(uid => uid && !expectedSet.has(uid));
+            const emptyText = dbRows.filter(r => !String(r.raw_text || "").trim()).length;
+
+            const pass = missing.length === 0 && emptyText === 0;
+            if (pass) filesPass += 1; else filesWarn += 1;
+
+            const item = document.createElement("div");
+            item.className = "qa-item";
+            item.innerHTML = `
+              <div class="qa-head">
+                <span class="tag">${escapeHtml(f.file.name)}</span>
+                <span class="tag">${pass ? "PASS" : "WARN"}</span>
+                <span class="tag">${escapeHtml(tok.segmentationMode || "unknown")}</span>
+              </div>
+              <div class="qa-text">expected_blocks=${tok.blockItems.length}, matched=${matched}, missing=${missing.length}, extras=${extras.length}, empty_raw_text=${emptyText}, ai_chunks_ok=${Number(tok.aiDiag?.ai_success_chunks || 0)}, ai_fallback=${Number(tok.aiDiag?.fallback_chunks || 0)}</div>
+            `;
+            qaListEl.appendChild(item);
+
+            console.info("[Gatekeeper] QA file result", {
+              file: f.file.name,
+              interview_id: derived.interview_id,
+              expected: tok.blockItems.length,
+              matched,
+              missing: missing.length,
+              extras: extras.length,
+              empty_raw_text: emptyText
+            });
+
+            if (missing.length > 0) {
+              log(`[QA][${f.file.name}] Missing ${missing.length} expected blocks in DB.`, "warn");
+            }
+            if (extras.length > 0) {
+              log(`[QA][${f.file.name}] Found ${extras.length} extra DB blocks (likely prior ingest/version differences).`, "warn");
+            }
+          }
+        } else {
+          const dbFiles = await fetchDbSpotOptions(appName);
+          state.dbSpotOptions = dbFiles;
+
+          if (dbFiles.length === 0) {
+            $("qaTag").textContent = "Ready";
+            setQASummary([
+              "No files loaded in this session and no sentence rows found in DB.",
+              "Load files or ingest data first."
+            ]);
+            log("QA run skipped: DB has no sentence rows to inspect.", "warn");
+            await refreshSpotFileOptions();
+            return;
+          }
+
+          for (const info of dbFiles) {
+            const dbRes = await DBHelper.query(appName, `
+              SELECT
+                COUNT(*) AS sentence_count,
+                SUM(CASE WHEN sentence_uid IS NULL OR sentence_uid = '' THEN 1 ELSE 0 END) AS missing_uid,
+                SUM(CASE WHEN raw_text IS NULL OR TRIM(raw_text) = '' THEN 1 ELSE 0 END) AS missing_raw,
+                SUM(CASE WHEN clean_text IS NULL OR TRIM(clean_text) = '' THEN 1 ELSE 0 END) AS missing_clean
+              FROM sentences
+              WHERE interview_id = ?
+            `, [info.interviewId]);
+            const row = dbRes?.rows?.[0] || {};
+            const sentenceCount = Number(row.sentence_count || 0);
+            const missingUid = Number(row.missing_uid || 0);
+            const missingRaw = Number(row.missing_raw || 0);
+            const missingClean = Number(row.missing_clean || 0);
+            const pass = sentenceCount > 0 && missingUid === 0 && missingRaw === 0;
+            if (pass) filesPass += 1; else filesWarn += 1;
+
+            const item = document.createElement("div");
+            item.className = "qa-item";
+            item.innerHTML = `
+              <div class="qa-head">
+                <span class="tag">${escapeHtml(info.sourceFile)}</span>
+                <span class="tag">${escapeHtml(info.interviewId)}</span>
+                <span class="tag">${pass ? "PASS" : "WARN"}</span>
+              </div>
+              <div class="qa-text">db_only: sentence_count=${sentenceCount}, missing_uid=${missingUid}, missing_raw_text=${missingRaw}, missing_clean_text=${missingClean}</div>
+            `;
+            qaListEl.appendChild(item);
+
+            totalExpected += sentenceCount;
+            totalMatched += (sentenceCount - missingRaw);
+          }
+        }
+
+        const dbGlobal = await DBHelper.query(appName, `
+          SELECT
+            (SELECT COUNT(*) FROM sentences WHERE sentence_uid IS NULL OR sentence_uid = '') AS missing_uid,
+            (SELECT COUNT(*) FROM sentences WHERE raw_text IS NULL OR TRIM(raw_text) = '') AS missing_raw
+        `);
+        const g = dbGlobal?.rows?.[0] || {};
+        const missingUid = Number(g.missing_uid || 0);
+        const missingRaw = Number(g.missing_raw || 0);
+
+        setQASummary([
+          `Files checked: ${(state.files.length || state.dbSpotOptions.length)} (PASS ${filesPass}, WARN ${filesWarn})`,
+          `Expected blocks${state.files.length ? " from loaded files" : " (db-only mode)"}: ${totalExpected}`,
+          `Expected blocks found in DB: ${totalMatched}`,
+          `Global DB sanity: missing_uid=${missingUid}, missing_raw_text=${missingRaw}`
+        ]);
+
+        if (filesWarn === 0 && missingUid === 0 && missingRaw === 0) {
+          $("qaTag").textContent = "PASS";
+          log("QA checks passed for current loaded files.", "ok");
+        } else {
+          $("qaTag").textContent = "WARN";
+          log("QA checks found warnings. Review QA panel details.", "warn");
+        }
+      } catch (err) {
+        $("qaTag").textContent = "ERROR";
+        setQASummary(["QA failed.", String(err?.message || err)]);
+        log("QA failed: " + (err?.message || err), "bad");
+        console.error("[Gatekeeper] QA failed", err);
+      } finally {
+        setQABusy(false);
+      }
+    }
+
+    function parseSpotSelection(value) {
+      const v = String(value || "");
+      if (v.startsWith("file::")) return { mode: "file", key: v.slice("file::".length) };
+      if (v.startsWith("db::")) return { mode: "db", key: v.slice("db::".length) };
+      return { mode: "file", key: v };
+    }
+
+    async function renderSpotCheck() {
+      const appName = $("appName").value.trim();
+      if (!state.initialized) await initDB();
+      await refreshSpotFileOptions();
+      const sel = parseSpotSelection($("spotFile").value);
+      const f = state.files.find(x => x.file.name === sel.key);
+      const dbTarget = state.dbSpotOptions.find(x => x.interviewId === sel.key);
+
+      setQABusy(true, "Spot check...");
+      qaListEl.innerHTML = "";
+
+      try {
+        let data = null;
+        let displayFileName = f?.file?.name || dbTarget?.sourceFile || "";
+        if (f) {
+          data = await buildSpotCheckDataForFile(appName, f, 12);
+        } else if (dbTarget) {
+          data = await buildDbOnlySpotCheckDataForInterview(appName, dbTarget.interviewId, dbTarget.sourceFile, 12);
+        } else {
+          const check = await DBHelper.query(appName, "SELECT COUNT(*) AS c FROM sentences");
+          const c = Number(check?.rows?.[0]?.c || 0);
+          if (c === 0) {
+            setQASummary([
+              "Spot check could not run.",
+              "No files loaded in this session and DB has no sentence rows."
+            ]);
+            $("qaTag").textContent = "Ready";
+            log("Spot check skipped: DB has no rows.", "warn");
+            return;
+          }
+          setQASummary([
+            "Spot check could not resolve a target file/interview.",
+            "Choose a DB interview from Spot-check file dropdown and retry."
+          ]);
+          $("qaTag").textContent = "WARN";
+          log("Spot check skipped: no target selected.", "warn");
+          return;
+        }
+        for (const s of data.samples) {
+          const el = document.createElement("div");
+          el.className = "qa-item";
+          el.innerHTML = `
+            <div class="qa-head">
+              <span class="tag">${escapeHtml(displayFileName)} #${s.index + 1}</span>
+              <span class="tag">${s.found ? "FOUND" : "MISSING"}</span>
+              <span class="tag">${escapeHtml(s.sentenceId)}</span>
+              <span class="tag">uid ${escapeHtml(s.uid.slice(0, 8))}...</span>
+              <span class="tag">${s.rawEqClean ? "RAW=CLEAN" : "RAW!=CLEAN"}</span>
+              <span class="tag">${s.hasFillerClean ? "clean_has_filler" : "clean_no_filler"}</span>
+              <span class="tag">${s.cleanEndsSentence ? "clean_sentence_end" : "clean_mid_sentence"}</span>
+              <span class="tag">${s.endsWithInterviewee ? "ends_interviewee" : "ends_not_interviewee"}</span>
+              <span class="tag">${escapeHtml(s.segmentationMode || "unknown")}</span>
+            </div>
+            <div class="qa-text"><strong>Raw:</strong> ${escapeHtml(compactSingleLine(s.raw, 360))}</div>
+            <div class="qa-text"><strong>Clean:</strong> ${escapeHtml(compactSingleLine(s.clean, 360))}</div>
+            <div class="qa-text"><strong>Removed fillers:</strong> ${escapeHtml(s.removedFillers.join(", ") || "(none)")}</div>
+            <div class="qa-text"><strong>Boundary:</strong> ${escapeHtml(s.startBoundaryReason || "n/a")} -> ${escapeHtml(s.endBoundaryReason || "n/a")}</div>
+            <div class="qa-text"><strong>Boundary evidence:</strong> ${escapeHtml(compactSingleLine(`${s.startBoundaryEvidence || ""} | ${s.endBoundaryEvidence || ""}`, 240))}</div>
+            <div class="qa-text"><strong>AI diagnostics:</strong> topic=${escapeHtml(s.aiTopicLabel || "(none)")}, boundary_reason=${escapeHtml(s.aiBoundaryReason || "(none)")}, chunk=${s.aiChunkIndex || "?"}/${s.aiChunkCount || "?"}, status=${escapeHtml(s.aiChunkStatus || "(none)")}</div>
+            <div class="qa-text"><strong>Speaker flow:</strong> ${escapeHtml(compactSingleLine(s.speakerFlow || "(none)", 240))}</div>
+            <div class="qa-text"><strong>End check:</strong> clean_ends_sentence=${s.cleanEndsSentence ? "yes" : "no"} (${s.cleanLooksFragment ? "looks_fragment" : "not_fragment"}), end_speaker=${escapeHtml(s.endSpeaker || "unknown")} (${escapeHtml(s.endRole || "unknown")})</div>
+          `;
+          qaListEl.appendChild(el);
+        }
+
+        setQASummary([
+          `Spot check file: ${displayFileName || "(db target)"}`,
+          `Interview ID: ${data.derived.interview_id}`,
+          `Blocks: ${data.mode === "db_only" ? "(db-only mode)" : data.tok.blockItems.length}, DB rows for interview: ${data.dbRows.length}`,
+          `Segmentation mode: ${data.tok.segmentationMode || data.mode || "unknown"}, AI model: ${data.tok.aiDiag?.model || "(none)"}, chunks ok=${data.diag.aiSuccessChunks}, fallback=${data.diag.aiFallbackChunks}`,
+          `Sampled rows: ${data.picks.length} (target ${data.targetSamples}, evenly spread)`,
+          `Diagnostics: missing=${data.diag.missingSamples}, raw_eq_clean=${data.diag.rawEqCleanSamples}, filler_raw=${data.diag.fillerRawSamples}, filler_clean=${data.diag.fillerCleanSamples}, clean_mid_sentence=${data.diag.nonSentenceEndingSamples}, interviewer_only=${data.diag.interviewerOnlySamples}, end_not_interviewee=${data.diag.endNotIntervieweeSamples}`
+        ]);
+        $("qaTag").textContent = "Spot";
+        log(`[QA] Spot check generated for ${displayFileName || data.derived.interview_id}.`, "ok");
+      } catch (err) {
+        $("qaTag").textContent = "ERROR";
+        setQASummary(["Spot check failed.", String(err?.message || err)]);
+        log("Spot check failed: " + (err?.message || err), "bad");
+      } finally {
+        setQABusy(false);
+      }
+    }
+
+    async function copySpotCheckAllFiles() {
+      const appName = $("appName").value.trim();
+      if (!state.initialized) await initDB();
+      await refreshSpotFileOptions();
+
+      setQABusy(true, "Copying...");
+      qaListEl.innerHTML = "";
+
+      try {
+        const nowIso = new Date().toISOString();
+        const targetSamples = 12;
+        const out = [];
+        out.push("Gatekeeper Spot Check Export");
+        out.push(`generated_at_utc: ${nowIso}`);
+        out.push(`app_name: ${appName}`);
+        out.push(`files_loaded: ${state.files.length}`);
+        out.push(`sample_target_per_file: ${targetSamples}`);
+        out.push(`segmentation_model: ${getSegmentationModel()}`);
+        out.push("");
+        out.push("segmentation_prompt:");
+        out.push(getSegmentationPromptTemplate());
+        out.push("");
+        out.push("heuristic_fallback_rules:");
+        out.push(DEFAULT_HEURISTIC_RULES_TEXT);
+        out.push("");
+
+        let totalSamples = 0;
+        let totalMissing = 0;
+        let totalRawEqClean = 0;
+        let totalFillerClean = 0;
+        let totalNonSentenceEnding = 0;
+        let totalInterviewerOnly = 0;
+        let totalEndNotInterviewee = 0;
+        let totalAiFallbackChunks = 0;
+        let totalAiSuccessChunks = 0;
+
+        let datasets = [];
+        if (state.files.length > 0) {
+          for (const f of state.files) {
+            datasets.push(await buildSpotCheckDataForFile(appName, f, targetSamples));
+          }
+        } else if (state.dbSpotOptions.length > 0) {
+          for (const info of state.dbSpotOptions) {
+            datasets.push(await buildDbOnlySpotCheckDataForInterview(appName, info.interviewId, info.sourceFile, targetSamples));
+          }
+        } else {
+          const check = await DBHelper.query(appName, "SELECT COUNT(*) AS c FROM sentences");
+          const c = Number(check?.rows?.[0]?.c || 0);
+          if (c === 0) {
+            setQASummary([
+              "Copy-all spot checks could not run.",
+              "No files loaded and DB has no sentence rows."
+            ]);
+            $("qaTag").textContent = "Ready";
+            log("Copy-all skipped: DB has no rows.", "warn");
+            return;
+          }
+          setQASummary([
+            "Copy-all spot checks could not resolve DB interview targets.",
+            "Run QA once, then retry copy-all."
+          ]);
+          $("qaTag").textContent = "WARN";
+          log("Copy-all skipped: no QA targets found.", "warn");
+          return;
+        }
+
+        for (const data of datasets) {
+          totalSamples += data.samples.length;
+          totalMissing += data.diag.missingSamples;
+          totalRawEqClean += data.diag.rawEqCleanSamples;
+          totalFillerClean += data.diag.fillerCleanSamples;
+          totalNonSentenceEnding += data.diag.nonSentenceEndingSamples;
+          totalInterviewerOnly += data.diag.interviewerOnlySamples;
+          totalEndNotInterviewee += data.diag.endNotIntervieweeSamples;
+          totalAiFallbackChunks += Number(data.diag.aiFallbackChunks || 0);
+          totalAiSuccessChunks += Number(data.diag.aiSuccessChunks || 0);
+
+          out.push("================================================================");
+          out.push(`file: ${data.file}`);
+          out.push(`interview_id: ${data.derived.interview_id}`);
+          out.push(`mode: ${data.mode || "loaded_file_compare"}`);
+          out.push(`blocks: ${data.mode === "db_only" ? "(db-only mode)" : data.tok.blockItems.length}`);
+          out.push(`segmentation_mode: ${data.tok.segmentationMode || "unknown"}`);
+          out.push(`segmentation_ai_model: ${data.tok.aiDiag?.model || "(none)"}`);
+          out.push(`segmentation_ai_chunk_count: ${Number(data.tok.aiDiag?.chunk_count || 0)}`);
+          out.push(`segmentation_ai_success_chunks: ${Number(data.tok.aiDiag?.ai_success_chunks || 0)}`);
+          out.push(`segmentation_ai_fallback_chunks: ${Number(data.tok.aiDiag?.fallback_chunks || 0)}`);
+          out.push(`db_rows_for_interview: ${data.dbRows.length}`);
+          out.push(`samples: ${data.samples.length}`);
+          out.push(`diag_missing_samples: ${data.diag.missingSamples}`);
+          out.push(`diag_raw_eq_clean_samples: ${data.diag.rawEqCleanSamples}`);
+          out.push(`diag_filler_raw_samples: ${data.diag.fillerRawSamples}`);
+          out.push(`diag_filler_clean_samples: ${data.diag.fillerCleanSamples}`);
+          out.push(`diag_clean_mid_sentence_samples: ${data.diag.nonSentenceEndingSamples}`);
+          out.push(`diag_clean_fragment_samples: ${data.diag.fragmentCleanSamples}`);
+          out.push(`diag_interviewer_only_samples: ${data.diag.interviewerOnlySamples}`);
+          out.push(`diag_end_not_interviewee_samples: ${data.diag.endNotIntervieweeSamples}`);
+          out.push(`diag_filler_not_removed_samples: ${data.diag.fillerNotRemovedSamples}`);
+          out.push(`diag_ai_success_chunks: ${data.diag.aiSuccessChunks}`);
+          out.push(`diag_ai_fallback_chunks: ${data.diag.aiFallbackChunks}`);
+          if (Array.isArray(data.tok.aiDiag?.chunk_runs) && data.tok.aiDiag.chunk_runs.length) {
+            for (const run of data.tok.aiDiag.chunk_runs) {
+              out.push(`ai_chunk_${run.chunk_index}: turns=${run.chunk_turn_start}-${run.chunk_turn_end}, status=${run.status}, attempts=${run.attempts}, blocks=${run.block_count}, model=${run.model}, error=${compactSingleLine(run.error || "", 220)}`);
+            }
+          }
+          out.push("");
+
+          for (const s of data.samples) {
+            out.push(`--- sample #${s.index + 1} ---`);
+            out.push(`found: ${s.found ? "FOUND" : "MISSING"}`);
+            out.push(`sentence_id: ${s.sentenceId}`);
+            out.push(`sentence_uid: ${s.uid}`);
+            out.push(`raw_len: ${s.rawLen}`);
+            out.push(`clean_len: ${s.cleanLen}`);
+            out.push(`raw_eq_clean: ${s.rawEqClean ? "yes" : "no"}`);
+            out.push(`has_filler_raw: ${s.hasFillerRaw ? "yes" : "no"}`);
+            out.push(`has_filler_clean: ${s.hasFillerClean ? "yes" : "no"}`);
+            out.push(`removed_fillers: ${s.removedFillers.join(", ") || "(none)"}`);
+            out.push(`clean_ends_sentence: ${s.cleanEndsSentence ? "yes" : "no"}`);
+            out.push(`clean_looks_fragment: ${s.cleanLooksFragment ? "yes" : "no"}`);
+            out.push(`ends_with_interviewee: ${s.endsWithInterviewee ? "yes" : "no"}`);
+            out.push(`end_speaker: ${s.endSpeaker || "(unknown)"}`);
+            out.push(`end_role: ${s.endRole || "unknown"}`);
+            out.push(`interviewer_only_block: ${s.interviewerOnlyBlock ? "yes" : "no"}`);
+            out.push(`turn_count: ${s.turnCount}`);
+            out.push(`speaker_flow: ${compactSingleLine(s.speakerFlow, 500)}`);
+            out.push(`boundary_start_reason: ${s.startBoundaryReason || "n/a"}`);
+            out.push(`boundary_end_reason: ${s.endBoundaryReason || "n/a"}`);
+            out.push(`boundary_start_evidence: ${compactSingleLine(s.startBoundaryEvidence, 300)}`);
+            out.push(`boundary_end_evidence: ${compactSingleLine(s.endBoundaryEvidence, 300)}`);
+            out.push(`segmentation_mode: ${s.segmentationMode || "unknown"}`);
+            out.push(`ai_topic_label: ${s.aiTopicLabel || "(none)"}`);
+            out.push(`ai_boundary_reason: ${s.aiBoundaryReason || "(none)"}`);
+            out.push(`ai_chunk_index: ${s.aiChunkIndex || "n/a"}`);
+            out.push(`ai_chunk_count: ${s.aiChunkCount || "n/a"}`);
+            out.push(`ai_chunk_status: ${s.aiChunkStatus || "(none)"}`);
+            out.push(`ai_model: ${s.aiModel || "(none)"}`);
+            out.push(`ai_diag_filler_terms_removed: ${s.aiFillerTermsRemoved.join(", ") || "(none)"}`);
+            out.push(`ai_diag_ended_at_sentence_boundary: ${s.aiEndedAtSentenceBoundary || "(unknown)"} | ${compactSingleLine(s.aiEndedAtSentenceBoundaryWhy, 160)}`);
+            out.push(`ai_diag_ended_with_interviewee: ${s.aiEndedWithInterviewee || "(unknown)"} | ${compactSingleLine(s.aiEndedWithIntervieweeWhy, 160)}`);
+            out.push(`diagnostic_q_removed_fillers: ${s.removedFillers.join(", ") || "none_detected"}`);
+            out.push(`diagnostic_q_ended_at_sentence: ${s.cleanEndsSentence ? "yes" : "no"} (${s.cleanLooksFragment ? "looks_fragment" : "not_fragment"})`);
+            out.push(`diagnostic_q_ended_with_interviewee: ${s.endsWithInterviewee ? "yes" : "no"} (end_speaker=${s.endSpeaker || "unknown"})`);
+            out.push(`raw: ${compactSingleLine(s.raw, 1200)}`);
+            out.push(`clean: ${compactSingleLine(s.clean, 1200)}`);
+            out.push("");
+          }
+
+          const item = document.createElement("div");
+          item.className = "qa-item";
+          item.innerHTML = `
+            <div class="qa-head">
+              <span class="tag">${escapeHtml(data.file)}</span>
+              <span class="tag">samples ${data.samples.length}</span>
+              <span class="tag">missing ${data.diag.missingSamples}</span>
+              <span class="tag">raw_eq_clean ${data.diag.rawEqCleanSamples}</span>
+              <span class="tag">filler_clean ${data.diag.fillerCleanSamples}</span>
+              <span class="tag">mid_sentence ${data.diag.nonSentenceEndingSamples}</span>
+              <span class="tag">interviewer_only ${data.diag.interviewerOnlySamples}</span>
+              <span class="tag">ai_fallback ${data.diag.aiFallbackChunks}</span>
+            </div>
+            <div class="qa-text">Copied spot-check diagnostics for this file.</div>
+          `;
+          qaListEl.appendChild(item);
+        }
+
+        out.push("================================================================");
+        out.push(`totals.samples: ${totalSamples}`);
+        out.push(`totals.missing: ${totalMissing}`);
+        out.push(`totals.raw_eq_clean: ${totalRawEqClean}`);
+        out.push(`totals.filler_clean: ${totalFillerClean}`);
+        out.push(`totals.clean_mid_sentence: ${totalNonSentenceEnding}`);
+        out.push(`totals.interviewer_only: ${totalInterviewerOnly}`);
+        out.push(`totals.end_not_interviewee: ${totalEndNotInterviewee}`);
+        out.push(`totals.ai_success_chunks: ${totalAiSuccessChunks}`);
+        out.push(`totals.ai_fallback_chunks: ${totalAiFallbackChunks}`);
+
+        const payload = out.join("\n");
+        const method = await copyTextToClipboard(payload);
+        setQASummary([
+          `Copied spot checks for ${datasets.length} file(s).`,
+          `Total samples: ${totalSamples}, missing: ${totalMissing}, raw_eq_clean: ${totalRawEqClean}, filler_clean: ${totalFillerClean}, clean_mid_sentence: ${totalNonSentenceEnding}, interviewer_only: ${totalInterviewerOnly}, ai_fallback_chunks: ${totalAiFallbackChunks}`,
+          `Clipboard method: ${method}`,
+          `Paste directly into chat for diagnostic analysis.`
+        ]);
+        $("qaTag").textContent = "Copied";
+        log(`[QA] Copied all spot checks (${datasets.length} files, ${totalSamples} samples).`, "ok");
+      } catch (err) {
+        $("qaTag").textContent = "ERROR";
+        setQASummary(["Copy-all spot checks failed.", String(err?.message || err)]);
+        log("Copy-all spot checks failed: " + (err?.message || err), "bad");
+      } finally {
+        setQABusy(false);
+      }
+    }
+
+    async function refreshSpotFileOptions() {
+      const sel = $("spotFile");
+      const prevValue = sel.value;
+      sel.innerHTML = "";
+
+      if (state.files.length > 0) {
+        for (const f of state.files) {
+          const opt = document.createElement("option");
+          opt.value = `file::${f.file.name}`;
+          opt.textContent = `${f.file.name} (loaded)`;
+          sel.appendChild(opt);
+        }
+      } else if (state.initialized) {
+        try {
+          state.dbSpotOptions = await fetchDbSpotOptions($("appName").value.trim());
+        } catch (err) {
+          state.dbSpotOptions = [];
+          log("Could not load DB spot-check options: " + (err?.message || err), "warn");
+        }
+        for (const d of state.dbSpotOptions) {
+          const opt = document.createElement("option");
+          opt.value = `db::${d.interviewId}`;
+          opt.textContent = `${d.sourceFile} (${d.interviewId}, ${d.sentenceCount} rows)`;
+          sel.appendChild(opt);
+        }
+      }
+
+      if (prevValue && Array.from(sel.options).some(o => o.value === prevValue)) {
+        sel.value = prevValue;
+      }
+
+      sel.disabled = sel.options.length === 0;
+      $("btnSpotCheck").disabled = false;
+      $("btnCopySpotAll").disabled = false;
+      $("btnValidate").disabled = false;
+    }
+
+    function openSettings() {
+      $("settingsBackdrop").classList.add("open");
+    }
+
+    function closeSettings() {
+      $("settingsBackdrop").classList.remove("open");
+    }
+
+    function applySegmentationPromptFromUI(shouldLog = false) {
+      const raw = $("segmentationPrompt")?.value || "";
+      state.aiSegmentationTemplate = normalizePromptTemplate(raw, DEFAULT_SEGMENTATION_PROMPT);
+      invalidateSegmentationCache();
+      if (shouldLog) log("Updated segmentation prompt. Next ingest/QA run uses this version.", "ok");
+    }
+
+    // UI wiring
+    $("btnPick").addEventListener("click", () => $("fileInput").click());
+    $("fileInput").addEventListener("change", async (e) => {
+      const list = Array.from(e.target.files || []);
+      if (!list.length) return;
+
+      const existingByName = new Map(state.files.map(f => [normalizeFileName(f.file.name), f]));
+      let added = 0;
+      let skipped = 0;
+
+      for (const file of list) {
+        const key = normalizeFileName(file.name);
+        if (existingByName.has(key)) {
+          skipped += 1;
+          continue;
+        }
+        const inferredName = extractNameFromFileName(file.name);
+        const code = defaultCodeFromFile(file.name);
+        const derived = {
+          interview_id: "",
+          interview_prefix: "",
+        };
+        // Quick preview segmentation (best-effort) without storing full block details.
+        const text = await file.text();
+        const tok = await segmentSemanticBlocks(text, $("locale").value.trim() || "en", {
+          fileName: file.name,
+          intervieweeNameHint: inferredName,
+          useAI: false,
+          silentLogs: true
+        });
+        state.files.push({
+          file,
+          meta: {
+            interviewee_name: inferredName,
+            date: "",
+            interviewee_code: code,
+          },
+          derived,
+          lastSegmentation: null,
+          preview: {
+            blocks: tok.blockItems.length,
+            hasSegmenter: tok.hasSeg,
+            segmentationMode: tok.segmentationMode || "heuristic_preview"
+          },
+        });
+        added += 1;
+      }
+
+      if (added > 0) {
+        $("btnIngest").disabled = false;
+        $("btnDryRun").disabled = false;
+      }
+      renderFiles();
+      await refreshSpotFileOptions();
+      updateLoadButtonLabel();
+      if (added > 0) {
+        log(`Loaded ${added} new file(s). Total loaded in session: ${state.files.length}.`, "ok");
+      }
+      if (skipped > 0) {
+        log(`Skipped ${skipped} duplicate file name(s) already loaded in this session.`, "warn");
+      }
+
+      try {
+        if (!state.initialized) await initDB();
+        for (const f of state.files) {
+          const resolved = await resolveInterviewForFile($("appName").value.trim(), f.meta, f.file.name);
+          f.derived.interview_id = resolved.interview_id;
+          f.derived.interview_prefix = resolved.interview_prefix;
+        }
+        document.querySelectorAll(".file[data-file-idx]").forEach(el => {
+          const idx = parseInt(el.getAttribute("data-file-idx"), 10);
+          if (Number.isFinite(idx) && state.files[idx]) updateDerivedDisplay(el, state.files[idx]);
+        });
+      } catch (err) {
+        log("Could not initialize DB for ID resolution: " + (err?.message || err), "warn");
+      }
+      e.target.value = "";
+    });
+
+    $("btnIngest").addEventListener("click", async () => {
+      log("Ingest requested. Starting...", "warn");
+      if (!state.files.length) {
+        log("No files loaded for ingest.", "warn");
+        return;
+      }
+      const btn = $("btnIngest");
+      const original = btn.dataset.originalText || btn.textContent;
+      btn.dataset.originalText = original;
+      const disableIds = ["btnPick", "btnDryRun", "btnValidate", "btnSpotCheck", "btnCopySpotAll", "btnReset"];
+      const snapshot = disableIds
+        .map(id => ({ el: $(id), disabled: $(id)?.disabled ?? false }))
+        .filter(x => x.el);
+      snapshot.forEach(x => { x.el.disabled = true; });
+      state.ingestStopRequested = false;
+      state.ingestRunning = true;
+      setIngestStopEnabled(true);
+      btn.textContent = `⏳ Ingesting 0/${state.files.length}`;
+      try {
+        const result = await ingestAll({
+          dryRun: false,
+          shouldStop: () => state.ingestStopRequested,
+          onProgress: ({ processedFiles, totalFiles, phase }) => {
+            if (phase === "file_start") {
+              btn.textContent = `⏳ Ingesting ${Math.min(processedFiles + 1, totalFiles)}/${totalFiles}`;
+            } else if (phase === "file_done" || phase === "start") {
+              btn.textContent = `⏳ Ingesting ${processedFiles}/${totalFiles}`;
+            }
+          }
+        });
+        if (result?.stopped) {
+          btn.textContent = `🛑 Stopped ${result.processedFiles}/${result.totalFiles}`;
+        } else {
+          btn.textContent = "✅ Ingest Complete";
+        }
+        setTimeout(() => {
+          btn.textContent = original;
+          snapshot.forEach(x => { x.el.disabled = x.disabled; });
+        }, 1400);
+      } catch (err) {
+        log("Ingest failed: " + (err?.message || err), "bad");
+        btn.textContent = "❌ Ingest Failed";
+        setTimeout(() => {
+          btn.textContent = original;
+          snapshot.forEach(x => { x.el.disabled = x.disabled; });
+        }, 1800);
+      } finally {
+        state.ingestRunning = false;
+        state.ingestStopRequested = false;
+        setIngestStopEnabled(false);
+      }
+    });
+    $("btnStopIngest").addEventListener("click", () => {
+      if (!state.ingestRunning) return;
+      state.ingestStopRequested = true;
+      $("btnStopIngest").disabled = true;
+      log("Stop requested. Ingest will halt after the current file finishes.", "warn");
+    });
+    $("btnDryRun").addEventListener("click", async () => {
+      log("Dry run requested. Starting...", "warn");
+      try {
+        await runButtonAction("btnDryRun", "⏳ Running Dry Run...", () => ingestAll({ dryRun: true }), {
+          doneLabel: "✅ Dry Run Complete"
+        });
+      } catch (err) {
+        log("Dry run failed: " + (err?.message || err), "bad");
+      }
+    });
+    $("btnReset").addEventListener("click", () => {
+      console.info("[Gatekeeper] Reset button clicked");
+      log("Reset requested. Waiting for confirmation...", "warn");
+      resetTables();
+    });
+    $("btnValidate").addEventListener("click", () => runPostIngestChecks());
+    $("btnSpotCheck").addEventListener("click", () => renderSpotCheck());
+    $("btnCopySpotAll").addEventListener("click", () => copySpotCheckAllFiles());
+    $("btnSettings").addEventListener("click", openSettings);
+    $("btnCloseSettings").addEventListener("click", closeSettings);
+    $("btnCloseSettings2").addEventListener("click", closeSettings);
+    $("segmentationPrompt").addEventListener("input", () => applySegmentationPromptFromUI(true));
+    $("segmentationModel").addEventListener("change", () => {
+      invalidateSegmentationCache();
+      log("Updated segmentation model. Next ingest/QA run uses this version.", "ok");
+    });
+    $("locale").addEventListener("input", () => {
+      invalidateSegmentationCache();
+    });
+    $("settingsBackdrop").addEventListener("click", (e) => {
+      if (e.target === $("settingsBackdrop")) closeSettings();
+    });
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") closeSettings();
+    });
+
+    updateSegTag();
+    updateLoadButtonLabel();
+    setIngestStopEnabled(false);
+    refreshSpotFileOptions();
+    $("segmentationPrompt").value = DEFAULT_SEGMENTATION_PROMPT;
+    applySegmentationPromptFromUI(false);
+    $("appTag").textContent = `App: ${$("appName").value.trim()}`;
+    log("Ready. Load files to preview semantic block segmentation.", "ok");
+  </script>
+</body>
+</html>

@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Heart Walk Deck (Template Positioning)</title>
+    
+    <script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Lato:wght@400;700&family=Lora:ital,wght@0,400..700;1,400..700&family=Merriweather:wght@400;700&family=Montserrat:wght@400;700&family=Nunito:wght@400;700&family=Open+Sans:wght@400;700&family=Oswald:wght@400;700&family=Playfair+Display:wght@400;700&family=Poppins:wght@400;700&family=Raleway:wght@400;700&family=Roboto:wght@400;700&family=Source+Sans+3:wght@400;700&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            /* BRAND PALETTE */
+            --powder-blue: #16bfec;
+            --brand-black: #1e1d21;
+            --white: #ffffff;
+            
+            /* Shape Colors */
+            --c-mental: #FCB526;
+            --c-emotional: #FF5C5C;
+            --c-physical: #965ADB;
+            --c-social: #F36C21;
+            --c-material: #22D460;
+            --c-temporal: #08C4BE;
+
+            /* Global Offsets */
+            --global-x: 0px;
+            --global-y: 0px;
+        }
+
+        body, html {
+            margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; 
+            background-color: #1a1a1a; /* Dark Grey Workspace */
+            font-family: 'Source Sans 3', sans-serif;
+            color: var(--brand-black);
+        }
+
+        /* --- UI OVERLAYS --- */
+        #app-version-banner {
+            position: fixed;
+            top: 12px;
+            left: 14px;
+            z-index: 5000;
+            background: rgba(255,255,255,0.92);
+            color: #1e1d21;
+            border: 1px solid rgba(22,191,236,0.45);
+            border-radius: 999px;
+            padding: 6px 10px;
+            font-size: 11px;
+            font-family: 'Source Sans 3', sans-serif;
+            font-weight: 700;
+            letter-spacing: 0.2px;
+        }
+        #settings-wrapper { position: fixed; top: 15px; right: 15px; z-index: 5000; }
+        .gear-trigger { fill: #999; cursor: pointer; width: 28px; height: 28px; transition: opacity 0.3s; filter: drop-shadow(0 0 2px black); }
+        #settings-wrapper:hover .gear-trigger { opacity: 1; fill: white; }
+
+        #settings-panel {
+            position: absolute; top: 40px; right: 0;
+            background: white; border-radius: 8px; 
+            border: 2px solid var(--powder-blue);
+            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+            padding: 20px; width: 380px; 
+            display: none; font-family: 'Source Sans 3', sans-serif;
+        }
+        #settings-panel.open { display: block; }
+        #settings-panel h3 { color: var(--powder-blue); margin: 0 0 20px 0; font-size: 20px; font-weight: 700; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+
+        .setting-row { display: grid; grid-template-columns: 90px 1fr 60px 40px; gap: 8px; align-items: center; margin-bottom: 8px; font-size: 14px; color: #444; }
+        .setting-row select, .setting-row input[type="number"] { padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; width: 100%; box-sizing: border-box; }
+        .color-trigger { width: 24px; height: 24px; border-radius: 50%; border: 2px solid #ddd; cursor: pointer; box-shadow: inset 0 0 2px rgba(0,0,0,0.2); transition: transform 0.1s; }
+        .color-trigger:hover { transform: scale(1.1); border-color: #999; }
+
+        .nudge-container { text-align: center; margin: 20px 0; padding-top: 10px; border-top: 1px solid #eee; }
+        .scope-label { font-weight: bold; font-size: 13px; margin-bottom: 10px; cursor: pointer; user-select: none; padding: 5px; border-radius: 4px; border: 1px solid transparent; transition: all 0.2s;}
+        .scope-label:hover { background: #f0f8ff; border-color: #bee5eb; }
+        
+        .arrow-grid { display: grid; grid-template-columns: 32px 32px 32px; gap: 4px; justify-content: center; }
+        .arrow-btn { width: 32px; height: 32px; background: #f9f9f9; border: 1px solid #ccc; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #666; font-size: 10px; }
+        .arrow-btn:hover { background: #eee; color: #000; }
+
+        .action-row { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 20px; border-top: 1px solid #eee; padding-top: 15px;}
+        .ppt-row { margin-top: 10px; }
+        .btn-outline { background: white; border: 2px solid var(--powder-blue); color: var(--powder-blue); font-weight: bold; padding: 8px; border-radius: 6px; cursor: pointer; text-align: center; font-size: 14px; width: 100%; }
+        .btn-outline:hover { background: #f0f8ff; }
+        .btn-primary { background: var(--powder-blue); color: white; border: none; }
+        .btn-primary:hover { background: #13a4cb; }
+
+        .btn-close { background: #e0e0e0; border: 1px solid #ccc; color: #333; padding: 6px 15px; border-radius: 4px; cursor: pointer; display: block; margin: 15px auto 0 auto; width: auto; font-size: 13px; }
+        .toggle-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-size: 14px; color: #444; }
+
+        #color-picker-popover { position: fixed; z-index: 6000; background: white; border: 1px solid #ccc; box-shadow: 0 5px 20px rgba(0,0,0,0.2); border-radius: 8px; padding: 10px; display: none; grid-template-columns: repeat(4, 1fr); gap: 8px; width: 140px; }
+        #color-picker-popover.visible { display: grid; }
+        .swatch-btn { width: 28px; height: 28px; border-radius: 50%; border: 1px solid rgba(0,0,0,0.1); cursor: pointer; }
+
+        /* --- STAGE & SLIDE LAYOUT --- */
+        #presentation-container {
+            width: 100vw; height: 100vh;
+            display: flex; justify-content: center; align-items: center;
+            overflow: hidden;
+        }
+
+        /* The Stage */
+        #slide-stage {
+            width: 1280px; height: 720px; 
+            background: black; 
+            box-shadow: 0 0 50px rgba(0,0,0,0.8);
+            transform-origin: center center; 
+            position: relative;
+        }
+
+        .slide {
+            display: none; 
+            width: 100%; height: 100%;
+            background-color: var(--white);
+            box-sizing: border-box; 
+            padding: 60px 80px; 
+            position: absolute; top: 0; left: 0;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .slide.active { display: flex; }
+
+        /* Typography */
+        .slide .title-text { font-family: var(--font-title); font-size: var(--size-title); color: var(--color-title); font-weight: 700; line-height: 1.1; margin-bottom: 20px;}
+        .slide .subtitle-text { font-family: var(--font-subtitle); font-size: var(--size-subtitle); color: var(--color-subtitle); font-weight: 400; }
+        .slide h1 { font-family: var(--font-h1); font-size: var(--size-h1); color: var(--color-h1); font-weight: 700; margin: 0; text-align: center; }
+        .slide h2 { font-family: var(--font-h2); font-size: var(--size-h2); color: var(--color-h2); font-weight: 700; margin: 0 0 25px 0; display: flex; align-items: center; line-height: 1.1; }
+        .slide-content h3 { font-family: var(--font-h3); font-size: var(--size-h3); color: var(--color-h3); font-weight: 700; margin: 20px 0 10px 0; }
+        .slide-content, .slide-content p, .slide-content li { font-family: var(--font-normal); font-size: var(--size-normal); color: var(--color-normal); line-height: 1.5; margin-bottom: 10px; }
+        .slide-content ul, .slide-content ol { margin-top: 0; padding-left: 1.5em; margin-bottom: 10px; }
+        
+        .slide-inner {
+            width: 100%; height: 100%; display: flex; flex-direction: column;
+            /* UPDATED TRANSFORM LOGIC: Global + Template + Local */
+            transform: translate(
+                calc(var(--global-x) + var(--template-x, 0px) + var(--local-x, 0px)), 
+                calc(var(--global-y) + var(--template-y, 0px) + var(--local-y, 0px))
+            );
+            position: relative; z-index: 10;
+        }
+        .slide-inner > * { position: relative; transition: transform 0.1s ease-out; }
+
+        /* Outlines */
+        [contenteditable]:focus { outline: 4px dashed #aaa; background: rgba(255,255,255,0.8); border-radius: 4px; padding: 10px; box-shadow: 0 5px 15px rgba(0,0,0,0.1); z-index: 20; }
+        .selected-for-move { outline: 4px dashed var(--powder-blue) !important; cursor: move; z-index: 20; }
+
+        #selection-floater { position: absolute; z-index: 6000; background: white; border: 1px solid var(--powder-blue); border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); padding: 8px 12px; display: none; font-size: 12px; color: #333; pointer-events: auto; }
+        #selection-floater.visible { display: flex; flex-direction: column; gap: 5px; }
+        .floater-title { font-weight: bold; color: var(--powder-blue); margin-bottom: 4px; text-transform: uppercase; font-size: 10px; letter-spacing: 0.5px;}
+        .floater-option { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+        .floater-option input { cursor: pointer; margin: 0; }
+
+        .decor-shape { position: absolute; bottom: -5%; right: -5%; width: 50%; height: 70%; z-index: 0; opacity: 0.9; pointer-events: none; display: none; }
+        body.show-shapes .slide[data-type="cover"] .decor-shape, body.show-shapes .slide[data-type="section"] .decor-shape { display: block; }
+
+        #top-hotspot { position: fixed; top: 0; left: 0; width: 100%; height: 20px; z-index: 4000; }
+        #controls-menu { position: absolute; top: -100px; left: 50%; transform: translateX(-50%); background: white; box-shadow: 0 4px 15px rgba(0,0,0,0.1); border-radius: 0 0 10px 10px; padding: 10px 20px; display: flex; gap: 12px; transition: top 0.3s ease; align-items: center; }
+        #top-hotspot:hover #controls-menu, #controls-menu:hover { top: 0; }
+
+        .flash-success { animation: flashGreen 0.6s ease-out; }
+        @keyframes flashGreen { 0% { opacity: 0.5; background-color: #d4edda; } 100% { opacity: 1; background-color: black; } }
+
+        /* Modals & Menus */
+        #import-modal, #error-modal, #context-menu { display: none; }
+        #import-modal.open, #error-modal.open { display: flex; }
+        #import-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.8); justify-content: center; align-items: center; z-index: 3000; }
+        .modal-content { background: white; padding: 25px; border-radius: 8px; width: 450px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); }
+        .modal-content h3 { margin: 0; color: var(--powder-blue); }
+        .btn-file-upload { display: block; width: 100%; padding: 12px; text-align: center; background: #f8f9fa; border: 2px dashed #ccc; border-radius: 6px; color: #555; cursor: pointer; font-weight: bold; }
+        textarea { width: 100%; height: 120px; font-family: monospace; padding: 10px; border: 1px solid #ccc; border-radius: 4px; resize: none; box-sizing: border-box; }
+        .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 5px; }
+        #error-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.8); justify-content: center; align-items: center; z-index: 3100; }
+        .error-content { background: white; padding: 30px; border-radius: 8px; width: 400px; text-align: center; }
+        #context-menu { position: fixed; z-index: 4000; background: white; border: 1px solid #ccc; border-radius: 6px; box-shadow: 0 5px 15px rgba(0,0,0,0.2); padding: 5px; width: 160px; }
+        #context-menu.visible { display: block; }
+        .color-option { display: flex; align-items: center; gap: 10px; padding: 8px 10px; cursor: pointer; font-size: 13px; }
+        .color-option:hover { background: #f0f0f0; }
+        .swatch { width: 16px; height: 16px; border-radius: 4px; border: 1px solid rgba(0,0,0,0.1); }
+    </style>
+</head>
+<body>
+
+<div id="app-version-banner">Designer v3.2 · Last updated —</div>
+
+<div id="settings-wrapper">
+    <svg class="gear-trigger" viewBox="0 0 24 24" onclick="toggleSettings()"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
+    <div id="settings-panel">
+        <h3>Design Settings</h3>
+        <div id="design-rows"></div>
+        <div class="toggle-row">
+            <input type="checkbox" id="toggle-shapes" onchange="updateTheme()">
+            <label for="toggle-shapes">Show Decorative Shapes</label>
+        </div>
+        <div class="nudge-container">
+            <div class="scope-label" id="scope-btn" onclick="toggleScope()">Mode: ALL SLIDES</div>
+            <div class="arrow-grid">
+                <div></div><div class="arrow-btn" onclick="nudge(0, -5)">▲</div><div></div>
+                <div class="arrow-btn" onclick="nudge(-5, 0)">◀</div><div></div><div class="arrow-btn" onclick="nudge(5, 0)">▶</div>
+                <div></div><div class="arrow-btn" onclick="nudge(0, 5)">▼</div><div></div>
+            </div>
+            <div style="font-size:11px; color:#888; margin-top:5px;">Tip: <strong>Ctrl+Click</strong> element to Select.<br><strong>Ctrl+Arrows</strong> to move selection.</div>
+        </div>
+        
+        <div class="ppt-row">
+            <button class="btn-outline btn-primary" onclick="generatePPTX()">Download .PPTX</button>
+        </div>
+
+        <div class="action-row"><button class="btn-outline" onclick="exportDeck()">Export JSON</button><button class="btn-outline" onclick="openImport()">Import JSON</button></div>
+        
+        <button class="btn-close" onclick="toggleSettings()">Close</button>
+    </div>
+</div>
+
+<div id="selection-floater">
+    <div class="floater-title">Apply moves to:</div>
+    <label class="floater-option"><input type="radio" name="move-scope" value="global" onclick="setNudgeMode('global')"> All Slides</label>
+    <label class="floater-option"><input type="radio" name="move-scope" value="template" onclick="setNudgeMode('template')"> This Template</label>
+    <label class="floater-option"><input type="radio" name="move-scope" value="local" onclick="setNudgeMode('local')"> This Slide</label>
+</div>
+
+<div id="color-picker-popover"></div>
+<input type="color" id="hidden-color-input" style="visibility:hidden; position:absolute;">
+
+<div id="top-hotspot">
+    <div id="controls-menu">
+        <button onclick="addNewSlide('cover')">+ Cover</button>
+        <button onclick="addNewSlide('section')">+ Section</button>
+        <button onclick="addNewSlide('standard')">+ Standard</button>
+        <span style="color:#ddd">|</span>
+        <button onmousedown="exec('bold')"><b>B</b></button>
+        <button onmousedown="exec('italic')"><i>I</i></button>
+        <button onmousedown="exec('insertUnorderedList')">• List</button>
+        <button onmousedown="exec('formatBlock', 'H3')">H3</button>
+        <button onmousedown="exec('formatBlock', 'P')">P</button>
+        <span style="color:#ddd">|</span>
+        <button onclick="deleteSlide()" style="color:red">Delete</button>
+        <button onclick="resetAll()">Reset</button>
+    </div>
+</div>
+
+<div id="presentation-container">
+    <div id="slide-stage"></div>
+</div>
+
+<div id="import-modal"><div class="modal-content"><h3>Import Deck</h3><label class="btn-file-upload">📂 Upload JSON File<input type="file" id="file-upload" accept=".json" style="display:none" onchange="handleFileSelect(this)"></label><div class="import-divider">OR</div><button class="btn-outline" style="width:100%" onclick="importFromClipboard()">📋 Read from Clipboard</button><div class="import-divider">OR</div><textarea id="import-area" placeholder="Paste JSON code here..."></textarea><div class="modal-actions"><button class="btn-close" style="margin:0" onclick="closeImport()">Cancel</button><button class="btn-outline" style="background:var(--powder-blue); color:white; border:none;" onclick="processManualImport()">Load Text</button></div></div></div>
+<div id="error-modal"><div class="error-content"><h3>Import Error</h3><p id="error-message">Content is not valid JSON</p><button class="btn-close" onclick="closeError()">OK</button></div></div>
+<div id="context-menu">
+    <div class="color-option" onclick="setShapeColor('var(--c-mental)')"><div class="swatch" style="background:var(--c-mental)"></div>Mental</div>
+    <div class="color-option" onclick="setShapeColor('var(--c-emotional)')"><div class="swatch" style="background:var(--c-emotional)"></div>Emotional</div>
+    <div class="color-option" onclick="setShapeColor('var(--c-physical)')"><div class="swatch" style="background:var(--c-physical)"></div>Physical</div>
+    <div class="color-option" onclick="setShapeColor('var(--c-social)')"><div class="swatch" style="background:var(--c-social)"></div>Social</div>
+    <div class="color-option" onclick="setShapeColor('var(--c-material)')"><div class="swatch" style="background:var(--c-material)"></div>Material</div>
+    <div class="color-option" onclick="setShapeColor('var(--c-temporal)')"><div class="swatch" style="background:var(--c-temporal)"></div>Temporal</div>
+</div>
+
+<script>
+    const APP_VERSION = "v3.2";
+    const APP_LAST_UPDATED_UTC = "2026-02-18T20:30:00Z";
+
+    function formatLocalLastUpdated(utcIso) {
+        const dt = new Date(utcIso);
+        return dt.toLocaleString(undefined, {
+            year: "numeric",
+            month: "short",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+            timeZoneName: "short"
+        });
+    }
+
+    function renderAppVersionBanner() {
+        const el = document.getElementById('app-version-banner');
+        if (!el) return;
+        el.textContent = `Designer ${APP_VERSION} · Last updated ${formatLocalLastUpdated(APP_LAST_UPDATED_UTC)}`;
+    }
+
+    renderAppVersionBanner();
+
+    const container = document.getElementById('presentation-container');
+    const stage = document.getElementById('slide-stage');
+    let currentSlideIndex = 0;
+    let slidesData = []; 
+    let appConfig = {};
+    let nudgeMode = 'global'; 
+    let activeColorTarget = null;
+    let selectedElements = [];
+
+    const iconSVG = `<svg width="40" height="8" style="margin-right:15px; display:inline-block; vertical-align:middle; flex-shrink:0"><rect width="6" height="6" fill="var(--powder-blue)"/><rect x="10" width="6" height="6" fill="var(--powder-blue)"/><rect x="20" width="6" height="6" fill="var(--powder-blue)"/><rect x="30" width="6" height="6" fill="var(--powder-blue)"/></svg>`;
+    const defaultShapePath = "M4404 352C3699.78 869.891 4323.8 1271.68 3996.14 1626.1 3687.56 1928.59 2961.96 1552.77 2438 2478.56 3091.81 2477.03 3750.19 2480.09 4404 2478.56L4404 352Z";
+    const defaultViewBox = "2438 352 1966 2127";
+
+    const types = [ { id: 'title', label: 'Cover Title' }, { id: 'subtitle', label: 'Subtitle' }, { id: 'h1', label: 'H1 (Section)' }, { id: 'h2', label: 'H2 (Header)' }, { id: 'h3', label: 'H3 (Sub)' }, { id: 'normal', label: 'Normal' } ];
+    const fontOptions = [ { name: 'Source Sans 3', value: "'Source Sans 3', sans-serif" }, { name: 'Lora', value: "'Lora', serif" }, { name: 'Roboto', value: "'Roboto', sans-serif" }, { name: 'Open Sans', value: "'Open Sans', sans-serif" }, { name: 'Lato', value: "'Lato', sans-serif" }, { name: 'Montserrat', value: "'Montserrat', sans-serif" }, { name: 'Poppins', value: "'Poppins', sans-serif" }, { name: 'Playfair Display', value: "'Playfair Display', serif" }, { name: 'Merriweather', value: "'Merriweather', serif" }, { name: 'Nunito', value: "'Nunito', sans-serif" }, { name: 'Raleway', value: "'Raleway', sans-serif" }, { name: 'Oswald', value: "'Oswald', sans-serif" } ];
+    const palette = [ '#16bfec', '#1e1d21', '#ffffff', '#FCB526', '#FF5C5C', '#965ADB', '#F36C21', '#22D460', '#08C4BE' ];
+
+    const cssVarMap = {
+        'var(--powder-blue)': '#16bfec',
+        'var(--brand-black)': '#1e1d21',
+        'var(--white)': '#ffffff',
+        'var(--c-mental)': '#FCB526',
+        'var(--c-emotional)': '#FF5C5C',
+        'var(--c-physical)': '#965ADB',
+        'var(--c-social)': '#F36C21',
+        'var(--c-material)': '#22D460',
+        'var(--c-temporal)': '#08C4BE'
+    };
+
+    function resizeStage() {
+        const baseWidth = 1280; const baseHeight = 720;
+        const availWidth = window.innerWidth - 60; const availHeight = window.innerHeight - 60;
+        const scale = Math.min(availWidth / baseWidth, availHeight / baseHeight);
+        stage.style.transform = `scale(${scale})`;
+    }
+    window.addEventListener('resize', resizeStage);
+
+    function renderSettingsRows() {
+        const wrapper = document.getElementById('design-rows');
+        wrapper.innerHTML = '';
+        const optionsHTML = fontOptions.map(f => `<option value="${f.value}">${f.name}</option>`).join('');
+        types.forEach(t => {
+            wrapper.innerHTML += `<div class="setting-row"><span>${t.label}:</span><select id="font-${t.id}" onchange="updateTheme()">${optionsHTML}</select><input type="number" id="size-${t.id}" onchange="updateTheme()"><div class="color-trigger" id="color-btn-${t.id}" onclick="openColorPicker(event, '${t.id}')"></div></div>`;
+        });
+        const pop = document.getElementById('color-picker-popover');
+        pop.innerHTML = '';
+        palette.forEach(c => { pop.innerHTML += `<div class="swatch-btn" style="background:${c}" onclick="pickColor('${c}')"></div>`; });
+        pop.innerHTML += `<div class="swatch-btn" style="background:conic-gradient(red,yellow,lime,aqua,blue,magenta,red)" onclick="triggerCustomColor()"></div>`;
+    }
+
+    function render() {
+        stage.innerHTML = ''; 
+        slidesData.forEach((slide, index) => {
+            const slideEl = document.createElement('div');
+            slideEl.className = `slide ${index === currentSlideIndex ? 'active' : ''}`;
+            slideEl.dataset.index = index;
+            slideEl.dataset.type = slide.type;
+            if (slide.type === 'cover' || slide.type === 'section') slideEl.classList.add('layout-centered');
+            
+            // LOCAL & TEMPLATE OFFSETS
+            slideEl.style.setProperty('--local-x', (slide.x || 0) + 'px');
+            slideEl.style.setProperty('--local-y', (slide.y || 0) + 'px');
+            
+            // Inject Template Offsets
+            const tOff = appConfig.typeOffsets ? (appConfig.typeOffsets[slide.type] || {x:0, y:0}) : {x:0, y:0};
+            slideEl.style.setProperty('--template-x', tOff.x + 'px');
+            slideEl.style.setProperty('--template-y', tOff.y + 'px');
+
+            let shapeHTML = '';
+            if (slide.type === 'cover' || slide.type === 'section') {
+                const color = slide.shapeColor || 'var(--c-emotional)';
+                const path = appConfig.shapePath || defaultShapePath;
+                const viewBox = appConfig.shapeViewBox || defaultViewBox;
+                shapeHTML = `<div class="decor-shape" style="color:${color}"><svg viewBox="${viewBox}" preserveAspectRatio="none" style="width:100%; height:100%;"><path d="${path}" fill="currentColor"></path></svg></div>`;
+            }
+
+            const titleStyle = `transform: translate(${slide.titleX || 0}px, ${slide.titleY || 0}px)`;
+            const bodyStyle = `transform: translate(${slide.bodyX || 0}px, ${slide.bodyY || 0}px)`;
+
+            let innerHTML = '';
+            if (slide.type === 'cover') {
+                innerHTML = `<div class="title-wrapper" style="${titleStyle}"><div class="title-text" contenteditable="true" data-key="title">${slide.title || 'Title'}</div></div>
+                             <div class="body-wrapper" style="${bodyStyle}"><div class="subtitle-text" contenteditable="true" data-key="subtitle">${slide.subtitle || 'Subtitle'}</div></div>`;
+            } else if (slide.type === 'section') {
+                innerHTML = `<div class="title-wrapper" style="${titleStyle}"><h1 contenteditable="true" data-key="title">${slide.title || 'Section'}</h1></div>`;
+            } else {
+                innerHTML = `<div class="title-wrapper" style="${titleStyle}"><h2 contenteditable="true" data-key="title">${iconSVG}${slide.title || 'Slide Title'}</h2></div>
+                             <div class="body-wrapper" style="${bodyStyle}"><div class="slide-content" contenteditable="true" data-key="content">${mdToHtml(slide.content)}</div></div>`;
+            }
+            
+            slideEl.innerHTML = `${shapeHTML}<div class="slide-inner">${innerHTML}</div>`;
+            
+            if (slide.type === 'cover' || slide.type === 'section') {
+                slideEl.addEventListener('contextmenu', (e) => {
+                    if (document.body.classList.contains('show-shapes')) { e.preventDefault(); showContextMenu(e.clientX, e.clientY); }
+                });
+            }
+            stage.appendChild(slideEl);
+        });
+        updateSettingsUI();
+    }
+
+    document.addEventListener('mousedown', (e) => {
+        if (e.ctrlKey) {
+            const wrapper = e.target.closest('.title-wrapper, .body-wrapper');
+            if (wrapper) {
+                e.preventDefault(); e.stopPropagation();
+                if (wrapper.classList.contains('selected-for-move')) {
+                    wrapper.classList.remove('selected-for-move');
+                    selectedElements = selectedElements.filter(el => el !== wrapper);
+                } else {
+                    wrapper.classList.add('selected-for-move');
+                    selectedElements.push(wrapper);
+                }
+                updateSelectionMenu();
+            }
+        } else {
+            if (!e.target.closest('.selected-for-move') && !e.target.closest('#selection-floater') && !e.target.closest('#settings-wrapper')) {
+                document.querySelectorAll('.selected-for-move').forEach(el => el.classList.remove('selected-for-move'));
+                selectedElements = [];
+                document.getElementById('selection-floater').style.display = 'none';
+            }
+        }
+    });
+
+    function updateSelectionMenu() {
+        const floater = document.getElementById('selection-floater');
+        if (selectedElements.length > 0) {
+            const rect = selectedElements[0].getBoundingClientRect();
+            floater.style.display = 'flex';
+            floater.style.top = rect.top + 'px';
+            floater.style.left = (rect.right + 10) + 'px';
+            const radios = document.getElementsByName('move-scope');
+            radios.forEach(r => r.checked = (r.value === nudgeMode));
+        } else { floater.style.display = 'none'; }
+    }
+
+    function toggleScope() {
+        const modes = ['global', 'template', 'local'];
+        let idx = modes.indexOf(nudgeMode);
+        setNudgeMode(modes[(idx + 1) % 3]);
+    }
+
+    function setNudgeMode(mode) {
+        nudgeMode = mode;
+        const btn = document.getElementById('scope-btn');
+        if(btn) {
+            let label = "Mode: ALL SLIDES";
+            let color = "var(--powder-blue)";
+            if(mode === 'template') { label = "Mode: THIS TEMPLATE"; color = "#9b59b6"; }
+            if(mode === 'local') { label = "Mode: THIS SLIDE"; color = "#e67e22"; }
+            btn.innerText = label;
+            btn.style.color = color;
+        }
+    }
+
+    document.addEventListener('keydown', (e) => {
+        if (e.ctrlKey && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+            e.preventDefault();
+            const dx = (e.key === 'ArrowRight' ? 5 : (e.key === 'ArrowLeft' ? -5 : 0));
+            const dy = (e.key === 'ArrowDown' ? 5 : (e.key === 'ArrowUp' ? -5 : 0));
+            
+            if (nudgeMode === 'global') {
+                appConfig.globalX = (appConfig.globalX || 0) + dx;
+                appConfig.globalY = (appConfig.globalY || 0) + dy;
+                applyConfig();
+            } else if (nudgeMode === 'template') {
+                const type = slidesData[currentSlideIndex].type;
+                if(!appConfig.typeOffsets) appConfig.typeOffsets = {};
+                if(!appConfig.typeOffsets[type]) appConfig.typeOffsets[type] = {x:0, y:0};
+                appConfig.typeOffsets[type].x += dx;
+                appConfig.typeOffsets[type].y += dy;
+                render(); // Re-render to update CSS variables for this type
+            } else {
+                const slide = slidesData[currentSlideIndex];
+                if (selectedElements.length > 0) {
+                    selectedElements.forEach(el => {
+                        if (el.classList.contains('title-wrapper')) {
+                            slide.titleX = (slide.titleX || 0) + dx;
+                            slide.titleY = (slide.titleY || 0) + dy;
+                            el.style.transform = `translate(${slide.titleX}px, ${slide.titleY}px)`;
+                        } else if (el.classList.contains('body-wrapper')) {
+                            slide.bodyX = (slide.bodyX || 0) + dx;
+                            slide.bodyY = (slide.bodyY || 0) + dy;
+                            el.style.transform = `translate(${slide.bodyX}px, ${slide.bodyY}px)`;
+                        }
+                    });
+                } else {
+                    slide.x = (slide.x || 0) + dx;
+                    slide.y = (slide.y || 0) + dy;
+                    document.querySelector('.slide.active').style.setProperty('--local-x', slide.x + 'px');
+                    document.querySelector('.slide.active').style.setProperty('--local-y', slide.y + 'px');
+                }
+            }
+            saveState();
+        }
+        if (!e.ctrlKey && !e.target.closest('[contenteditable]')) {
+            if (e.key === 'ArrowRight') showSlide(currentSlideIndex + 1);
+            if (e.key === 'ArrowLeft') showSlide(currentSlideIndex - 1);
+        }
+    });
+
+    function openColorPicker(e, typeId) { e.stopPropagation(); activeColorTarget = typeId; const pop = document.getElementById('color-picker-popover'); const rect = e.target.getBoundingClientRect(); pop.style.top = rect.bottom + 5 + 'px'; pop.style.left = rect.left - 100 + 'px'; pop.classList.add('visible'); }
+    function pickColor(hex) { if(!activeColorTarget) return; appConfig[`color-${activeColorTarget}`] = hex; applyConfig(); saveState(); document.getElementById('color-picker-popover').classList.remove('visible'); updateSettingsUI(); }
+    function triggerCustomColor() { const input = document.getElementById('hidden-color-input'); input.click(); input.oninput = (e) => pickColor(e.target.value); }
+    document.addEventListener('click', (e) => { if(!e.target.closest('#color-picker-popover') && !e.target.closest('.color-trigger')) document.getElementById('color-picker-popover').classList.remove('visible'); });
+    
+    function mdToHtml(md) { if (!md) return ''; let html = md.replace(/^### (.*$)/gim, '<h3>$1</h3>').replace(/\*\*(.*)\*\*/gim, '<b>$1</b>').replace(/\*(.*)\*/gim, '<i>$1</i>').replace(/^\* (.*$)/gim, '<ul><li>$1</li></ul>').replace(/^\d\. (.*$)/gim, '<ol><li>$1</li></ol>').replace(/<\/ul>\s*<ul>/gim, '').replace(/<\/ol>\s*<ol>/gim, '').replace(/\n/gim, '<br>'); if (!html.startsWith('<') && html.length > 0) html = '<p>' + html + '</p>'; return html; }
+    function htmlToMd(html) { let temp = document.createElement('div'); temp.innerHTML = html; let text = temp.innerHTML; text = text.replace(/<h3>/gi, '\n### ').replace(/<\/h3>/gi, '\n').replace(/<b>|<strong>/gi, '**').replace(/<\/b>|<\/strong>/gi, '**').replace(/<i>|<em>/gi, '*').replace(/<\/i>|<\/em>/gi, '*').replace(/<li>/gi, '\n* ').replace(/<\/li>/gi, '').replace(/<ul>|<\/ul>|<ol>|<\/ol>/gi, '').replace(/<small>|<\/small>/gi, '').replace(/<br>|<p>|<\/p>|<div>|<\/div>/gi, '\n'); return text.split('\n').map(line => line.trim()).filter(l => l).join('\n'); }
+
+    function init() {
+        renderSettingsRows();
+        const saved = JSON.parse(localStorage.getItem('heart_walk_deck_pro_v3'));
+        if (saved) { appConfig = saved.config; slidesData = saved.slides; } 
+        else {
+            appConfig = { 'font-title': "'Source Sans 3', sans-serif", 'size-title': '32pt', 'color-title': '#16bfec', 'font-subtitle': "'Source Sans 3', sans-serif", 'size-subtitle': '20pt', 'color-subtitle': '#1e1d21', 'font-h1': "'Source Sans 3', sans-serif", 'size-h1': '32pt', 'color-h1': '#16bfec', 'font-h2': "'Source Sans 3', sans-serif", 'size-h2': '28pt', 'color-h2': '#16bfec', 'font-h3': "'Source Sans 3', sans-serif", 'size-h3': '18pt', 'color-h3': '#1e1d21', 'font-normal': "'Source Sans 3', sans-serif", 'size-normal': '16pt', 'color-normal': '#1e1d21', 'globalX': 0, 'globalY': 0, 'showShapes': false, 'shapePath': defaultShapePath, 'shapeViewBox': defaultViewBox };
+            slidesData = [{ type: 'cover', title: 'Start', subtitle: 'Import JSON to begin' }];
+        }
+        
+        // Ensure Template Offsets exist (Backward Compat)
+        if(!appConfig.typeOffsets) appConfig.typeOffsets = { cover: {x:0, y:0}, section: {x:0, y:0}, standard: {x:0, y:0} };
+
+        applyConfig(); render(); resizeStage();
+    }
+
+    function saveState() { localStorage.setItem('heart_walk_deck_pro_v3', JSON.stringify({ config: appConfig, slides: slidesData })); }
+    function applyConfig() { document.documentElement.style.setProperty('--global-x', (appConfig.globalX || 0) + 'px'); document.documentElement.style.setProperty('--global-y', (appConfig.globalY || 0) + 'px'); if (appConfig.showShapes) document.body.classList.add('show-shapes'); else document.body.classList.remove('show-shapes'); types.forEach(t => { document.documentElement.style.setProperty(`--font-${t.id}`, appConfig[`font-${t.id}`] || "'Source Sans 3', sans-serif"); document.documentElement.style.setProperty(`--size-${t.id}`, appConfig[`size-${t.id}`] || '18pt'); document.documentElement.style.setProperty(`--color-${t.id}`, appConfig[`color-${t.id}`] || '#1e1d21'); }); }
+    function updateTheme() { appConfig.showShapes = document.getElementById('toggle-shapes').checked; types.forEach(t => { appConfig[`font-${t.id}`] = document.getElementById(`font-${t.id}`).value; appConfig[`size-${t.id}`] = document.getElementById(`size-${t.id}`).value + 'pt'; }); applyConfig(); saveState(); }
+    function updateSettingsUI() { document.getElementById('toggle-shapes').checked = appConfig.showShapes || false; types.forEach(t => { const fEl = document.getElementById(`font-${t.id}`); const sEl = document.getElementById(`size-${t.id}`); const cBtn = document.getElementById(`color-btn-${t.id}`); if(fEl) fEl.value = appConfig[`font-${t.id}`] || "'Source Sans 3', sans-serif"; if(sEl) sEl.value = (appConfig[`size-${t.id}`] || '').replace('pt',''); if(cBtn) cBtn.style.backgroundColor = appConfig[`color-${t.id}`] || '#000'; }); }
+    function loadDeckData(jsonString) { try { if (jsonString.trim().startsWith('<')) throw new Error("Input appears to be HTML, not JSON."); const data = JSON.parse(jsonString); if (!data.slides || !Array.isArray(data.slides)) throw new Error("Missing 'slides' array in JSON."); appConfig = data.config; slidesData = data.slides; if(!appConfig.typeOffsets) appConfig.typeOffsets = {}; applyConfig(); render(); saveState(); showSlide(0); document.body.classList.add('flash-success'); setTimeout(() => document.body.classList.remove('flash-success'), 600); closeImport(); toggleSettings(); } catch (err) { showError(err.message); } }
+    function handleFileSelect(input) { const file = input.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = function(e) { loadDeckData(e.target.result); }; reader.readAsText(file); input.value = ''; }
+    async function importFromClipboard() { try { const text = await navigator.clipboard.readText(); loadDeckData(text); } catch (err) { showError("Clipboard access denied or empty."); } }
+    function processManualImport() { loadDeckData(document.getElementById('import-area').value); }
+    function showError(msg) { document.getElementById('error-message').innerText = msg; document.getElementById('error-modal').classList.add('open'); }
+    function closeError() { document.getElementById('error-modal').classList.remove('open'); }
+    
+    function nudge(x, y) { 
+        if (nudgeMode === 'global') { 
+            appConfig.globalX = (appConfig.globalX || 0) + x; 
+            appConfig.globalY = (appConfig.globalY || 0) + y; 
+            applyConfig(); 
+        } else if (nudgeMode === 'template') {
+            const type = slidesData[currentSlideIndex].type;
+            if(!appConfig.typeOffsets[type]) appConfig.typeOffsets[type] = {x:0, y:0};
+            appConfig.typeOffsets[type].x += x;
+            appConfig.typeOffsets[type].y += y;
+            render();
+        } else { 
+            const slide = slidesData[currentSlideIndex]; 
+            slide.x = (slide.x || 0) + x; 
+            slide.y = (slide.y || 0) + y; 
+            document.querySelector(`.slide.active`).style.setProperty('--local-x', slide.x + 'px'); 
+            document.querySelector(`.slide.active`).style.setProperty('--local-y', slide.y + 'px'); 
+        } 
+        saveState(); 
+    }
+    
+    container.addEventListener('input', (e) => { const el = e.target; if (!el.dataset.key) return; const index = parseInt(el.closest('.slide').dataset.index); const key = el.dataset.key; if (key === 'content') slidesData[index][key] = htmlToMd(el.innerHTML); else slidesData[index][key] = el.innerText; saveState(); });
+    function addNewSlide(type) { const template = type === 'standard' ? { type: 'standard', title: 'New Slide', content: '* Point 1' } : { type: type, title: 'New Title', subtitle: 'Subtitle' }; slidesData.splice(currentSlideIndex + 1, 0, template); currentSlideIndex++; render(); saveState(); showSlide(currentSlideIndex); }
+    function deleteSlide() { if (slidesData.length <= 1) return; if (confirm("Delete slide?")) { slidesData.splice(currentSlideIndex, 1); if (currentSlideIndex >= slidesData.length) currentSlideIndex--; render(); saveState(); showSlide(currentSlideIndex); } }
+    function showSlide(idx) { if (idx < 0 || idx >= slidesData.length) return; currentSlideIndex = idx; document.querySelectorAll('.slide').forEach((s, i) => s.classList.toggle('active', i === idx)); updateSelectionMenu(); }
+    function exportDeck() { navigator.clipboard.writeText(JSON.stringify({ config: appConfig, slides: slidesData }, null, 2)).then(() => alert("JSON Copied!")); }
+    function toggleSettings() { document.getElementById('settings-panel').classList.toggle('open'); }
+    function openImport() { document.getElementById('import-modal').classList.add('open'); }
+    function closeImport() { document.getElementById('import-modal').classList.remove('open'); }
+    function resetAll() { if(confirm("Clear All?")) { localStorage.removeItem('heart_walk_deck_pro_v3'); location.reload(); }}
+    function exec(cmd, val=null) { document.execCommand(cmd, false, val); }
+    function showContextMenu(x, y) { const menu = document.getElementById('context-menu'); menu.style.left = x + 'px'; menu.style.top = y + 'px'; menu.classList.add('visible'); }
+    function setShapeColor(colorVar) { slidesData[currentSlideIndex].shapeColor = colorVar; render(); saveState(); document.getElementById('context-menu').classList.remove('visible'); }
+    document.addEventListener('click', e => { if(e.target.closest('[contenteditable]') || e.target.closest('#settings-wrapper') || e.target.closest('#top-hotspot') || e.target.closest('.modal-content') || e.target.closest('.error-content') || e.target.closest('#selection-floater') || e.target.closest('.color-trigger') || e.target.closest('#color-picker-popover') || e.target.closest('#context-menu') || e.target.closest('.color-option')) return; if(!e.ctrlKey) { document.querySelectorAll('.selected-for-move').forEach(el => el.classList.remove('selected-for-move')); selectedElements = []; updateSelectionMenu(); } document.getElementById('context-menu').classList.remove('visible'); });
+    
+    // --- PPT GENERATOR LOGIC ---
+    function generatePPTX() {
+        let pres = new PptxGenJS();
+        pres.layout = 'LAYOUT_16x9';
+
+        const getHex = (key, fallback) => {
+            let val = appConfig[key] || fallback;
+            if (cssVarMap[val]) val = cssVarMap[val];
+            return val.replace('#', '');
+        };
+
+        const getPt = (key, fallback) => {
+            let val = appConfig[key] || fallback;
+            return parseInt(val.replace('pt', ''));
+        };
+
+        const parseBullets = (mdText) => {
+            const lines = mdText.split('\n');
+            let items = [];
+            lines.forEach(line => {
+                let clean = line.trim();
+                if(!clean) return;
+
+                let isBullet = false;
+                let isBold = false;
+                let fontSize = getPt('size-normal', '16pt');
+                
+                // Detect ### Header
+                if(clean.startsWith('### ')) {
+                    clean = clean.substring(4);
+                    isBold = true;
+                    fontSize += 2; // slightly larger
+                }
+                // Detect Bullets
+                else if(clean.startsWith('* ') || clean.startsWith('- ')) {
+                    clean = clean.substring(2);
+                    isBullet = true;
+                }
+                
+                // PptxGenJS Text Object
+                items.push({ 
+                    text: clean, 
+                    options: { 
+                        breakLine: true, 
+                        bullet: isBullet,
+                        bold: isBold,
+                        fontSize: fontSize,
+                        paraSpaceBefore: isBold ? 10 : 5 // Add space before headers
+                    } 
+                });
+            });
+            return items;
+        };
+
+        slidesData.forEach((data, index) => {
+            let slide = pres.addSlide();
+            
+            // Background Vector Shape
+            if (appConfig.showShapes && (data.type === 'cover' || data.type === 'section')) {
+                let shapeColorVar = data.shapeColor || 'var(--c-emotional)';
+                let shapeHex = cssVarMap[shapeColorVar] || 'FF5C5C';
+                shapeHex = shapeHex.replace('#','');
+
+                slide.addShape(pres.ShapeType.ellipse, { 
+                    x: '60%', y: '50%', w: '60%', h: '80%', 
+                    fill: { color: shapeHex, transparency: 10 },
+                    line: { color: 'FFFFFF', width: 0 }
+                });
+            }
+
+            // Text Elements
+            if (data.type === 'cover') {
+                slide.addText(data.title, { 
+                    x: 0.5, y: '35%', w: '90%', h: 1, 
+                    fontSize: getPt('size-title', '32pt'), 
+                    color: getHex('color-title', '16bfec'), 
+                    bold: true, align: 'center', fontFace: 'Arial'
+                });
+                slide.addText(data.subtitle, { 
+                    x: 0.5, y: '50%', w: '90%', h: 1, 
+                    fontSize: getPt('size-subtitle', '20pt'), 
+                    color: getHex('color-subtitle', '333333'), 
+                    align: 'center', fontFace: 'Arial'
+                });
+            } 
+            else if (data.type === 'section') {
+                slide.addText(data.title, { 
+                    x: 0.5, y: '45%', w: '90%', h: 1.5, 
+                    fontSize: getPt('size-h1', '32pt'), 
+                    color: getHex('color-h1', '16bfec'), 
+                    bold: true, align: 'center', fontFace: 'Arial'
+                });
+            } 
+            else {
+                // Standard Slide
+                slide.addText(data.title, { 
+                    x: 0.5, y: 0.4, w: '90%', h: 1, 
+                    fontSize: getPt('size-h2', '28pt'), 
+                    color: getHex('color-h2', '16bfec'), 
+                    bold: true, fontFace: 'Arial'
+                });
+
+                // Body content
+                if(data.content) {
+                    let textObjects = parseBullets(data.content);
+                    textObjects.forEach(obj => {
+                        obj.options.color = getHex('color-normal', '333333');
+                        obj.options.fontFace = 'Arial';
+                    });
+                    
+                    slide.addText(textObjects, {
+                        x: 0.5, y: 1.8, w: '90%', h: 4.5,
+                        valign: 'top'
+                    });
+                }
+            }
+
+            // Slide Number
+            slide.slideNumber = { x: '95%', y: '90%', fontSize: 10, color: '999999' };
+        });
+
+        pres.writeFile({ fileName: "HeartWalk_Deck_Fixed.pptx" });
+    }
+
+    init();
+</script>
+</body>
+</html>

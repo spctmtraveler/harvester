@@ -52,6 +52,7 @@
 
         .app-title { font-size: 15px; font-weight: 700; color: var(--text); }
         .app-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+        .app-meta { font-size: 11px; color: var(--muted); margin-top: 4px; font-family: var(--mono); }
 
         .status-dot {
             display: inline-block; width: 8px; height: 8px;
@@ -451,6 +452,7 @@
     <div>
         <div class="app-title">❤️ Analyst</div>
         <div class="app-sub">Job 2 — Semantic Block Coder v1</div>
+        <div class="app-meta" id="appMeta">Version v1.2 · Last updated —</div>
     </div>
 
     <div class="ctrl-section">
@@ -524,7 +526,17 @@
 
     <div>
         <div class="section-label">Danger Zone</div>
-        <button class="btn-danger" onclick="resetAllCoding()">⚠ Reset All Coding</button>
+        <button class="btn-danger" id="btnResetCoding" onclick="resetAllCoding(this)" title="Deletes all sentence_tags and resets coding fields on all blocks (sentiment, flags, explanation, review_status=unprocessed). Does not delete raw transcript rows. Cannot be undone.">⚠ Reset All Coding</button>
+    </div>
+
+    <div class="ctrl-section">
+        <div class="section-label">Reset Pipeline</div>
+        <div style="font-size:11px; color:var(--muted); line-height:1.5; margin-bottom:8px;">
+            Use in this order: 1) Gatekeeper reset + re-ingest, 2) Analyst reset (this app), 3) Synthesizer reset outputs.
+        </div>
+        <button class="btn-ghost" id="btnOpenGatekeeper" onclick="openGatekeeperReset(this)" title="Opens Gatekeeper. Use its Reset App Tables button to clear interviews/sentences, then re-ingest source files.">1) Open Gatekeeper Reset</button>
+        <button class="btn-ghost" id="btnResetCodingStep" onclick="resetAllCoding(this)" title="Runs Analyst reset in this app: clears sentence_tags and restores coding fields to unprocessed.">2) Reset Analyst Coding</button>
+        <button class="btn-ghost" id="btnOpenSynth" onclick="openSynthesizerReset(this)" title="Opens Synthesizer. Use Reset Synthesizer Outputs to clear insights and evidence links.">3) Open Synthesizer Reset</button>
     </div>
 </aside>
 
@@ -560,6 +572,10 @@
                     <option value="unprocessed">Unprocessed</option>
                     <option value="error">Error</option>
                 </select>
+                <label style="display:flex; align-items:center; gap:6px; font-size:11px; color:var(--muted); white-space:nowrap;">
+                    <input type="checkbox" id="toggleHideFiller" onchange="toggleHideFillerWords()" title="Display-only view filter. Hides common filler words (um, uh, ah, etc.) in card text. Database values remain unchanged.">
+                    Hide Filler
+                </label>
                 <button class="btn-ghost" style="width:auto; margin:0; padding:7px 12px;" onclick="loadReviewQueue()">Refresh</button>
             </div>
         </div>
@@ -611,6 +627,29 @@
 <script type="module">
     import { DBHelper } from "https://happydo.xyz/api_auto_db/db_helper.js";
     import { askAI } from "https://happydo.xyz/api/ailnl.js";
+
+    const APP_VERSION = "v1.2";
+    const APP_LAST_UPDATED_UTC = "2026-02-18T20:30:00Z";
+
+    function formatLocalLastUpdated(utcIso) {
+        const dt = new Date(utcIso);
+        return dt.toLocaleString(undefined, {
+            year: "numeric",
+            month: "short",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+            timeZoneName: "short"
+        });
+    }
+
+    function renderAppMeta() {
+        const el = document.getElementById("appMeta");
+        if (!el) return;
+        el.textContent = `Version ${APP_VERSION} · Last updated ${formatLocalLastUpdated(APP_LAST_UPDATED_UTC)}`;
+    }
+
+    renderAppMeta();
 
     /* ══════════════════════════════════════════════════════
        CONSTANTS
@@ -721,7 +760,7 @@ Internal AHA Leadership (paid staff): Executive Director (ED), Development Direc
   Responsibilities: recruit volunteer leadership, coach outreach, prepare agendas/materials, track revenue pipeline, coordinate reporting
 
 External Volunteer Leadership: ELT Chair, ELT Members, Market Board Members, Corporate Executives, Team Captains
-  Responsibilities: open access to corporate decision-makers, make sponsorship asks, recruit additional leaders, mobilize company participation
+  Responsibilities: open access to corporate decision-makers, make sponsorship asks, recruit additional leaders, mobilize company participation 
 
 Core Campaign Components:
 - Leadership Recruitment: identify/recruit ELT Chair + members, align volunteer leaders with campaign goals
@@ -730,7 +769,7 @@ Core Campaign Components:
 - Tools/Systems: Salesforce (CRM), SharePoint (resources), pipeline tracker spreadsheets, impact plans, annotated agendas, slide decks, email/call/text templates
 `.trim();
 
-     const DEFAULT_ANALYST_PROMPT_TEMPLATE = `You are a strict semantic block classifier for the "Heart Walk" research analysis system.
+    const DEFAULT_ANALYST_PROMPT_TEMPLATE = `You are a strict semantic block classifier for the "Heart Walk" research analysis system.
 
 == HEART WALK SYSTEMS OVERVIEW ==
 {{SYSTEMS_OVERVIEW}}
@@ -740,14 +779,20 @@ For each input block below, output a JSON object with:
 1. One or more canonical tags from the ALLOWED TAGS list below.
     - EXCEPTION: "catch_miscellaneous" and "catch_irrelevant" are EXCLUSIVE — if used, they must be the ONLY tag.
     - "catch_irrelevant" = not relevant to Heart Walk operations at all.
-    - "catch_miscellaneous" = relevant to Heart Walk but no specific canonical tag fits. Prefer specific tags.
+    - "catch_miscellaneous" = relevant to Heart Walk but no specific canonical tag fits. Greatly prefer specific tags if at all possible.
 2. sentiment_score: integer from -2 (strong negative) to +2 (strong positive), 0 = neutral.
-3. Boolean flags (true/false each):
+3. Non-exclusive Boolean flags (true/false each):
     - is_problem: block describes a complaint or existing problem
     - is_solution: block describes an idea for improvement or solution
     - is_explanation: block provides context or explains how something works
-    - is_workaround: block describes a workaround for something broken
+    - is_workaround: block describes a workaround for something that is supposed to be done another way, but doesn't work.
     RULE: If tag is "catch_irrelevant", ALL four flags must be false.
+5. Strongly avoid catch-all tags when concrete Heart Walk content is present:
+    - If the block discusses recruitment, pipeline, conversion, chair/ELT strategy, company targeting, leadership mapping, relationships, meetings, process cadence, tools, or campaign execution, assign specific canonical tags.
+    - Treat "catch_miscellaneous" and "catch_irrelevant" as last resort only.
+6. Interviewer-only handling:
+    - Very short clarification-only prompts/questions with no operational content should be "catch_irrelevant".
+    - If the text contains substantive operations/process detail, do NOT mark irrelevant.
 4. explanation: concise reason for tags + sentiment decision.
     - REQUIRED for every item
     - Max 30 words
@@ -788,6 +833,39 @@ Return a JSON array ONLY — no commentary, no markdown fences. Array length mus
     let shouldStop = false;
     let logCount = 0;
     let reviewBadgeCount = 0;
+    let hideFillerWordsInReview = false;
+
+    async function runButtonAction(button, pendingLabel, action) {
+        if (!button) return action();
+        const original = button.dataset.originalText || button.textContent;
+        button.dataset.originalText = original;
+        button.disabled = true;
+        button.textContent = pendingLabel;
+        try {
+            const result = await action();
+            button.textContent = "✅ Done";
+            setTimeout(() => {
+                button.textContent = original;
+                button.disabled = false;
+            }, 1400);
+            return result;
+        } catch (e) {
+            if (e?.cancelled) {
+                button.textContent = "↩ Cancelled";
+                setTimeout(() => {
+                    button.textContent = original;
+                    button.disabled = false;
+                }, 900);
+                return;
+            }
+            button.textContent = "❌ Failed";
+            setTimeout(() => {
+                button.textContent = original;
+                button.disabled = false;
+            }, 1800);
+            throw e;
+        }
+    }
 
     /* ══════════════════════════════════════════════════════
        INIT
@@ -1120,7 +1198,7 @@ Return a JSON array ONLY — no commentary, no markdown fences. Array length mus
                 res = await DBHelper.query(APP_NAME, `
                     SELECT sentence_id, raw_text, clean_text, timestamp_block, speaker, interview_id
                     FROM sentences
-                    WHERE review_status IN ('unprocessed','queued','processed')
+                    WHERE review_status IN ('unprocessed','queued')
                     LIMIT ${batchSize}
                 `);
             } catch (e) {
@@ -1223,6 +1301,7 @@ Return a JSON array ONLY — no commentary, no markdown fences. Array length mus
 
         // Validate and save each result
         const inputIdSet = new Set(batch.map(s => s.sentence_id));
+        const batchById = new Map(batch.map(s => [s.sentence_id, s]));
         const outputIdSet = new Set();
         let savedOk = 0;
         let savedReview = 0;
@@ -1235,17 +1314,19 @@ Return a JSON array ONLY — no commentary, no markdown fences. Array length mus
             if (outputIdSet.has(sid)) { log("warn", "VAL", `Duplicate sentence_id in response: ${sid} — skipping duplicate`); continue; }
             outputIdSet.add(sid);
 
-            const validationIssues = validateResult(result);
+            const sourceSentence = batchById.get(sid);
+            const normalizedResult = normalizeAnalystResult(result, sourceSentence);
+            const validationIssues = validateResult(normalizedResult, sourceSentence);
 
             if (validationIssues.length > 0) {
                 log("warn", "VAL", `${sid}: ${validationIssues.join("; ")} → needs_human_review`);
-                await saveSentenceResult(result, "needs_human_review");
+                await saveSentenceResult(normalizedResult, "needs_human_review");
                 savedReview++;
             } else {
-                await saveSentenceResult(result, "finalized");
-                const tagStr = result.tags.join(", ");
-                const expShort = normalizeExplanation(result.explanation || "").substring(0, 80);
-                log("ok", "SAVED", `${sid} → [${tagStr}] senti=${result.sentiment_score} why=${expShort}`);
+                await saveSentenceResult(normalizedResult, "finalized");
+                const tagStr = normalizedResult.tags.join(", ");
+                const expShort = normalizeExplanation(normalizedResult.explanation || "").substring(0, 80);
+                log("ok", "SAVED", `${sid} → [${tagStr}] senti=${normalizedResult.sentiment_score} why=${expShort}`);
                 savedOk++;
             }
         }
@@ -1264,8 +1345,85 @@ Return a JSON array ONLY — no commentary, no markdown fences. Array length mus
         log("info", "BATCH", `Batch done: ${savedOk} finalized, ${savedReview} needs review, ${savedError} errors`);
     }
 
+    function isSubstantiveHeartWalkContent(text) {
+        const normalized = String(text || "").trim();
+        if (!normalized) return false;
+        const words = normalized.split(/\s+/).filter(Boolean).length;
+        if (words < 10) return false;
+        return /(heart\s*walk|campaign|recruit|recruitment|pipeline|prospect|company|organization|chair|elt|leadership|leader|meeting|timeline|schedule|strategy|salesforce|sharepoint|reporting|resource|onboard|orientation|convert|conversion|sponsor|fundrais|volunteer|executive)/i.test(normalized);
+    }
+
+    function isLikelyInterviewerOnlyPrompt(text) {
+        const normalized = String(text || "").trim();
+        if (!normalized) return true;
+        const words = normalized.split(/\s+/).filter(Boolean).length;
+        const questionLike = /\?$/.test(normalized) || /^(can|could|would|will|what|why|how|when|where|who|is|are|do|does|did)\b/i.test(normalized);
+        const containsOpsSignals = /(heart\s*walk|campaign|recruit|pipeline|elt|company|sponsor|salesforce|sharepoint|meeting|strategy|process|timeline)/i.test(normalized);
+        return words <= 18 && questionLike && !containsOpsSignals;
+    }
+
+    function deriveSpecificTagsFromText(text) {
+        const normalized = String(text || "");
+        const tagSet = new Set();
+
+        if (/(recruit|recruitment|prospect|pipeline|convert|conversion|target|nominat|identify)/i.test(normalized)) {
+            tagSet.add("action_recruit");
+        }
+        if (/(relationship|connection|network|introduc|personal connection|business relationship)/i.test(normalized)) {
+            tagSet.add("org_relationship_management");
+        }
+        if (/(company|corporate|organization|leader|leadership|executive)/i.test(normalized)) {
+            tagSet.add("group_corporate_prospect");
+        }
+        if (/(meeting|timeline|schedule|cadence|kickoff|orientation|onboard)/i.test(normalized)) {
+            tagSet.add("meeting_elt_meeting");
+        }
+        if (/(process|workflow|how\s+we|steps|sequence|from\s+there|next\s+step)/i.test(normalized)) {
+            tagSet.add("org_process");
+        }
+
+        return Array.from(tagSet).slice(0, 3);
+    }
+
+    function normalizeAnalystResult(result, sourceSentence) {
+        const normalized = {
+            ...result,
+            tags: Array.isArray(result?.tags) ? [...new Set(result.tags)] : []
+        };
+
+        const text = String(sourceSentence?.clean_text || sourceSentence?.raw_text || "");
+        const hasMisc = normalized.tags.includes("catch_miscellaneous");
+        const hasIrr = normalized.tags.includes("catch_irrelevant");
+
+        if (isLikelyInterviewerOnlyPrompt(text)) {
+            normalized.tags = ["catch_irrelevant"];
+            normalized.sentiment_score = 0;
+            normalized.is_problem = false;
+            normalized.is_solution = false;
+            normalized.is_explanation = false;
+            normalized.is_workaround = false;
+            normalized.explanation = "Short clarification-only prompt with no operational Heart Walk detail.";
+            return normalized;
+        }
+
+        if ((hasMisc || hasIrr) && isSubstantiveHeartWalkContent(text)) {
+            const derivedTags = deriveSpecificTagsFromText(text).filter(t => VALID_TAG_KEYS.has(t));
+            if (derivedTags.length > 0) {
+                normalized.tags = derivedTags;
+                if (!normalizeExplanation(normalized.explanation || "")) {
+                    normalized.explanation = "Substantive Heart Walk operational content; assigned specific canonical tags.";
+                }
+                if (!normalized.is_problem && !normalized.is_solution && !normalized.is_explanation && !normalized.is_workaround) {
+                    normalized.is_explanation = true;
+                }
+            }
+        }
+
+        return normalized;
+    }
+
     /* ── Validate One AI Result ── */
-    function validateResult(r) {
+    function validateResult(r, sourceSentence = null) {
         const issues = [];
 
         // Tags present
@@ -1293,6 +1451,17 @@ Return a JSON array ONLY — no commentary, no markdown fences. Array length mus
             if (r.is_problem || r.is_solution || r.is_explanation || r.is_workaround) {
                 issues.push("catch_irrelevant requires all boolean flags = false");
             }
+        }
+
+        const sourceText = String(sourceSentence?.clean_text || sourceSentence?.raw_text || "");
+        if (hasIrr && isSubstantiveHeartWalkContent(sourceText)) {
+            issues.push("catch_irrelevant on substantive Heart Walk content");
+        }
+        if (hasMisc && isSubstantiveHeartWalkContent(sourceText)) {
+            issues.push("catch_miscellaneous on substantive Heart Walk content");
+        }
+        if (!hasIrr && isLikelyInterviewerOnlyPrompt(sourceText)) {
+            issues.push("likely interviewer-only prompt should be catch_irrelevant");
         }
 
         // Sentiment range
@@ -1472,6 +1641,7 @@ Return a JSON array ONLY — no commentary, no markdown fences. Array length mus
     function renderSentenceCard(s, tags) {
         const status = s.review_status || "unprocessed";
         const text = s.clean_text || s.raw_text || "";
+        const displayText = hideFillerWordsInReview ? stripDisplayFillerWords(text) : text;
         const score = parseInt(s.sentiment_score) || 0;
         const sid = s.sentence_id;
         const explanation = normalizeExplanation(s.analyst_explanation || "");
@@ -1518,7 +1688,7 @@ Return a JSON array ONLY — no commentary, no markdown fences. Array length mus
                     </button>
                 </div>
             </div>
-            <div class="card-text">"${escHtml(text.substring(0, 360))}${text.length > 360 ? '…' : ''}"</div>
+            <div class="card-text">"${escHtml(displayText.substring(0, 360))}${displayText.length > 360 ? '…' : ''}"</div>
             ${tagText}
             ${flagText}
             ${explanationText}
@@ -1569,11 +1739,34 @@ Return a JSON array ONLY — no commentary, no markdown fences. Array length mus
         el.classList.toggle("hidden");
     };
 
+    window.toggleHideFillerWords = function() {
+        hideFillerWordsInReview = !!document.getElementById("toggleHideFiller")?.checked;
+        loadReviewQueue();
+    };
+
     window.applyPromptTemplateUpdate = function() {
         const current = normalizePromptTemplate(document.getElementById("promptTemplate")?.value, DEFAULT_ANALYST_PROMPT_TEMPLATE);
         const promptEl = document.getElementById("promptTemplate");
         if (promptEl) promptEl.value = current;
         log("ok", "PROMPT", "Updated prompt template. Next batch uses this version.");
+    };
+
+    window.openGatekeeperReset = function(triggerBtn = null) {
+        const btn = triggerBtn || document.getElementById("btnOpenGatekeeper");
+        return runButtonAction(btn, "⏳ Opening...", async () => {
+            const target = "../10-gatekeeper/index.html";
+            window.open(target, "_blank");
+            log("ok", "RESET", `Opened ${target}.`);
+        }).catch((e) => log("err", "RESET", e.message));
+    };
+
+    window.openSynthesizerReset = function(triggerBtn = null) {
+        const btn = triggerBtn || document.getElementById("btnOpenSynth");
+        return runButtonAction(btn, "⏳ Opening...", async () => {
+            const target = "../30-synthesizer/index.html";
+            window.open(target, "_blank");
+            log("ok", "RESET", `Opened ${target}.`);
+        }).catch((e) => log("err", "RESET", e.message));
     };
 
     /* ── Manual Edit Handlers ── */
@@ -1804,20 +1997,46 @@ Return a JSON array ONLY — no commentary, no markdown fences. Array length mus
     /* ══════════════════════════════════════════════════════
        DANGER ZONE
     ══════════════════════════════════════════════════════ */
-    window.resetAllCoding = async function() {
-        if (!confirm("Reset ALL sentence coding?\n\nThis will:\n• Delete all sentence_tags\n• Reset all sentiment scores to 0\n• Reset all boolean flags to false\n• Reset all review_status to 'unprocessed'\n\nThis CANNOT be undone.")) return;
-        if (!confirm("Are you absolutely sure? This will erase all AI coding results.")) return;
+    window.resetAllCoding = async function(triggerBtn = null) {
+        const btn = triggerBtn || document.getElementById("btnResetCoding") || document.getElementById("btnResetCodingStep");
+        return runButtonAction(btn, "⏳ Resetting...", async () => {
+            if (!confirm("Reset ALL sentence coding?\n\nThis will:\n• Delete all sentence_tags\n• Reset all sentiment scores to 0\n• Reset all boolean flags to false\n• Reset all review_status to 'unprocessed'\n\nThis CANNOT be undone.")) throw { cancelled: true };
+            if (!confirm("Are you absolutely sure? This will erase all AI coding results.")) throw { cancelled: true };
 
-        try {
             await DBHelper.query(APP_NAME, "DELETE FROM sentence_tags");
             await DBHelper.query(APP_NAME, `
                 UPDATE sentences
                 SET sentiment_score=0, is_problem=0, is_solution=0,
                     is_explanation=0, is_workaround=0, analyst_explanation=NULL, review_status='unprocessed'
             `);
-            log("warn", "RESET", "All coding reset. Sentences set back to unprocessed.");
+
+            const verifyRes = await DBHelper.query(APP_NAME, `
+                SELECT
+                    (SELECT COUNT(*) FROM sentence_tags) AS tag_links,
+                    (SELECT COUNT(*) FROM sentences) AS total_blocks,
+                    (SELECT COUNT(*) FROM sentences WHERE review_status <> 'unprocessed') AS non_unprocessed,
+                    (SELECT COUNT(*) FROM sentences WHERE sentiment_score <> 0 OR is_problem <> 0 OR is_solution <> 0 OR is_explanation <> 0 OR is_workaround <> 0 OR analyst_explanation IS NOT NULL) AS coded_rows
+            `);
+            const row = verifyRes?.rows?.[0] || {};
+            const tagLinks = parseInt(row.tag_links || 0);
+            const totalBlocks = parseInt(row.total_blocks || 0);
+            const nonUnprocessed = parseInt(row.non_unprocessed || 0);
+            const codedRows = parseInt(row.coded_rows || 0);
+
+            if (tagLinks === 0 && nonUnprocessed === 0 && codedRows === 0) {
+                log("ok", "RESET", `Checked DB: sentence_tags=0, coded_rows=0, non-unprocessed=0. Source blocks still present: ${totalBlocks}.`);
+            } else {
+                log("warn", "RESET", `Checked DB after reset: sentence_tags=${tagLinks}, coded_rows=${codedRows}, non-unprocessed=${nonUnprocessed}, total_blocks=${totalBlocks}.`);
+            }
+
             await refreshStats();
-        } catch(e) { log("err", "RESET", e.message); }
+        }).catch((e) => {
+            if (e?.cancelled) {
+                log("info", "RESET", "Reset cancelled by user.");
+                return;
+            }
+            log("err", "RESET", e.message || String(e));
+        });
     };
 
     /* ══════════════════════════════════════════════════════
@@ -1893,6 +2112,12 @@ Return a JSON array ONLY — no commentary, no markdown fences. Array length mus
 
     function normalizeExplanation(text) {
         return String(text || "").replace(/\s+/g, " ").trim();
+    }
+
+    function stripDisplayFillerWords(text) {
+        const src = String(text || "");
+        const withoutFillers = src.replace(/\b(uh+|um+|umm+|uhm+|ah+|aah+|ahh+|er+|erm+|hmm+|mhm+|mm-hmm)\b[,.!?;:-]*/gi, " ");
+        return withoutFillers.replace(/\s+/g, " ").trim();
     }
 
     function countWords(text) {

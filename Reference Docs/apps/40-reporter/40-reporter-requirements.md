@@ -2,6 +2,8 @@
 
 Source: `Reference Docs/requirements.md` (v3.1)
 
+Progress: **0/17 complete (0%)**
+
 ## Goal
 
 Generate a cited report/slide deck from approved insights.
@@ -9,7 +11,7 @@ Generate a cited report/slide deck from approved insights.
 ## Inputs
 
 - [ ] `Insight` rows with `review_status='finalized'`
-- [ ] Linked `sentence` rows for quotes
+- [ ] Linked semantic block rows for quotes
 
 ## Outputs
 
@@ -29,6 +31,7 @@ Generate a cited report/slide deck from approved insights.
 - [ ] **Constraint:** Every claim must have a citation link.
 - [ ] **Constraint:** Do not hallucinate findings not in the DB.
 - [ ] **Constraint:** Use `quote_rank` to select the best evidence for the report.
+- [ ] **Constraint:** App must expose editable prompt template before/during processing.
 
 ## Validation / Smoke Tests
 

@@ -8,10 +8,27 @@ The original file is preserved as backup and remains the single full-source refe
 
 - `00-shared-core-requirements.md`
 - `01-platform-data-model-requirements.md`
-- `10-gatekeeper-requirements.md`
-- `20-analyst-requirements.md`
 - `30-synthesizer-requirements.md`
 - `40-reporter-requirements.md`
+
+App-specific requirement files live under:
+
+- `Reference Docs/apps/10-gatekeeper/10-gatekeeper-requirements.md`
+- `Reference Docs/apps/20-analyst/20-analyst-requirements.md`
+- `Reference Docs/apps/30-synthesizer/30-synthesizer-requirements.md`
+- `Reference Docs/apps/40-reporter/40-reporter-requirements.md`
+
+## Progress Dashboard
+
+Status source: checkbox totals in app requirement files.
+
+| Scope | Done | Total | Percent |
+|---|---:|---:|---:|
+| Gatekeeper (Job 1) | 19 | 20 | 95% |
+| Analyst (Job 2) | 21 | 21 | 100% |
+| Synthesizer (Job 3) | 16 | 16 | 100% |
+| Reporter (Job 4) | 0 | 17 | 0% |
+| **Project Overall** | **56** | **74** | **76%** |
 
 ## Suggested usage
 
