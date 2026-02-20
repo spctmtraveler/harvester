@@ -64,7 +64,7 @@ function Get-LatestOutput {
 }
 
 function Wait-ForStageCompletion {
-  param([string]$stage, [string]$afterTimestamp)
+  param([string]$stage, [int]$afterOutputId)
 
   $maxPolls = [math]::Ceiling(($Timeout * 60) / $PollInterval)
   Write-Host "  Waiting for '$stage' to deposit results (polling every ${PollInterval}s, timeout ${Timeout}m)..." -ForegroundColor DarkGray
@@ -73,7 +73,7 @@ function Wait-ForStageCompletion {
     Start-Sleep -Seconds $PollInterval
     try {
       $row = Get-LatestOutput $stage
-      if ($row -and $row.created_at -gt $afterTimestamp) {
+      if ($row -and [int]$row.output_id -gt $afterOutputId) {
         Write-Host "  Stage '$stage' completed!" -ForegroundColor Green
         try {
           $payload = $row.payload | ConvertFrom-Json -Depth 10
@@ -102,9 +102,11 @@ function Open-Stage {
   Write-Host " Stage: $name" -ForegroundColor Cyan
   Write-Host "════════════════════════════════════════" -ForegroundColor Cyan
 
-  $beforeTime = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss")
+  # Get current max output_id for this stage (or 0)
+  $currentRow = Get-LatestOutput $name.ToLower()
+  $afterId = if ($currentRow) { [int]$currentRow.output_id } else { 0 }
 
-  $qs = "autorun=1"
+  $qs = "autorun=1&_cb=$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())"
   if ($Reset) { $qs += "&reset=1" }
   foreach ($k in $extraParams.Keys) { $qs += "&$k=$($extraParams[$k])" }
 
@@ -112,7 +114,7 @@ function Open-Stage {
   Write-Host "  Opening: $url" -ForegroundColor DarkGray
   Start-Process $url
 
-  $ok = Wait-ForStageCompletion -stage $name.ToLower() -afterTimestamp $beforeTime
+  $ok = Wait-ForStageCompletion -stage $name.ToLower() -afterOutputId $afterId
   if (-not $ok) {
     Write-Host "  Pipeline halted at '$name'. Check the browser for errors." -ForegroundColor Red
     exit 1

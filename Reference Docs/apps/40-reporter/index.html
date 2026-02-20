@@ -215,6 +215,7 @@
     const dateStamp = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
     const compactIsoForFilename = (iso) => String(iso || "").replaceAll(":", "").replaceAll("-", "").replaceAll(".", "").replace("T", "_").replace("Z", "Z");
     const escHtml = (s) => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
     const clipText = (s, maxChars = DEBUG_LIMITS.maxCharsIo) => {
       const text = String(s || "");
       if (text.length <= maxChars) return text;
@@ -950,13 +951,19 @@
       const params = new URLSearchParams(window.location.search);
       if (params.get("autorun") === "1") {
         log("ok", "Auto-run triggered via URL parameter.", "AUTORUN");
-        await sleep(500);
-        log("ok", "Generating outputs...", "AUTORUN");
-        await generate();
-        log("ok", "Generation complete. Running tests...", "AUTORUN");
-        await test();
-        log("ok", "Depositing results...", "AUTORUN");
-        await autoDepositResults();
+        try {
+          await sleep(500);
+          log("ok", "Generating outputs...", "AUTORUN");
+          await generate();
+          log("ok", "Generation complete. Running tests...", "AUTORUN");
+          test();
+          log("ok", "Depositing results...", "AUTORUN");
+          await autoDepositResults();
+        } catch (e) {
+          log("err", "Auto-run failed: " + (e?.message || e), "AUTORUN");
+          // Still try to deposit even on failure
+          try { await autoDepositResults(); } catch(_) {}
+        }
       }
     }
 
@@ -976,11 +983,12 @@
           claims_count: state.out.claims?.length || 0,
           slides_count: state.out.deck?.slides?.length || 0,
           report_length: state.out.report?.length || 0,
-          test_results: state.health || {},
-          report_preview: (state.out.report || "").slice(0, 2000),
-          designer_json: state.out.deck || null
+          test_results: state.smoke || {},
+          report_preview: (state.out.report || "").slice(0, 4000),
+          designer_json_slides_count: state.out.deck?.slides?.length || 0
         };
-        const escaped = JSON.stringify(payload).replace(/'/g, "\\'");
+        const payloadJson = JSON.stringify(payload);
+        const escaped = payloadJson.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
         await DBHelper.query(APP_NAME, `INSERT INTO app_output (app_stage, status, payload) VALUES ('reporter', 'completed', '${escaped}')`);
         log("ok", "Results deposited to app_output.", "AUTORUN");
       } catch (e) {

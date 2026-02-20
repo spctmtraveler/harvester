@@ -795,9 +795,61 @@ The object MUST have exactly two keys: "insights" (array) and "_meta" (diagnosti
             }))
             .filter(s => s.tags.length > 0);
 
+        // If thematic batch is too small (< 3), broaden to any unprocessed non-excluded items
+        if (enriched.length < 3) {
+            log("info", "BATCH", `Thematic batch only ${enriched.length} item(s). Broadening to any unprocessed non-excluded blocks.`);
+            const existingIds = new Set(enriched.map(e => e.sentence_id));
+            const broadRes = await DBHelper.query(APP_NAME, `
+                SELECT DISTINCT s.sentence_id, s.raw_text, s.clean_text, s.sentiment_score,
+                       s.is_problem, s.is_solution, s.is_explanation, s.is_workaround,
+                       s.timestamp_block, s.speaker
+                FROM sentences s
+                JOIN sentence_synthesis_queue q ON q.sentence_id = s.sentence_id
+                JOIN sentence_tags st ON st.sentence_id = s.sentence_id
+                JOIN tags t ON t.tag_id = st.tag_id
+                WHERE s.review_status = 'finalized'
+                  AND q.status = 'unprocessed'
+                  AND t.tag_key NOT IN (${EXCLUDED_SYNTH_TAGS_SQL})
+                ORDER BY s.sentence_id ASC
+                LIMIT ${batchSize}
+            `);
+            for (const r of (broadRes?.rows || [])) {
+                if (!existingIds.has(r.sentence_id)) {
+                    existingIds.add(r.sentence_id);
+                    enriched.push({ ...r, text: r.clean_text || r.raw_text, tags: [] });
+                }
+                if (enriched.length >= batchSize) break;
+            }
+            // Fetch tags for newly added items
+            if (enriched.some(e => e.tags.length === 0)) {
+                const allIdsSql = enriched.map(r => `'${String(r.sentence_id).replace(/'/g, "''")}'`).join(",");
+                const allTagsRes = await DBHelper.query(APP_NAME, `
+                    SELECT st.sentence_id, t.tag_key FROM sentence_tags st
+                    JOIN tags t ON t.tag_id = st.tag_id
+                    WHERE st.sentence_id IN (${allIdsSql})
+                      AND t.tag_key NOT IN (${EXCLUDED_SYNTH_TAGS_SQL})
+                `);
+                const allTagMap = {};
+                for (const row of (allTagsRes?.rows || [])) {
+                    if (!allTagMap[row.sentence_id]) allTagMap[row.sentence_id] = [];
+                    allTagMap[row.sentence_id].push(row.tag_key);
+                }
+                for (const e of enriched) {
+                    if (e.tags.length === 0 && allTagMap[e.sentence_id]) e.tags = allTagMap[e.sentence_id];
+                }
+            }
+            // Remove items with still no tags
+            const final = enriched.filter(s => s.tags.length > 0);
+            if (final.length !== enriched.length) {
+                log("info", "BATCH", `Removed ${enriched.length - final.length} item(s) with no non-excluded tags.`);
+            }
+            enriched.length = 0;
+            enriched.push(...final);
+        }
+
         if (enriched.length > 0) {
             const topTags = seedTags.slice(0, 4).join(", ");
-            log("info", "BATCH", `Theme seed tags: ${topTags}${seedTags.length > 4 ? ", ..." : ""}`);
+            log("info", "BATCH", `Theme seed tags: ${topTags}${seedTags.length > 4 ? ", ..." : ""} | Batch size: ${enriched.length}`);
         }
 
         return enriched;
@@ -879,7 +931,7 @@ The object MUST have exactly two keys: "insights" (array) and "_meta" (diagnosti
         log("ok", "START", `Synthesis started. Batch=${batchSize}, Model=${model}`);
         await refreshRunStatus();
 
-        const MAX_CONSECUTIVE_FAILURES = 3;
+        const MAX_CONSECUTIVE_FAILURES = 5;
         let consecutiveFailures = 0;
 
         while (!shouldStop) {
@@ -1405,7 +1457,9 @@ The object MUST have exactly two keys: "insights" (array) and "_meta" (diagnosti
         // Treat batch as failure if zero insights were actually persisted
         // (triggers circuit breaker after consecutive failures)
         if (createdCount === 0) {
-            log("warn", "BATCH", "Batch produced 0 persisted insights — counted as failure for circuit breaker.");
+            log("warn", "BATCH", "Batch produced 0 persisted insights — marking items as processed to avoid retry loop.");
+            // Mark ALL items in this batch as processed so we don't retry the same sentences
+            await markQueue(enriched, "processed", runId);
             return false;
         }
         return true;

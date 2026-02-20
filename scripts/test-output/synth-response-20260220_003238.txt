@@ -1,0 +1,13 @@
+{
+  "insights": [],
+  "_meta": {
+    "input_block_count": 1,
+    "input_ids_received": ["KB01.0013"],
+    "insights_produced": 0,
+    "blocks_used_count": 0,
+    "blocks_unused": ["KB01.0013"],
+    "rule_violations_caught": [],
+    "warnings": [],
+    "model_notes": "The provided block did not contain sufficient information to form a valid insight according to the hard rules. Specifically, it lacked a quote_rank >= 2."
+  }
+}
