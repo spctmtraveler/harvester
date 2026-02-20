@@ -319,6 +319,14 @@
         .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 5px; }
         #error-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.8); justify-content: center; align-items: center; z-index: 3100; }
         .error-content { background: white; padding: 30px; border-radius: 8px; width: 400px; text-align: center; }
+        /* Import notice/warning toast */
+        #import-notice { position: fixed; top: 60px; left: 50%; transform: translateX(-50%); z-index: 6000; background: #fff3cd; color: #856404; border: 1px solid #ffc107; border-radius: 8px; padding: 14px 22px; font-size: 13px; line-height: 1.6; max-width: 520px; box-shadow: 0 6px 24px rgba(0,0,0,0.25); display: none; font-family: 'Source Sans 3', sans-serif; }
+        #import-notice.visible { display: block; animation: fadeNotice 0.3s ease-out; }
+        #import-notice .notice-title { font-weight: 700; margin-bottom: 4px; font-size: 14px; }
+        #import-notice ul { margin: 4px 0 8px 16px; padding: 0; }
+        #import-notice li { margin-bottom: 2px; }
+        #import-notice .notice-ok { background: #ffc107; color: #333; border: none; padding: 5px 16px; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 13px; }
+        @keyframes fadeNotice { from { opacity: 0; transform: translateX(-50%) translateY(-10px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
         #context-menu { position: fixed; z-index: 4000; background: white; border: 1px solid #ccc; border-radius: 6px; box-shadow: 0 5px 15px rgba(0,0,0,0.2); padding: 5px; width: 160px; }
         #context-menu.visible { display: block; }
         .color-option { display: flex; align-items: center; gap: 10px; padding: 8px 10px; cursor: pointer; font-size: 13px; }
@@ -328,7 +336,7 @@
 </head>
 <body>
 
-<div id="app-version-banner">Designer v3.4 · Last updated —</div>
+<div id="app-version-banner">Designer v3.5 · Last updated —</div>
 
 <div id="settings-wrapper">
     <svg class="gear-trigger" viewBox="0 0 24 24" onclick="toggleSettings()"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
@@ -391,7 +399,8 @@
     <div id="slide-stage"></div>
 </div>
 
-<div id="import-modal"><div class="modal-content"><h3>Import Deck</h3><label class="btn-file-upload">📂 Upload JSON File<input type="file" id="file-upload" accept=".json" style="display:none" onchange="handleFileSelect(this)"></label><div class="import-divider">OR</div><button class="btn-outline" style="width:100%" onclick="importFromClipboard()">📋 Read from Clipboard</button><div class="import-divider">OR</div><textarea id="import-area" placeholder="Paste JSON code here..."></textarea><div class="modal-actions"><button class="btn-close" style="margin:0" onclick="closeImport()">Cancel</button><button class="btn-outline" style="background:var(--powder-blue); color:white; border:none;" onclick="processManualImport()">Load Text</button></div></div></div>
+<div id="import-modal"><div class="modal-content"><h3>Import Deck</h3><label class="btn-file-upload">📂 Upload JSON File<input type="file" id="file-upload" accept=".json" style="display:none" onchange="handleFileSelect(this)"></label><div class="import-divider">OR</div><button class="btn-outline" style="width:100%" onclick="importFromClipboard()">📋 Read from Clipboard</button><div class="import-divider">OR</div><textarea id="import-area" placeholder="Paste JSON here — AI prose wrapping is OK, we'll extract the JSON automatically."></textarea><div class="modal-actions"><button class="btn-close" style="margin:0" onclick="closeImport()">Cancel</button><button class="btn-outline" style="background:var(--powder-blue); color:white; border:none;" onclick="processManualImport()">Load Text</button></div></div></div>
+<div id="import-notice"><div class="notice-title">Import Notes</div><div id="notice-body"></div><button class="notice-ok" onclick="dismissNotice()">OK</button></div>
 <div id="error-modal"><div class="error-content"><h3>Import Error</h3><p id="error-message">Content is not valid JSON</p><button class="btn-close" onclick="closeError()">OK</button></div></div>
 <div id="context-menu">
     <div class="color-option" onclick="setShapeColor('var(--c-mental)')"><div class="swatch" style="background:var(--c-mental)"></div>Mental</div>
@@ -475,26 +484,50 @@
             imageAlign,
             imagePrompt: base.imagePrompt || '',   // AI-suggested image idea (preserved across mode switches)
             quoteText: base.quoteText ?? fallbackText,
-            quoteAttribution: base.quoteAttribution || 'Chair'
+            quoteAttribution: base.quoteAttribution || ''
         };
     }
 
+    /** Recognized slide types → rendering pipelines */
+    const KNOWN_SLIDE_TYPES = new Set(['cover', 'section', 'standard', 'two-column']);
+
     function ensureSlideSchema(slide) {
-        if (!slide || typeof slide !== 'object') return slide;
+        if (!slide || typeof slide !== 'object') return { type: 'standard', title: '(empty)', content: '', bodyField: ensureFieldDefaults({}, '') };
+
+        // Coerce unknown types → standard so they still render
+        if (!KNOWN_SLIDE_TYPES.has(slide.type)) {
+            console.warn(`[Designer] Unknown slide type "${slide.type}" → coerced to "standard"`);
+            slide._originalType = slide.type;  // stash for debugging
+            slide.type = 'standard';
+        }
+
+        // Cover: ensure subtitle exists
+        if (slide.type === 'cover') {
+            slide.subtitle = slide.subtitle ?? '';
+        }
+
+        // Standard: ensure bodyField exists
         if (slide.type === 'standard') {
-            slide.bodyField = ensureFieldDefaults(slide.bodyField, slide.content || '• Point 1');
+            slide.bodyField = ensureFieldDefaults(slide.bodyField, slide.content || '');
             if (!slide.content) slide.content = slide.bodyField.text || '';
         }
+
+        // Two-column: ensure columns + sub-fields exist
         if (slide.type === 'two-column') {
-            const leftBase = slide.columns?.leftField || { mode: 'text', text: '• Left content' };
-            const rightBase = slide.columns?.rightField || { mode: 'image', imageUrl: '' };
+            const leftBase = slide.columns?.leftField || { mode: 'text', text: slide.content || '' };
+            const rightBase = slide.columns?.rightField || { mode: 'text', text: '' };
             const splitPct = Number(slide.columns?.splitPct ?? 50);
             slide.columns = {
                 splitPct: Number.isFinite(splitPct) ? Math.max(20, Math.min(80, splitPct)) : 50,
-                leftField: ensureFieldDefaults(leftBase, leftBase.text || '• Left content'),
-                rightField: ensureFieldDefaults(rightBase, rightBase.text || '• Right content')
+                leftField: ensureFieldDefaults(leftBase, leftBase.text || ''),
+                rightField: ensureFieldDefaults(rightBase, rightBase.text || '')
             };
+            if (!slide.content) slide.content = leftBase.text || '';
         }
+
+        // Ensure title always exists
+        if (!slide.title) slide.title = slide.type === 'cover' ? 'Untitled Deck' : '';
+
         return slide;
     }
 
@@ -799,12 +832,217 @@
     function applyConfig() { document.documentElement.style.setProperty('--global-x', (appConfig.globalX || 0) + 'px'); document.documentElement.style.setProperty('--global-y', (appConfig.globalY || 0) + 'px'); if (appConfig.showShapes) document.body.classList.add('show-shapes'); else document.body.classList.remove('show-shapes'); types.forEach(t => { document.documentElement.style.setProperty(`--font-${t.id}`, appConfig[`font-${t.id}`] || "'Source Sans 3', sans-serif"); document.documentElement.style.setProperty(`--size-${t.id}`, appConfig[`size-${t.id}`] || '18pt'); document.documentElement.style.setProperty(`--color-${t.id}`, appConfig[`color-${t.id}`] || '#1e1d21'); }); }
     function updateTheme() { appConfig.showShapes = document.getElementById('toggle-shapes').checked; types.forEach(t => { appConfig[`font-${t.id}`] = document.getElementById(`font-${t.id}`).value; appConfig[`size-${t.id}`] = document.getElementById(`size-${t.id}`).value + 'pt'; }); applyConfig(); saveState(); }
     function updateSettingsUI() { document.getElementById('toggle-shapes').checked = appConfig.showShapes || false; types.forEach(t => { const fEl = document.getElementById(`font-${t.id}`); const sEl = document.getElementById(`size-${t.id}`); const cBtn = document.getElementById(`color-btn-${t.id}`); if(fEl) fEl.value = appConfig[`font-${t.id}`] || "'Source Sans 3', sans-serif"; if(sEl) sEl.value = (appConfig[`size-${t.id}`] || '').replace('pt',''); if(cBtn) cBtn.style.backgroundColor = appConfig[`color-${t.id}`] || '#000'; }); }
-    function loadDeckData(jsonString) { try { if (jsonString.trim().startsWith('<')) throw new Error("Input appears to be HTML, not JSON."); const data = JSON.parse(jsonString); if (!data.slides || !Array.isArray(data.slides)) throw new Error("Missing 'slides' array in JSON."); appConfig = data.config; slidesData = data.slides.map(ensureSlideSchema); if(!appConfig.typeOffsets) appConfig.typeOffsets = {}; if(!appConfig.typeOffsets.cover) appConfig.typeOffsets.cover = {x:0, y:0}; if(!appConfig.typeOffsets.section) appConfig.typeOffsets.section = {x:0, y:0}; if(!appConfig.typeOffsets.standard) appConfig.typeOffsets.standard = {x:0, y:0}; if(!appConfig.typeOffsets['two-column']) appConfig.typeOffsets['two-column'] = {x:0, y:0}; applyConfig(); render(); saveState(); showSlide(0); document.body.classList.add('flash-success'); setTimeout(() => document.body.classList.remove('flash-success'), 600); closeImport(); toggleSettings(); } catch (err) { showError(err.message); } }
-    function handleFileSelect(input) { const file = input.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = function(e) { loadDeckData(e.target.result); }; reader.readAsText(file); input.value = ''; }
-    async function importFromClipboard() { try { const text = await navigator.clipboard.readText(); loadDeckData(text); } catch (err) { showError("Clipboard access denied or empty."); } }
-    function processManualImport() { loadDeckData(document.getElementById('import-area').value); }
-    function showError(msg) { document.getElementById('error-message').innerText = msg; document.getElementById('error-modal').classList.add('open'); }
+    // ════════════════════════════════════════════════
+    //  Resilient import pipeline — extracts JSON from AI prose,
+    //  handles slides-only arrays, missing config, unknown types, etc.
+    // ════════════════════════════════════════════════
+
+    /**
+     * Try to extract a JSON object or array from a string that may contain
+     * surrounding prose (e.g. "Below is a JSON representation...").
+     * Strategy: find outermost { } or [ ] by brace-depth counting.
+     */
+    function extractJSON(raw) {
+        const trimmed = raw.trim();
+        // Fast path: already starts with { or [
+        if (trimmed[0] === '{' || trimmed[0] === '[') return trimmed;
+
+        // Try to find first { or [ that starts JSON
+        const firstBrace = trimmed.indexOf('{');
+        const firstBracket = trimmed.indexOf('[');
+        let start = -1;
+        let openChar = '{';
+        let closeChar = '}';
+        if (firstBrace === -1 && firstBracket === -1) return trimmed; // no JSON found
+        if (firstBrace === -1) { start = firstBracket; openChar = '['; closeChar = ']'; }
+        else if (firstBracket === -1) { start = firstBrace; }
+        else if (firstBracket < firstBrace) { start = firstBracket; openChar = '['; closeChar = ']'; }
+        else { start = firstBrace; }
+
+        // Walk forward counting depth (only track the outermost delimiter type;
+        // nested braces/brackets of the *other* kind are always balanced in valid JSON)
+        let depth = 0;
+        let inString = false;
+        let escape = false;
+        for (let i = start; i < trimmed.length; i++) {
+            const ch = trimmed[i];
+            if (escape) { escape = false; continue; }
+            if (ch === '\\') { escape = true; continue; }
+            if (ch === '"') { inString = !inString; continue; }
+            if (inString) continue;
+            if (ch === openChar) depth++;
+            if (ch === closeChar) depth--;
+            if (depth === 0) {
+                return trimmed.slice(start, i + 1);
+            }
+        }
+        // Fallback: return from first brace to end
+        return trimmed.slice(start);
+    }
+
+    /**
+     * Parse input string into { data, warnings }.
+     * Handles: raw JSON, AI-wrapped JSON, slides-only arrays,
+     * objects with slides but no config, markdown/code-fenced JSON, etc.
+     */
+    function smartParseInput(raw) {
+        const warnings = [];
+
+        // Reject obvious non-data
+        const trimmed = raw.trim();
+        if (!trimmed) throw new Error('Input is empty.');
+        if (trimmed.startsWith('<') && !trimmed.startsWith('[')) {
+            throw new Error('Input appears to be HTML, not JSON.');
+        }
+
+        // Strip markdown code fences: ```json ... ``` or ``` ... ```
+        let cleaned = trimmed.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '');
+
+        // Try direct parse first
+        let data;
+        try {
+            data = JSON.parse(cleaned);
+        } catch (_firstErr) {
+            // Try extracting JSON from surrounding prose
+            const extracted = extractJSON(cleaned);
+            try {
+                data = JSON.parse(extracted);
+                warnings.push('JSON was extracted from surrounding text (AI prose wrapper detected).');
+            } catch (_secondErr) {
+                throw new Error(
+                    `Could not parse JSON. The input may contain invalid syntax.\n\n` +
+                    `Tip: If you pasted AI output, make sure the JSON object is complete ` +
+                    `(matching braces/brackets).\n\nParser said: ${_secondErr.message}`
+                );
+            }
+        }
+
+        // ── Normalize the parsed data into { config, slides } ──
+
+        // Case 1: bare array → treat as slides
+        if (Array.isArray(data)) {
+            warnings.push('Input was a plain array — interpreted as slides (no config).');
+            data = { config: null, slides: data };
+        }
+
+        // Case 2: object but no slides key → look for common alternatives
+        if (!Array.isArray(data.slides)) {
+            if (Array.isArray(data.deck)) {
+                data.slides = data.deck;
+                warnings.push('Found "deck" array instead of "slides" — used it.');
+            } else if (data.type && typeof data.title === 'string') {
+                // Single slide object
+                data = { config: null, slides: [data] };
+                warnings.push('Input was a single slide — wrapped into a one-slide deck.');
+            } else {
+                throw new Error(
+                    'No "slides" array found in the JSON.\n\n' +
+                    'Expected format: { "config": {...}, "slides": [...] }\n' +
+                    'Or a plain array of slide objects.'
+                );
+            }
+        }
+
+        // Ensure slides is actually an array of objects
+        data.slides = data.slides.filter(s => s && typeof s === 'object');
+        if (data.slides.length === 0) {
+            throw new Error('The "slides" array is empty — nothing to render.');
+        }
+
+        // Missing or null config — supply sensible defaults
+        if (!data.config || typeof data.config !== 'object') {
+            warnings.push('No "config" found — using default design settings.');
+            data.config = null; // will be handled below
+        }
+
+        return { data, warnings };
+    }
+
+    function loadDeckData(inputString) {
+        try {
+            const { data, warnings } = smartParseInput(inputString);
+
+            // ── Config ──
+            if (data.config) {
+                appConfig = data.config;
+            } else {
+                // Preserve current config so we don't clobber an existing theme
+                // (appConfig already has sensible defaults from init)
+            }
+
+            // ── Slide schema normalization ──
+            let coercedTypes = 0;
+            let missingBodyFields = 0;
+            let missingColumns = 0;
+            slidesData = data.slides.map(slide => {
+                // Track fixups for user notice
+                if (slide.type && !KNOWN_SLIDE_TYPES.has(slide.type)) coercedTypes++;
+                if (slide.type === 'standard' && !slide.bodyField) missingBodyFields++;
+                if (slide.type === 'two-column' && !slide.columns) missingColumns++;
+                return ensureSlideSchema(slide);
+            });
+
+            if (coercedTypes > 0) warnings.push(`${coercedTypes} slide(s) had unknown types → converted to "standard".`);
+            if (missingBodyFields > 0) warnings.push(`${missingBodyFields} standard slide(s) were missing bodyField → auto-created from content.`);
+            if (missingColumns > 0) warnings.push(`${missingColumns} two-column slide(s) were missing columns → auto-created.`);
+
+            // ── Ensure template offsets ──
+            if (!appConfig.typeOffsets) appConfig.typeOffsets = {};
+            for (const t of ['cover', 'section', 'standard', 'two-column']) {
+                if (!appConfig.typeOffsets[t]) appConfig.typeOffsets[t] = { x: 0, y: 0 };
+            }
+
+            applyConfig(); render(); saveState(); showSlide(0);
+            document.body.classList.add('flash-success');
+            setTimeout(() => document.body.classList.remove('flash-success'), 600);
+            closeImport(); toggleSettings();
+
+            console.log(`[Designer] Import OK — ${slidesData.length} slides loaded. Warnings: ${warnings.length}`);
+            warnings.forEach(w => console.warn('[Designer Import]', w));
+
+            // Show import notices to user if any
+            if (warnings.length > 0) {
+                showNotice(warnings);
+            }
+        } catch (err) {
+            showError(err.message);
+        }
+    }
+
+    function handleFileSelect(input) {
+        const file = input.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function(e) { loadDeckData(e.target.result); };
+        reader.readAsText(file);
+        input.value = '';
+    }
+    async function importFromClipboard() {
+        try {
+            const text = await navigator.clipboard.readText();
+            loadDeckData(text);
+        } catch (err) {
+            showError('Clipboard access denied or empty.');
+        }
+    }
+    function processManualImport() {
+        loadDeckData(document.getElementById('import-area').value);
+    }
+
+    function showError(msg) {
+        document.getElementById('error-message').innerText = msg;
+        document.getElementById('error-modal').classList.add('open');
+    }
     function closeError() { document.getElementById('error-modal').classList.remove('open'); }
+
+    function showNotice(warnings) {
+        const body = document.getElementById('notice-body');
+        body.innerHTML = '<ul>' + warnings.map(w => `<li>${w}</li>`).join('') + '</ul>';
+        document.getElementById('import-notice').classList.add('visible');
+    }
+    function dismissNotice() {
+        document.getElementById('import-notice').classList.remove('visible');
+    }
     
     function nudge(x, y) { 
         if (nudgeMode === 'global') { 

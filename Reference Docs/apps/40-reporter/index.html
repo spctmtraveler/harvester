@@ -55,6 +55,13 @@
     .health-warn{background:rgba(210,153,34,.14);border-color:var(--warn);color:#ffd88a}
     .health-err{background:rgba(218,54,51,.14);border-color:var(--err);color:#ffb3b0}
     .health-neutral{background:rgba(139,148,158,.12);border-color:var(--border);color:var(--muted)}
+    .mdtool-status{margin-bottom:10px;padding:10px;border-radius:6px;border:1px solid var(--border);font:12px/1.4 var(--mono);color:var(--muted);background:rgba(139,148,158,.08)}
+    .mdtool-status.running{border-color:var(--blue);color:var(--blue);background:rgba(31,111,235,.12)}
+    .mdtool-status.ok{border-color:var(--ok);color:#a8e6b4;background:rgba(46,160,67,.14)}
+    .mdtool-status.err{border-color:var(--err);color:#ffb3b0;background:rgba(218,54,51,.14)}
+    .mdtool-output{min-height:360px;font:12px/1.45 var(--mono)}
+    .mdtool-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+    .mdtool-actions button{width:auto;margin:0;padding:7px 12px}
     @media (max-width: 980px){
       body{display:block;height:auto;overflow:auto}
       .side{width:100%;min-width:0;border-right:none;border-bottom:1px solid var(--border)}
@@ -67,7 +74,7 @@
   <aside class="side">
     <div class="title">Reporter</div>
     <div class="sub">Job 4 - Cited Report + Designer JSON</div>
-    <div class="meta" id="appMeta">Version v1.0 | Last updated -</div>
+    <div class="meta" id="appMeta">Version v1.4 | Last updated -</div>
 
     <div class="sec">
       <div class="lbl">System</div>
@@ -121,6 +128,20 @@
     </div>
 
     <div class="sec">
+      <div class="lbl">MD to Designer Tool</div>
+      <label for="mdToolModel">Conversion model</label>
+      <select id="mdToolModel">
+        <option value="gpt-4o" selected>gpt-4o (higher quality)</option>
+        <option value="gpt-4o-mini">gpt-4o-mini (faster)</option>
+      </select>
+      <label for="mdToolInput">Paste Markdown report</label>
+      <textarea id="mdToolInput" style="min-height:150px" placeholder="# Report Title&#10;&#10;## Executive Summary&#10;- Point 1&#10;- Point 2&#10;&#10;## Recommendations&#10;- Action A"></textarea>
+      <button class="blue" id="btnMdToolConvert">Convert MD to Designer JSON</button>
+      <button class="ghost" id="btnLoadNarrativeMd">Use Narrative as Input</button>
+      <button class="ghost" id="btnOpenMdTool">Open MD Tool View</button>
+    </div>
+
+    <div class="sec">
       <div class="lbl">Debug</div>
       <button class="ghost" id="btnOpenApi">Open API Traffic View</button>
       <button class="ghost" id="btnDebugBundle">Download Full Debug JSON</button>
@@ -137,6 +158,7 @@
       <div class="tab active" data-tab="narrative">Client Report <span class="badge" id="bNarrative">0</span></div>
       <div class="tab" data-tab="report">Cited Report <span class="badge" id="bReport">0</span></div>
       <div class="tab" data-tab="json">Designer JSON <span class="badge" id="bJson">0</span></div>
+      <div class="tab" data-tab="mdtool">MD to Designer <span class="badge" id="bMdTool">0</span></div>
       <div class="tab" data-tab="api">API Traffic <span class="badge" id="bApi">0</span></div>
       <div class="tab" data-tab="tests">Smoke Tests <span class="badge" id="bTests">0</span></div>
       <div class="tab" data-tab="trace">Trace (Later)</div>
@@ -157,6 +179,19 @@
     <section id="v-json" class="view">
       <h2>Designer JSON Payload</h2>
       <textarea id="jsonText" class="json" readonly>{}</textarea>
+    </section>
+
+    <section id="v-mdtool" class="view">
+      <h2>Markdown to Designer JSON (AI)</h2>
+      <div id="mdToolStatus" class="mdtool-status">Paste Markdown in the sidebar tool, then click Convert.</div>
+      <div class="panel">
+        <textarea id="mdToolJson" class="mdtool-output" readonly>{}</textarea>
+        <div class="mdtool-actions">
+          <button class="ghost" id="btnCopyMdToolJson">Copy MD Tool JSON</button>
+          <button class="ghost" id="btnSaveMdToolJson">Download MD Tool JSON</button>
+          <button class="ghost" id="btnUseMdToolJson">Use as Active Designer JSON</button>
+        </div>
+      </div>
     </section>
 
     <section id="v-api" class="view">
@@ -184,8 +219,8 @@
     import { askAI } from "https://happydo.xyz/api/ailnl.js";
 
     const APP_NAME = "HWIE_v2";
-    const APP_VERSION = "v1.3";
-    const APP_LAST_UPDATED_UTC = "2026-02-20T08:00:00Z";
+    const APP_VERSION = "v1.4";
+    const APP_LAST_UPDATED_UTC = "2026-02-20T23:55:00Z";
     const VALID_TYPES = new Set(["cover", "section", "standard", "two-column"]);
     const DEBUG_LIMITS = {
       maxApiTrafficRows: 220,
@@ -209,7 +244,7 @@
     const state = {
       ok: false,
       db: { insights: 0, links: 0, noEvidence: 0, loaded: [], evBy: new Map(), sentenceIds: new Set() },
-      out: { report: "", narrative: "", deck: null, narrativeDeck: null, claims: [], noEvidenceDropped: 0, summary: [], groups: { problems: [], solutions: [], mechanisms: [] } },
+      out: { report: "", narrative: "", deck: null, narrativeDeck: null, mdToolDeck: null, claims: [], noEvidenceDropped: 0, summary: [], groups: { problems: [], solutions: [], mechanisms: [] } },
       smoke: { ran_at_utc: null, results: [] },
       debug: { apiTraffic: [], logHistory: [] }
     };
@@ -575,6 +610,285 @@
       return { config: JSON.parse(JSON.stringify(DESIGNER_CONFIG)), slides };
     }
 
+    function setMdToolStatus(kind, msg) {
+      const el = $("mdToolStatus");
+      if (!el) return;
+      el.className = "mdtool-status";
+      if (kind === "running") el.classList.add("running");
+      if (kind === "ok") el.classList.add("ok");
+      if (kind === "err") el.classList.add("err");
+      el.textContent = String(msg || "");
+    }
+
+    function extractFirstJsonObject(text) {
+      const s = String(text || "");
+      let inString = false;
+      let escaped = false;
+      let depth = 0;
+      let start = -1;
+
+      for (let i = 0; i < s.length; i++) {
+        const ch = s[i];
+
+        if (inString) {
+          if (escaped) {
+            escaped = false;
+            continue;
+          }
+          if (ch === "\\") {
+            escaped = true;
+            continue;
+          }
+          if (ch === '"') inString = false;
+          continue;
+        }
+
+        if (ch === '"') {
+          inString = true;
+          continue;
+        }
+
+        if (ch === "{") {
+          if (depth === 0) start = i;
+          depth++;
+          continue;
+        }
+
+        if (ch === "}") {
+          if (depth > 0) depth--;
+          if (depth === 0 && start >= 0) return s.slice(start, i + 1);
+        }
+      }
+
+      return null;
+    }
+
+    function normalizeMdBodyField(field, fallbackText = "", fallbackPrompt = "") {
+      const out = {
+        mode: "text",
+        text: String(fallbackText || ""),
+        imageUrl: "",
+        imageAlign: "center",
+        imagePrompt: String(fallbackPrompt || ""),
+        quoteText: "",
+        quoteAttribution: ""
+      };
+
+      if (!field || typeof field !== "object") return out;
+
+      const mode = String(field.mode || "text").toLowerCase();
+      out.mode = ["text", "image", "quote"].includes(mode) ? mode : "text";
+      out.text = String(field.text ?? fallbackText ?? "");
+      out.imageUrl = String(field.imageUrl || "");
+      out.imageAlign = ["left", "center", "right"].includes(String(field.imageAlign || "").toLowerCase())
+        ? String(field.imageAlign || "").toLowerCase()
+        : "center";
+      out.imagePrompt = String(field.imagePrompt || fallbackPrompt || "");
+      out.quoteText = String(field.quoteText || "");
+      out.quoteAttribution = String(field.quoteAttribution || "");
+      return out;
+    }
+
+    function normalizeMdColumns(columns, fallbackText = "") {
+      const splitRaw = parseInt(columns?.splitPct, 10);
+      const splitPct = Number.isFinite(splitRaw) ? Math.max(25, Math.min(75, splitRaw)) : 55;
+      return {
+        splitPct,
+        leftField: normalizeMdBodyField(columns?.leftField, fallbackText, ""),
+        rightField: normalizeMdBodyField(columns?.rightField, "", "")
+      };
+    }
+
+    function sanitizeMdToolSlide(slide) {
+      const src = slide && typeof slide === "object" ? slide : {};
+      const typeRaw = String(src.type || "standard").toLowerCase();
+      const type = VALID_TYPES.has(typeRaw) ? typeRaw : "standard";
+      const title = String(src.title || (type === "cover" ? "Report" : "Slide"));
+      const content = String(src.content || "");
+
+      const out = { type, title, content };
+      if (src.shapeColor !== undefined) out.shapeColor = String(src.shapeColor);
+
+      for (const nKey of ["x", "y", "titleX", "titleY", "bodyX", "bodyY"]) {
+        const v = Number(src[nKey]);
+        if (Number.isFinite(v)) out[nKey] = v;
+      }
+
+      if (type === "cover") {
+        out.subtitle = String(src.subtitle || "");
+      } else if (type === "two-column") {
+        out.columns = normalizeMdColumns(src.columns, content);
+      } else if (type === "standard") {
+        out.bodyField = normalizeMdBodyField(src.bodyField, content, "");
+      }
+
+      return out;
+    }
+
+    function sanitizeMdToolDeck(candidate) {
+      if (!candidate || typeof candidate !== "object") {
+        throw new Error("AI output is not a JSON object.");
+      }
+
+      const baseConfig = JSON.parse(JSON.stringify(DESIGNER_CONFIG));
+      let config = baseConfig;
+      if (candidate.config && typeof candidate.config === "object") {
+        config = { ...baseConfig, ...candidate.config };
+        if (candidate.config.typeOffsets && typeof candidate.config.typeOffsets === "object") {
+          config.typeOffsets = {
+            ...baseConfig.typeOffsets,
+            ...candidate.config.typeOffsets
+          };
+        }
+      }
+
+      const slidesInput = Array.isArray(candidate.slides) ? candidate.slides : [];
+      if (!slidesInput.length) {
+        throw new Error("AI output did not include a non-empty slides array.");
+      }
+
+      const slides = slidesInput.map(sanitizeMdToolSlide).filter(Boolean).slice(0, 35);
+      if (!slides.length) {
+        throw new Error("No valid slides after normalization.");
+      }
+
+      return { config, slides };
+    }
+
+    async function convertMdToDesignerJson() {
+      const mdText = String($("mdToolInput")?.value || "").trim();
+      const model = String($("mdToolModel")?.value || "gpt-4o");
+      const btn = $("btnMdToolConvert");
+
+      if (!mdText) {
+        setMdToolStatus("err", "Paste Markdown text first.");
+        log("warn", "MD tool conversion skipped: empty markdown input.", "MD_TOOL");
+        switchTab("mdtool");
+        return;
+      }
+
+      if (btn) btn.disabled = true;
+      setMdToolStatus("running", `Converting Markdown (${mdText.length} chars) using ${model}...`);
+      trackApiTraffic({ stage: "md_tool_request", model, input_chars: mdText.length });
+
+      const prompt = `You convert markdown reports into JSON payloads for a slide designer.
+
+Return ONLY valid JSON (no markdown fences, no commentary) as:
+{
+  "config": { ... },
+  "slides": [ ... ]
+}
+
+Designer constraints:
+- Allowed slide types: "cover", "section", "standard", "two-column"
+- Include top-level "config" and "slides"
+- Preserve the report content; do not invent facts not present in markdown
+- Max 35 slides
+
+Schema guidance:
+- cover: { "type":"cover", "title":"...", "subtitle":"..." }
+- section: { "type":"section", "title":"..." }
+- standard:
+  {
+    "type":"standard",
+    "title":"...",
+    "content":"...",
+    "bodyField":{
+      "mode":"text|image|quote",
+      "text":"...",
+      "imageUrl":"",
+      "imageAlign":"left|center|right",
+      "imagePrompt":"",
+      "quoteText":"",
+      "quoteAttribution":""
+    }
+  }
+- two-column:
+  {
+    "type":"two-column",
+    "title":"...",
+    "content":"...",
+    "columns":{
+      "splitPct":55,
+      "leftField":{ bodyField schema },
+      "rightField":{ bodyField schema }
+    }
+  }
+
+Use this default config unless markdown clearly implies adjustments:
+${JSON.stringify(DESIGNER_CONFIG, null, 2)}
+
+Markdown input:
+${mdText}`;
+
+      try {
+        const raw = await askAI(prompt, model, { temperature: 0.1 });
+        const rawText = String(raw || "").trim();
+        trackApiTraffic({ stage: "md_tool_response", model, response_chars: rawText.length, raw_output_preview: rawText.slice(0, 1500) });
+
+        if (!rawText || rawText.startsWith("Error:")) {
+          throw new Error(rawText || "AI returned empty response.");
+        }
+
+        const stripped = rawText.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "").trim();
+        let parsed = null;
+        try {
+          parsed = JSON.parse(stripped);
+        } catch (_) {
+          const obj = extractFirstJsonObject(stripped);
+          if (!obj) throw new Error("Could not locate JSON object in AI response.");
+          parsed = JSON.parse(obj);
+        }
+
+        const deck = sanitizeMdToolDeck(parsed);
+        state.out.mdToolDeck = deck;
+
+        const pretty = JSON.stringify(deck, null, 2);
+        $("mdToolJson").value = pretty;
+        $("jsonText").value = pretty;
+        set("bMdTool", deck.slides.length);
+        set("bJson", deck.slides.length);
+
+        setMdToolStatus("ok", `Converted successfully: ${deck.slides.length} slides.`);
+        trackApiTraffic({ stage: "md_tool_done", model, slides: deck.slides.length });
+        log("ok", `MD tool produced ${deck.slides.length} slides.`, "MD_TOOL");
+        switchTab("mdtool");
+      } catch (e) {
+        const err = String(e?.message || e);
+        setMdToolStatus("err", `Conversion failed: ${err}`);
+        trackApiTraffic({ stage: "md_tool_error", model, error: err });
+        log("err", `MD tool conversion failed: ${err}`, "MD_TOOL");
+        switchTab("mdtool");
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    function loadNarrativeIntoMdTool() {
+      const source = String(state.out.narrative || state.out.report || "").trim();
+      if (!source) {
+        setMdToolStatus("err", "No existing report content to load. Generate outputs first.");
+        log("warn", "No narrative/report text available for MD tool input.", "MD_TOOL");
+        return;
+      }
+      $("mdToolInput").value = source;
+      setMdToolStatus("ok", `Loaded ${source.length} characters from current report output.`);
+      log("ok", "Loaded current report output into MD tool input.", "MD_TOOL");
+      switchTab("mdtool");
+    }
+
+    function useMdToolJsonAsActive() {
+      if (!state.out.mdToolDeck) {
+        log("warn", "No MD tool JSON available yet.", "MD_TOOL");
+        return;
+      }
+      const pretty = JSON.stringify(state.out.mdToolDeck, null, 2);
+      $("jsonText").value = pretty;
+      set("bJson", state.out.mdToolDeck.slides.length);
+      log("ok", "MD tool JSON set as active Designer JSON view.", "MD_TOOL");
+      switchTab("json");
+    }
+
     async function generate() {
       trackApiTraffic({ stage: "generate_start", settings: settings() });
       await refreshData();
@@ -606,7 +920,15 @@
       ].join("\n");
 
       const deck = makeDeck(summary, groups, claims, s.includeQuotes);
-      state.out = { report, deck, claims, noEvidenceDropped: dropped, summary, groups };
+      state.out = {
+        ...state.out,
+        report,
+        deck,
+        claims,
+        noEvidenceDropped: dropped,
+        summary,
+        groups
+      };
 
       $("reportText").textContent = report;
       $("jsonText").value = JSON.stringify(deck, null, 2);
@@ -1310,10 +1632,13 @@ Return ONLY valid JSON, no markdown fences:
           output_summary: {
             claims_generated: state.out.claims.length,
             slides_generated: state.out.deck?.slides?.length || 0,
-            dropped_no_evidence: state.out.noEvidenceDropped || 0
+            dropped_no_evidence: state.out.noEvidenceDropped || 0,
+            md_tool_slides: state.out.mdToolDeck?.slides?.length || 0
           },
           plain_text_report: state.out.report || "",
           designer_json: state.out.deck || null,
+          md_tool_input_preview: String($("mdToolInput")?.value || "").slice(0, 60000),
+          md_tool_designer_json: state.out.mdToolDeck || null,
           loaded_insights_preview: state.db.loaded,
           insights_exported: insightsRes?.rows || [],
           links_exported: linksRes?.rows || [],
@@ -1335,6 +1660,13 @@ Return ONLY valid JSON, no markdown fences:
       const ta = document.createElement("textarea"); ta.value = value; ta.style.position = "fixed"; ta.style.left = "-9999px"; document.body.appendChild(ta); ta.select();
       const ok = document.execCommand("copy"); ta.remove(); if (!ok) throw new Error("Clipboard copy failed");
     }
+
+    function getPreferredDesignerDeck() {
+      const activeTab = document.querySelector(".tab.active")?.dataset.tab || "";
+      if (activeTab === "mdtool" && state.out.mdToolDeck) return state.out.mdToolDeck;
+      return state.out.narrativeDeck || state.out.deck || state.out.mdToolDeck || null;
+    }
+
     function download(name, text, type) {
       const blob = new Blob([text], { type: type || "text/plain;charset=utf-8" });
       const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
@@ -1360,6 +1692,19 @@ Return ONLY valid JSON, no markdown fences:
       $("btnRefresh").addEventListener("click", refreshData);
       $("btnGenerate").addEventListener("click", async () => { await generate(); await generateNarrative(); });
       $("btnTest").addEventListener("click", test);
+      $("btnMdToolConvert").addEventListener("click", convertMdToDesignerJson);
+      $("btnLoadNarrativeMd").addEventListener("click", loadNarrativeIntoMdTool);
+      $("btnOpenMdTool").addEventListener("click", () => switchTab("mdtool"));
+      $("btnCopyMdToolJson").addEventListener("click", async () => {
+        if (!state.out.mdToolDeck) return log("warn", "No MD tool JSON yet.", "MD_TOOL");
+        try { await copyText(JSON.stringify(state.out.mdToolDeck, null, 2)); log("ok", "Copied MD tool JSON.", "MD_TOOL"); } catch (e) { log("err", e.message, "MD_TOOL"); }
+      });
+      $("btnSaveMdToolJson").addEventListener("click", () => {
+        if (!state.out.mdToolDeck) return log("warn", "No MD tool JSON yet.", "MD_TOOL");
+        download(`heart-walk-mdtool-${dateStamp()}.json`, JSON.stringify(state.out.mdToolDeck, null, 2), "application/json;charset=utf-8");
+        log("ok", "Downloaded MD tool JSON.", "MD_TOOL");
+      });
+      $("btnUseMdToolJson").addEventListener("click", useMdToolJsonAsActive);
       $("btnOpenApi").addEventListener("click", () => switchTab("api"));
       $("btnDebugBundle").addEventListener("click", downloadDebugBundle);
       $("btnApiRefresh").addEventListener("click", loadApiTraffic);
@@ -1383,12 +1728,12 @@ Return ONLY valid JSON, no markdown fences:
         log("ok", "Downloaded plain-text report.", "EXPORT");
       });
       $("btnCopyJson").addEventListener("click", async () => {
-        const d = state.out.narrativeDeck || state.out.deck;
+        const d = getPreferredDesignerDeck();
         if (!d) return log("warn", "No Designer JSON yet.", "EXPORT");
         try { await copyText(JSON.stringify(d, null, 2)); log("ok", "Copied Designer JSON.", "EXPORT"); } catch (e) { log("err", e.message, "EXPORT"); }
       });
       $("btnSaveJson").addEventListener("click", () => {
-        const d = state.out.narrativeDeck || state.out.deck;
+        const d = getPreferredDesignerDeck();
         if (!d) return log("warn", "No Designer JSON yet.", "EXPORT");
         download(`heart-walk-designer-${dateStamp()}.json`, JSON.stringify(d, null, 2), "application/json;charset=utf-8");
         log("ok", "Downloaded Designer JSON.", "EXPORT");

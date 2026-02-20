@@ -1,0 +1,457 @@
+{
+  "config": {
+    "font-title": "'Source Sans 3', sans-serif",
+    "size-title": "32pt",
+    "color-title": "#16bfec",
+    "font-subtitle": "'Source Sans 3', sans-serif",
+    "size-subtitle": "20pt",
+    "color-subtitle": "#1e1d21",
+    "font-h1": "'Source Sans 3', sans-serif",
+    "size-h1": "32pt",
+    "color-h1": "#16bfec",
+    "font-h2": "'Source Sans 3', sans-serif",
+    "size-h2": "28pt",
+    "color-h2": "#16bfec",
+    "font-h3": "'Source Sans 3', sans-serif",
+    "size-h3": "18pt",
+    "color-h3": "#1e1d21",
+    "font-normal": "'Source Sans 3', sans-serif",
+    "size-normal": "16pt",
+    "color-normal": "#1e1d21",
+    "globalX": 0,
+    "globalY": 0,
+    "showShapes": false,
+    "typeOffsets": {
+      "cover": {
+        "x": 0,
+        "y": 0
+      },
+      "section": {
+        "x": 0,
+        "y": 0
+      },
+      "standard": {
+        "x": 0,
+        "y": 0
+      }
+    }
+  },
+  "slides": [
+    {
+      "type": "cover",
+      "title": "Heart Walk Staff Interview Research",
+      "content": "",
+      "subtitle": "Prepared for: AHA National Leadership\nPrepared by: Live Neuron Labs\nDate: February 2026\nSources: Six in-depth interviews across five markets"
+    },
+    {
+      "type": "section",
+      "title": "Executive Leadership Team (ELT) Process, Tools & Staff Experience",
+      "content": ""
+    },
+    {
+      "type": "standard",
+      "title": "Executive Summary",
+      "content": "Heart Walk is a sophisticated, relationship-driven system designed to generate corporate revenue, build executive leadership pipelines, and activate community fundraising.",
+      "bodyField": {
+        "mode": "quote",
+        "text": "Heart Walk is a sophisticated, relationship-driven system designed to generate corporate revenue, build executive leadership pipelines, and activate community fundraising.",
+        "imageUrl": "",
+        "imageAlign": "center",
+        "imagePrompt": "",
+        "quoteText": "The campaign is strong. The people are committed. The infrastructure is not keeping pace with the complexity.",
+        "quoteAttribution": ""
+      }
+    },
+    {
+      "type": "standard",
+      "title": "Five Major Realities",
+      "content": "The findings cluster around five major realities.",
+      "bodyField": {
+        "mode": "text",
+        "text": "1. ELT Prospecting Is the Hardest Problem in the Campaign\n2. Chair Recruitment Works — But Is Structurally Fragile\n3. Tools Exist — But Are Hard to Access, Use, or Trust\n4. Staff Are Creating Solutions Nationally — Without Being Asked\n5. The External Environment Has Shifted",
+        "imageUrl": "",
+        "imageAlign": "left",
+        "imagePrompt": "",
+        "quoteText": "",
+        "quoteAttribution": ""
+      }
+    },
+    {
+      "type": "section",
+      "title": "The System Reality: Heart Walk Is a Relationship Engine",
+      "content": ""
+    },
+    {
+      "type": "standard",
+      "title": "Relationship Engine",
+      "content": "Heart Walk operates through layered relationships.",
+      "bodyField": {
+        "mode": "text",
+        "text": "Staff recruit and coach volunteer leaders.\nVolunteer leaders recruit companies.\nCompanies mobilize teams.\nTeams recruit walkers.\nWalkers are expected to fundraise.",
+        "imageUrl": "",
+        "imageAlign": "left",
+        "imagePrompt": "",
+        "quoteText": "",
+        "quoteAttribution": ""
+      }
+    },
+    {
+      "type": "standard",
+      "title": "Breakdown Points",
+      "content": "Every breakdown observed in interviews occurs at a relationship handoff point.",
+      "bodyField": {
+        "mode": "quote",
+        "text": "Every breakdown observed in interviews occurs at a relationship handoff point.",
+        "imageUrl": "",
+        "imageAlign": "center",
+        "imagePrompt": "",
+        "quoteText": "ELT Member → New Corporate Commitment",
+        "quoteAttribution": ""
+      }
+    },
+    {
+      "type": "section",
+      "title": "1. Chair Recruitment",
+      "content": ""
+    },
+    {
+      "type": "two-column",
+      "title": "What’s Working",
+      "content": "The volunteer connector model is highly effective.",
+      "columns": {
+        "splitPct": 55,
+        "leftField": {
+          "mode": "text",
+          "text": "Staff prepare connectors with:\n- Historical giving\n- Company data\n- Suggested language\n- Strategic framing",
+          "imageUrl": "",
+          "imageAlign": "left",
+          "imagePrompt": "",
+          "quoteText": "",
+          "quoteAttribution": ""
+        },
+        "rightField": {
+          "mode": "quote",
+          "text": "",
+          "imageUrl": "",
+          "imageAlign": "center",
+          "imagePrompt": "",
+          "quoteText": "We rarely get a flat no. The vetting happens before the ask.",
+          "quoteAttribution": "One AVP"
+        }
+      }
+    },
+    {
+      "type": "standard",
+      "title": "Strong Markets",
+      "content": "Strong markets maintain:",
+      "bodyField": {
+        "mode": "text",
+        "text": "1-year confirmed pipeline\n2-year projection\nOccasional 3-year creative pitches\nMulti-year pitching expands opportunity windows.",
+        "imageUrl": "",
+        "imageAlign": "left",
+        "imagePrompt": "",
+        "quoteText": "",
+        "quoteAttribution": ""
+      }
+    },
+    {
+      "type": "two-column",
+      "title": "Where It Breaks Down",
+      "content": "Challenges in chair recruitment.",
+      "columns": {
+        "splitPct": 55,
+        "leftField": {
+          "mode": "text",
+          "text": "Thin Prospect Pools\nSome markets made “countless asks” to the same 5–8 executives — all declined.",
+          "imageUrl": "",
+          "imageAlign": "left",
+          "imagePrompt": "",
+          "quoteText": "",
+          "quoteAttribution": ""
+        },
+        "rightField": {
+          "mode": "quote",
+          "text": "",
+          "imageUrl": "",
+          "imageAlign": "center",
+          "imagePrompt": "",
+          "quoteText": "Not donor-friendly.",
+          "quoteAttribution": "Policy Friction"
+        }
+      }
+    },
+    {
+      "type": "standard",
+      "title": "Responsibility Misalignment",
+      "content": "Boot camp teaches chair recruitment is an ED/VP responsibility with DD support.",
+      "bodyField": {
+        "mode": "text",
+        "text": "In some markets, the DD owns it entirely — without executive-level peer leverage.",
+        "imageUrl": "",
+        "imageAlign": "left",
+        "imagePrompt": "",
+        "quoteText": "",
+        "quoteAttribution": ""
+      }
+    },
+    {
+      "type": "standard",
+      "title": "Aha Insight",
+      "content": "Chair recruitment works when:",
+      "bodyField": {
+        "mode": "text",
+        "text": "Executive-level peers recruit peers.\nPayment timing supports long-range strategy.\nMarkets have mature pipelines.\n\nIt breaks when:\nResponsibility drops too low.\nPolicy reduces flexibility.\nProspect pools are shallow.",
+        "imageUrl": "",
+        "imageAlign": "left",
+        "imagePrompt": "",
+        "quoteText": "",
+        "quoteAttribution": ""
+      }
+    },
+    {
+      "type": "section",
+      "title": "2. ELT Recruitment & Composition",
+      "content": ""
+    },
+    {
+      "type": "standard",
+      "title": "The Predictable Pattern",
+      "content": "Re-recruiting legacy members: 75%+ success.",
+      "bodyField": {
+        "mode": "text",
+        "text": "New seats (3–5 annually): bottleneck.\n\nPrimary barriers:\n1. Corporate Sponsorship Requirement\n2. Timeline Compression\n3. Prospect Ownership Constraints",
+        "imageUrl": "",
+        "imageAlign": "left",
+        "imagePrompt": "",
+        "quoteText": "",
+        "quoteAttribution": ""
+      }
+    },
+    {
+      "type": "standard",
+      "title": "Quality vs Quantity Shift",
+      "content": "Several markets independently stated:",
+      "bodyField": {
+        "mode": "quote",
+        "text": "Several markets independently stated:",
+        "imageUrl": "",
+        "imageAlign": "center",
+        "imagePrompt": "",
+        "quoteText": "Five engaged members are better than fifteen passive ones.",
+        "quoteAttribution": ""
+      }
+    },
+    {
+      "type": "section",
+      "title": "3. ELT Engagement & Activation",
+      "content": ""
+    },
+    {
+      "type": "standard",
+      "title": "The Core Breakdown",
+      "content": "Across all six interviews:",
+      "bodyField": {
+        "mode": "quote",
+        "text": "Across all six interviews:",
+        "imageUrl": "",
+        "imageAlign": "center",
+        "imagePrompt": "",
+        "quoteText": "ELT members do the first ask. They rarely do the follow-up.",
+        "quoteAttribution": ""
+      }
+    },
+    {
+      "type": "standard",
+      "title": "External Headwinds",
+      "content": "Staff consistently cited:",
+      "bodyField": {
+        "mode": "text",
+        "text": "Corporate budget tightening\nHealthcare funding cuts\nPolitical climate anxiety\nExecutive bandwidth depletion\nGenerational turnover in donors",
+        "imageUrl": "",
+        "imageAlign": "left",
+        "imagePrompt": "",
+        "quoteText": "",
+        "quoteAttribution": ""
+      }
+    },
+    {
+      "type": "standard",
+      "title": "What Does Work",
+      "content": "Where ELT engagement succeeds:",
+      "bodyField": {
+        "mode": "text",
+        "text": "Transparent Accountability\nPublic Recognition\n\nBehaviorally, this aligns with:\nSocial eGains (status, recognition)\nReduced social eCosts (fear of embarrassment)",
+        "imageUrl": "",
+        "imageAlign": "left",
+        "imagePrompt": "",
+        "quoteText": "",
+        "quoteAttribution": ""
+      }
+    },
+    {
+      "type": "standard",
+      "title": "Aha Insight",
+      "content": "ELT engagement is not a tools problem.",
+      "bodyField": {
+        "mode": "text",
+        "text": "It is a behavior design problem.\n\nThe campaign currently relies on:\nPersonal initiative\nGoodwill\nVolunteer motivation\n\nInstead of systematically designing:\nReduced follow-up friction\nIncreased visibility of progress\nStronger social reinforcement loops",
+        "imageUrl": "",
+        "imageAlign": "left",
+        "imagePrompt": "",
+        "quoteText": "",
+        "quoteAttribution": ""
+      }
+    },
+    {
+      "type": "section",
+      "title": "4. Tools & Infrastructure",
+      "content": ""
+    },
+    {
+      "type": "standard",
+      "title": "SharePoint: Universal Friction",
+      "content": "Every interviewee raised SharePoint.",
+      "bodyField": {
+        "mode": "quote",
+        "text": "Every interviewee raised SharePoint.",
+        "imageUrl": "",
+        "imageAlign": "center",
+        "imagePrompt": "",
+        "quoteText": "Black hole.",
+        "quoteAttribution": ""
+      }
+    },
+    {
+      "type": "standard",
+      "title": "Salesforce: Improving, Not Complete",
+      "content": "Positive shifts:",
+      "bodyField": {
+        "mode": "text",
+        "text": "Pipeline visibility\nCross-market account visibility\nContact intelligence\n\nLimitations:\nReporting less intuitive than Tableau\nMissing comprehensive campaign snapshot\nData hygiene gaps creating real operational harm",
+        "imageUrl": "",
+        "imageAlign": "left",
+        "imagePrompt": "",
+        "quoteText": "",
+        "quoteAttribution": ""
+      }
+    },
+    {
+      "type": "standard",
+      "title": "The Beat",
+      "content": "Experienced staff: valuable.",
+      "bodyField": {
+        "mode": "text",
+        "text": "Newer staff:\nOverwhelmed\nSkim or skip\nNot always on distribution\n\nSuggestion raised:\nSplit into spring/fall editions.",
+        "imageUrl": "",
+        "imageAlign": "left",
+        "imagePrompt": "",
+        "quoteText": "",
+        "quoteAttribution": ""
+      }
+    },
+    {
+      "type": "section",
+      "title": "5. Bottom-Up Innovation (Major Finding)",
+      "content": ""
+    },
+    {
+      "type": "standard",
+      "title": "Innovation Insight",
+      "content": "Staff are independently building missing infrastructure.",
+      "bodyField": {
+        "mode": "text",
+        "text": "Examples identified:\nELT Member Job Aid (national gap)\nAnnotated ELT agendas\nExecutives with Heart one-pagers\nOFT email template workflow\nCoach coaching newsletters\nCustom slide decks\nMarket-level SharePoint restructuring",
+        "imageUrl": "",
+        "imageAlign": "left",
+        "imagePrompt": "",
+        "quoteText": "",
+        "quoteAttribution": ""
+      }
+    },
+    {
+      "type": "standard",
+      "title": "Aha Insight",
+      "content": "Innovation is happening.\nIt is decentralized.\nIt is not being harvested.",
+      "bodyField": {
+        "mode": "text",
+        "text": "This represents:\nLost efficiency\nRedundant labor\nSlower learning loops nationally",
+        "imageUrl": "",
+        "imageAlign": "left",
+        "imagePrompt": "",
+        "quoteText": "",
+        "quoteAttribution": ""
+      }
+    },
+    {
+      "type": "section",
+      "title": "6. Staff Onboarding & Development",
+      "content": ""
+    },
+    {
+      "type": "standard",
+      "title": "What’s Working",
+      "content": "Boot camp: “An A.”\nMission onboarding: strong.\nConsultants (especially former field staff): highly valued.",
+      "bodyField": {
+        "mode": "text",
+        "text": "",
+        "imageUrl": "",
+        "imageAlign": "left",
+        "imagePrompt": "",
+        "quoteText": "",
+        "quoteAttribution": ""
+      }
+    },
+    {
+      "type": "standard",
+      "title": "What’s Not",
+      "content": "Salesforce training:",
+      "bodyField": {
+        "mode": "text",
+        "text": "One live session during active campaign\nNo durable retention\nPDF guides outperform videos\n\nOnboarding pacing inconsistent:\nOne staff completed onboarding in four days (allocated 90).\nIdle time during highest motivation window.",
+        "imageUrl": "",
+        "imageAlign": "left",
+        "imagePrompt": "",
+        "quoteText": "",
+        "quoteAttribution": ""
+      }
+    },
+    {
+      "type": "standard",
+      "title": "High-Leverage Insight: Peer Mentorship",
+      "content": "One first-year director described a colleague eight months ahead as:",
+      "bodyField": {
+        "mode": "quote",
+        "text": "One first-year director described a colleague eight months ahead as:",
+        "imageUrl": "",
+        "imageAlign": "center",
+        "imagePrompt": "",
+        "quoteText": "My lifeline.",
+        "quoteAttribution": ""
+      }
+    },
+    {
+      "type": "section",
+      "title": "7. Messaging & Framing",
+      "content": ""
+    },
+    {
+      "type": "standard",
+      "title": "Framing Shift",
+      "content": "Several staff independently suggested:",
+      "bodyField": {
+        "mode": "text",
+        "text": "Lead with mission.\nThen leadership opportunity.\nThen logistics.\n\nExample framing shift:\nInstead of:\n“Here’s the ELT commitment.”\n\nStart with:\n“Do you want to lead something that changes your community?”",
+        "imageUrl": "",
+        "imageAlign": "left",
+        "imagePrompt": "",
+        "quoteText": "",
+        "quoteAttribution": ""
+      }
+    },
+    {
+      "type": "section",
+      "title": "Strategic Recommendations",
+      "content": ""
+    }
+  ]
+}
