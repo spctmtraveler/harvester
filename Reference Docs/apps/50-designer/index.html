@@ -134,26 +134,66 @@
         .slide-content ul, .slide-content ol { margin-top: 0; padding-left: 1.5em; margin-bottom: 10px; }
         .body-wrapper { height: 100%; min-height: 0; }
         .field-shell { position: relative; height: 100%; min-height: 0; display: flex; flex-direction: column; }
-        .field-controls {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            padding: 5px 8px;
-            border: 1px solid rgba(30,29,33,0.15);
-            background: rgba(255,255,255,0.95);
-            border-radius: 8px;
-            width: fit-content;
-            margin-bottom: 8px;
-            font-size: 12px;
+        /* ── Icon-based mode selector (hover-reveal) ── */
+        .field-mode-icons {
+            position: absolute;
+            top: 6px;
+            right: 6px;
+            z-index: 30;
+            display: flex;
+            gap: 3px;
+            opacity: 0;
+            transition: opacity 0.18s;
+            pointer-events: none;
         }
-        .field-controls select, .field-controls input {
-            border: 1px solid #d3d3d3;
-            border-radius: 5px;
-            padding: 4px 6px;
-            font-size: 12px;
-            min-width: 74px;
+        .field-shell:hover .field-mode-icons,
+        .field-mode-icons:focus-within { opacity: 1; pointer-events: auto; }
+        .field-mode-btn {
+            width: 28px; height: 28px;
+            display: flex; align-items: center; justify-content: center;
+            border-radius: 6px;
+            border: 1px solid rgba(30,29,33,0.12);
+            background: rgba(255,255,255,0.92);
+            cursor: pointer;
+            transition: background 0.15s, border-color 0.15s;
+            padding: 0;
         }
-        .field-controls input { min-width: 220px; }
+        .field-mode-btn:hover { background: #e8f8fd; border-color: var(--powder-blue); }
+        .field-mode-btn.active { background: #d0f0fb; border-color: var(--powder-blue); box-shadow: 0 0 0 1.5px rgba(22,191,236,0.35); }
+        .field-mode-btn svg { width: 16px; height: 16px; fill: #555; pointer-events: none; }
+        .field-mode-btn.active svg { fill: #16bfec; }
+        .field-mode-btn[title]::after { content: attr(title); }
+
+        /* ── Image upload drop zone ── */
+        .image-drop-zone {
+            position: relative;
+            width: 100%; height: 100%; min-height: 180px;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            border: 2px dashed #c5c5c5;
+            border-radius: 10px;
+            background: #fafafa;
+            cursor: pointer;
+            transition: border-color 0.2s, background 0.2s;
+            text-align: center;
+            gap: 10px;
+            padding: 18px;
+        }
+        .image-drop-zone.drag-over { border-color: var(--powder-blue); background: #e8f8fd; }
+        .image-drop-zone .drop-icon { width: 40px; height: 40px; fill: #bbb; }
+        .image-drop-zone .drop-label { color: #888; font-size: 13px; }
+        .image-drop-zone .drop-hint { color: #aaa; font-size: 11px; font-style: italic; line-height: 1.4; max-width: 280px; }
+        .image-drop-zone input[type="file"] { display: none; }
+        .image-drop-zone .drop-or { color: #bbb; font-size: 11px; margin: 2px 0; }
+        .image-drop-zone .url-row { display: flex; gap: 6px; width: 100%; max-width: 340px; }
+        .image-drop-zone .url-row input {
+            flex: 1; padding: 5px 8px; border: 1px solid #d3d3d3; border-radius: 5px;
+            font-size: 12px; min-width: 0;
+        }
+        .image-drop-zone .url-row button {
+            padding: 5px 10px; border: 1px solid var(--powder-blue); background: var(--powder-blue);
+            color: #fff; border-radius: 5px; font-size: 11px; cursor: pointer; white-space: nowrap;
+        }
         .field-body { flex: 1; min-height: 0; border: 1px dashed rgba(30,29,33,0.15); border-radius: 10px; padding: 14px; }
         .field-body[data-mode="text"] { background: rgba(255,255,255,0.85); }
         .field-body[data-mode="quote"] { background: transparent; border: none; padding: 0; }
@@ -288,7 +328,7 @@
 </head>
 <body>
 
-<div id="app-version-banner">Designer v3.3 · Last updated —</div>
+<div id="app-version-banner">Designer v3.4 · Last updated —</div>
 
 <div id="settings-wrapper">
     <svg class="gear-trigger" viewBox="0 0 24 24" onclick="toggleSettings()"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
@@ -363,8 +403,8 @@
 </div>
 
 <script>
-    const APP_VERSION = "v3.3";
-    const APP_LAST_UPDATED_UTC = "2026-02-20T09:30:00Z";
+    const APP_VERSION = "v3.4";
+    const APP_LAST_UPDATED_UTC = "2026-02-20T16:00:00Z";
 
     function formatLocalLastUpdated(utcIso) {
         const dt = new Date(utcIso);
@@ -433,6 +473,7 @@
             text: base.text ?? fallbackText,
             imageUrl: base.imageUrl || '',
             imageAlign,
+            imagePrompt: base.imagePrompt || '',   // AI-suggested image idea (preserved across mode switches)
             quoteText: base.quoteText ?? fallbackText,
             quoteAttribution: base.quoteAttribution || 'Chair'
         };
@@ -480,31 +521,50 @@
         return 'justify-content:center;align-items:center;';
     }
 
+    // ── SVG icon paths for mode selector ──
+    const MODE_ICONS = {
+        text:  '<svg viewBox="0 0 24 24"><path d="M3 5h18v2H3V5zm0 4h18v2H3V9zm0 4h14v2H3v-2zm0 4h10v2H3v-2z"/></svg>',
+        image: '<svg viewBox="0 0 24 24"><path d="M21 3H3a2 2 0 00-2 2v14a2 2 0 002 2h18a2 2 0 002-2V5a2 2 0 00-2-2zm0 16H3V5h18v14zM8.5 13.5l2.5 3 3.5-4.5 4.5 6H5l3.5-5z"/></svg>',
+        quote: '<svg viewBox="0 0 24 24"><path d="M20 2H4a2 2 0 00-2 2v18l4-4h14a2 2 0 002-2V4a2 2 0 00-2-2zm0 14H5.17L4 17.17V4h16v12z"/></svg>'
+    };
+
     function renderFieldControls(fieldPath, field) {
-        const safeUrl = escapeHtml(field.imageUrl || '');
-        const urlInput = field.mode === 'image'
-            ? `<input type="text" placeholder="Image URL" value="${safeUrl}" data-role="field-image-url" data-field-path="${fieldPath}">`
-            : '';
-        return `<div class="field-controls">
-            <label>Mode</label>
-            <select data-role="field-mode" data-field-path="${fieldPath}">
-                <option value="text" ${field.mode === 'text' ? 'selected' : ''}>Text</option>
-                <option value="image" ${field.mode === 'image' ? 'selected' : ''}>Image</option>
-                <option value="quote" ${field.mode === 'quote' ? 'selected' : ''}>Quote</option>
-            </select>
-            ${urlInput}
-        </div>`;
+        // Icon-only mode selector — appears on hover via CSS
+        const modes = ['text', 'image', 'quote'];
+        const labels = { text: 'Text', image: 'Image', quote: 'Quote' };
+        const btns = modes.map(m =>
+            `<button class="field-mode-btn ${field.mode === m ? 'active' : ''}" data-role="field-mode-btn" data-field-path="${fieldPath}" data-mode-value="${m}" title="${labels[m]}">${MODE_ICONS[m]}</button>`
+        ).join('');
+        return `<div class="field-mode-icons">${btns}</div>`;
     }
 
     function renderFieldBody(fieldPath, field) {
         if (field.mode === 'image') {
-            const imageNode = field.imageUrl
-                ? `<img src="${escapeHtml(field.imageUrl)}" alt="Slide image">`
-                : `<div class="image-empty">Add an image URL in the field toolbar.</div>`;
+            if (field.imageUrl) {
+                // ── Image loaded: show it with alignment & edge-click ──
+                return `<div class="field-body" data-mode="image">
+                    <div class="image-field" data-role="image-field" data-field-path="${fieldPath}" data-image-align="${field.imageAlign}" style="${imageAlignStyle(field.imageAlign)}">
+                        <img src="${escapeHtml(field.imageUrl)}" alt="Slide image">
+                    </div>
+                </div>`;
+            }
+            // ── No image: show drop-zone + optional AI prompt hint ──
+            const hintHtml = field.imagePrompt
+                ? `<div class="drop-hint">💡 Suggested: "${escapeHtml(field.imagePrompt)}"</div>`
+                : '';
             return `<div class="field-body" data-mode="image">
-                <div class="image-field" data-role="image-field" data-field-path="${fieldPath}" data-image-align="${field.imageAlign}" style="${imageAlignStyle(field.imageAlign)}">${imageNode}</div>
+                <div class="image-drop-zone" data-role="image-drop-zone" data-field-path="${fieldPath}">
+                    <svg class="drop-icon" viewBox="0 0 24 24"><path d="M19 7v2.99s-1.99.01-2 0V7h-3s.01-1.99 0-2h3V2h2v3h3v2h-3zm-3 4V8h-3V5H5a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2v-8h-3zM5 19l3-4 2 3 3-4 4 5H5z"/></svg>
+                    <div class="drop-label">Drop image here, or click to browse</div>
+                    <div class="drop-or">— or paste a URL —</div>
+                    <div class="url-row">
+                        <input type="text" placeholder="https://..." data-role="field-image-url" data-field-path="${fieldPath}">
+                        <button data-role="url-load-btn" data-field-path="${fieldPath}">Load</button>
+                    </div>
+                    ${hintHtml}
+                    <input type="file" accept="image/*" data-role="field-image-file" data-field-path="${fieldPath}">
+                </div>
             </div>`;
-        }
 
         if (field.mode === 'quote') {
             return `<div class="field-body" data-mode="quote">
@@ -848,41 +908,62 @@
         const slide = slidesData[index];
         ensureSlideSchema(slide);
 
-        if (el.dataset.role === 'field-mode') {
-            const field = getByPath(slide, el.dataset.fieldPath);
-            field.mode = el.value;
-            if (el.dataset.fieldPath === 'bodyField') slide.content = field.text || '';
-            render();
-            saveState();
-            showSlide(currentSlideIndex);
+        // ── File input for image upload ──
+        if (el.dataset.role === 'field-image-file' && el.files?.length) {
+            handleImageFile(el.files[0], el.dataset.fieldPath, index);
+            return;
         }
     });
 
-    container.addEventListener('blur', (e) => {
-        const el = e.target;
-        if (el.dataset.role !== 'field-image-url') return;
-        const slideEl = el.closest('.slide');
-        if (!slideEl) return;
-        const index = parseInt(slideEl.dataset.index, 10);
-        if (Number.isNaN(index)) return;
-        const slide = slidesData[index];
-        const field = getByPath(slide, el.dataset.fieldPath);
-        if (!field) return;
-        field.imageUrl = el.value.trim();
-        saveState();
-        render();
-        showSlide(currentSlideIndex);
-    }, true);
-
-    container.addEventListener('mousedown', (e) => {
-        const divider = e.target.closest('[data-role="split-divider"]');
-        if (divider) {
-            e.preventDefault();
-            startSplitDrag(divider, e.clientX);
-        }
-    });
-
+    // ── Mode icon button clicks ──
     container.addEventListener('click', (e) => {
+        const modeBtn = e.target.closest('[data-role="field-mode-btn"]');
+        if (modeBtn) {
+            const slideEl = modeBtn.closest('.slide');
+            if (!slideEl) return;
+            const index = parseInt(slideEl.dataset.index, 10);
+            if (Number.isNaN(index)) return;
+            const slide = slidesData[index];
+            ensureSlideSchema(slide);
+            const field = getByPath(slide, modeBtn.dataset.fieldPath);
+            if (!field) return;
+            const newMode = modeBtn.dataset.modeValue;
+            if (field.mode === newMode) return; // already active
+            field.mode = newMode;
+            if (modeBtn.dataset.fieldPath === 'bodyField') slide.content = field.text || '';
+            render(); saveState(); showSlide(currentSlideIndex);
+            console.log(`[Designer] Field ${modeBtn.dataset.fieldPath} mode → ${newMode}`);
+            return;
+        }
+
+        // ── URL Load button ──
+        const urlBtn = e.target.closest('[data-role="url-load-btn"]');
+        if (urlBtn) {
+            const slideEl = urlBtn.closest('.slide');
+            if (!slideEl) return;
+            const index = parseInt(slideEl.dataset.index, 10);
+            if (Number.isNaN(index)) return;
+            const slide = slidesData[index];
+            ensureSlideSchema(slide);
+            const urlInput = urlBtn.parentElement.querySelector('[data-role="field-image-url"]');
+            const field = getByPath(slide, urlBtn.dataset.fieldPath);
+            if (field && urlInput) {
+                field.imageUrl = urlInput.value.trim();
+                saveState(); render(); showSlide(currentSlideIndex);
+                console.log(`[Designer] Image URL loaded: ${field.imageUrl.slice(0, 60)}`);
+            }
+            return;
+        }
+
+        // ── Click on drop-zone opens file picker ──
+        const dropZone = e.target.closest('[data-role="image-drop-zone"]');
+        if (dropZone && !e.target.closest('input') && !e.target.closest('button')) {
+            const fileInput = dropZone.querySelector('[data-role="field-image-file"]');
+            if (fileInput) fileInput.click();
+            return;
+        }
+
+        // ── Image edge alignment click (existing) ──
         const imageField = e.target.closest('[data-role="image-field"]');
         if (!imageField) return;
         const slideEl = imageField.closest('.slide');
@@ -901,6 +982,93 @@
         render();
         showSlide(currentSlideIndex);
     });
+
+    // ── Drag-and-drop image handling ──
+    container.addEventListener('dragover', (e) => {
+        const dropZone = e.target.closest('[data-role="image-drop-zone"]');
+        if (!dropZone) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+        dropZone.classList.add('drag-over');
+    });
+    container.addEventListener('dragleave', (e) => {
+        const dropZone = e.target.closest('[data-role="image-drop-zone"]');
+        if (!dropZone) return;
+        dropZone.classList.remove('drag-over');
+    });
+    container.addEventListener('drop', (e) => {
+        const dropZone = e.target.closest('[data-role="image-drop-zone"]');
+        if (!dropZone) return;
+        e.preventDefault();
+        dropZone.classList.remove('drag-over');
+        const file = e.dataTransfer?.files?.[0];
+        if (!file || !file.type.startsWith('image/')) {
+            console.warn('[Designer] Drop rejected — not an image file.');
+            return;
+        }
+        const slideEl = dropZone.closest('.slide');
+        if (!slideEl) return;
+        const index = parseInt(slideEl.dataset.index, 10);
+        handleImageFile(file, dropZone.dataset.fieldPath, index);
+    });
+
+    // ── Split divider drag (re-attached after refactor) ──
+    container.addEventListener('mousedown', (e) => {
+        const divider = e.target.closest('[data-role="split-divider"]');
+        if (divider) {
+            e.preventDefault();
+            startSplitDrag(divider, e.clientX);
+        }
+    });
+
+    // ════════════════════════════════════════════════
+    //  Image upload handler — uploads to server, falls back to data-URI
+    // ════════════════════════════════════════════════
+    const IMAGE_UPLOAD_URL = 'https://happydo.xyz/harvester/api/image-store.php';
+
+    async function handleImageFile(file, fieldPath, slideIndex) {
+        if (!file || !file.type.startsWith('image/')) {
+            console.warn('[Designer] handleImageFile: not an image file');
+            return;
+        }
+        const slide = slidesData[slideIndex];
+        ensureSlideSchema(slide);
+        const field = getByPath(slide, fieldPath);
+        if (!field) { console.error('[Designer] handleImageFile: field not found at', fieldPath); return; }
+
+        console.log(`[Designer] Uploading image: ${file.name} (${(file.size/1024).toFixed(1)} KB) → field ${fieldPath}`);
+
+        // Try server upload first
+        try {
+            const form = new FormData();
+            form.append('image', file);
+            const resp = await fetch(IMAGE_UPLOAD_URL, { method: 'POST', body: form });
+            if (resp.ok) {
+                const result = await resp.json();
+                if (result.url) {
+                    field.imageUrl = result.url;
+                    console.log(`[Designer] ✓ Server upload OK: ${result.url}`);
+                    saveState(); render(); showSlide(currentSlideIndex);
+                    return;
+                }
+            }
+            console.warn(`[Designer] Server upload failed (${resp.status}), falling back to data-URI`);
+        } catch (err) {
+            console.warn(`[Designer] Server upload error: ${err.message}. Falling back to data-URI.`);
+        }
+
+        // Fallback: embed as data-URI (works offline but inflates JSON)
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            field.imageUrl = ev.target.result;
+            console.log(`[Designer] ✓ Image embedded as data-URI (${(ev.target.result.length/1024).toFixed(1)} KB)`);
+            saveState(); render(); showSlide(currentSlideIndex);
+        };
+        reader.onerror = () => {
+            console.error('[Designer] FileReader error for', file.name);
+        };
+        reader.readAsDataURL(file);
+    }
 
     function addNewSlide(type) {
         let template;

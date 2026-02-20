@@ -83,9 +83,46 @@ foreach ($dir in $appDirs) {
 }
 
 if ($DryRun) {
-  Write-Host "Dry run complete."
+  Write-Host "Dry run complete (apps)."
 } else {
-  Write-Host "Done. Uploaded $uploaded file(s)."
+  Write-Host "Done. Uploaded $uploaded app file(s)."
+}
+
+# ── Sync harvester API files (PHP endpoints) ──
+$apiRoot = Join-Path $appsRoot "harvester"
+if (Test-Path $apiRoot) {
+  $phpFiles = Get-ChildItem -Path $apiRoot -Filter "*.php" -File
+  if ($phpFiles.Count -gt 0) {
+    $remoteApi = "$RemoteRoot/api"
+    $remoteUploads = "$RemoteRoot/uploads/images"
+    Write-Host ""
+    Write-Host "Syncing $($phpFiles.Count) API file(s) to $remoteApi"
+
+    if ($DryRun) {
+      Write-Host "  [dry-run] ssh $Username@$HostName mkdir -p $remoteApi $remoteUploads"
+      foreach ($f in $phpFiles) {
+        Write-Host "  [dry-run] scp $($f.FullName) ${Username}@${HostName}:$remoteApi/$($f.Name)"
+      }
+    } else {
+      & ssh "$Username@$HostName" "mkdir -p '$remoteApi' '$remoteUploads'"
+      if ($LASTEXITCODE -ne 0) {
+        throw "Failed to create remote directories: $remoteApi, $remoteUploads"
+      }
+      foreach ($f in $phpFiles) {
+        $target = "${Username}@${HostName}:$remoteApi/$($f.Name)"
+        Write-Host "  $($f.Name)"
+        & scp "$($f.FullName)" "$target"
+        if ($LASTEXITCODE -ne 0) {
+          Write-Host "  WARNING: Failed to upload $($f.Name)" -ForegroundColor Yellow
+        } else {
+          $uploaded++
+        }
+      }
+      Write-Host "API files synced."
+    }
+  }
+} else {
+  Write-Host "No harvester/ api folder found — skipping API sync."
 }
 
 # ── Sync transcripts ──

@@ -184,9 +184,9 @@
     import { askAI } from "https://happydo.xyz/api/ailnl.js";
 
     const APP_NAME = "HWIE_v2";
-    const APP_VERSION = "v1.2";
+    const APP_VERSION = "v1.3";
     const APP_LAST_UPDATED_UTC = "2026-02-20T08:00:00Z";
-    const VALID_TYPES = new Set(["cover", "section", "standard"]);
+    const VALID_TYPES = new Set(["cover", "section", "standard", "two-column"]);
     const DEBUG_LIMITS = {
       maxApiTrafficRows: 220,
       maxLogRows: 900,
@@ -648,6 +648,88 @@
       });
     }
 
+    /**
+     * Convert an AI-generated slide object (with layout, content, featured_quote, image_prompt)
+     * into a Designer-compatible slide with field-mode schema.
+     *
+     * Layout mapping:
+     *   "text"        → type: "standard"    | bodyField.mode = "text"
+     *   "text-quote"  → type: "two-column"  | left = text, right = quote
+     *   "quote-only"  → type: "standard"    | bodyField.mode = "quote"
+     *   (default)     → type: "standard"    | bodyField.mode = "text" (backward compat)
+     */
+    function buildDesignerSlide(aiSlide) {
+      const title = String(aiSlide.title || "Untitled");
+      const content = String(aiSlide.content || "");
+      const layout = String(aiSlide.layout || "text").toLowerCase();
+      const prompt = String(aiSlide.image_prompt || "");
+      const fq = aiSlide.featured_quote || null;
+
+      if (layout === "text-quote" && fq) {
+        // Two-column: text on left, quote on right
+        return {
+          type: "two-column",
+          title,
+          content,                   // backward compat: flat text
+          columns: {
+            splitPct: 55,
+            leftField: {
+              mode: "text",
+              text: content,
+              imageUrl: "",
+              imageAlign: "center",
+              imagePrompt: prompt,
+              quoteText: "",
+              quoteAttribution: ""
+            },
+            rightField: {
+              mode: "quote",
+              text: "",
+              imageUrl: "",
+              imageAlign: "center",
+              imagePrompt: "",
+              quoteText: String(fq.text || ""),
+              quoteAttribution: String(fq.speaker || "Chair")
+            }
+          }
+        };
+      }
+
+      if (layout === "quote-only" && fq) {
+        // Full-slide quote
+        return {
+          type: "standard",
+          title,
+          content,
+          bodyField: {
+            mode: "quote",
+            text: content,
+            imageUrl: "",
+            imageAlign: "center",
+            imagePrompt: prompt,
+            quoteText: String(fq.text || ""),
+            quoteAttribution: String(fq.speaker || "Chair")
+          }
+        };
+      }
+
+      // Default: standard text slide
+      return {
+        type: "standard",
+        title,
+        content,
+        bodyField: {
+          mode: "text",
+          text: content,
+          imageUrl: "",
+          imageAlign: "center",
+          imagePrompt: prompt,
+          quoteText: "",
+          quoteAttribution: ""
+        }
+      };
+    }
+
     async function generateNarrative() {
       if (!state.out.claims?.length) {
         log("warn", "No claims to narrate. Generate outputs first.", "NARRATIVE");
@@ -765,7 +847,9 @@ ${JSON.stringify(claimBundle, null, 1)}`;
           };
         });
 
-        const narrativePrompt = `You are writing a polished, client-facing qualitative research report in a slide deck format. This is a FINAL deliverable for C-suite executives. It must read like output from a top strategy consulting firm — sharp, specific, and actionable.
+        const narrativePrompt = `You are writing a polished, client-facing qualitative research report in a slide deck format. This is a FINAL deliverable for C-suite executives at the American Heart Association. It must read like output from a top strategy consulting firm — sharp, specific, and actionable.
+
+DOMAIN CONTEXT: Heart Walk is a market-based fundraising and engagement campaign operated by the AHA. Staff recruit volunteer ELT (Executive Leadership Team) chairs and members — typically corporate executives — who open access to corporate sponsors, make fundraising asks, and mobilize employee participation. The campaign follows a multi-phase arc: leadership recruitment → corporate prospecting → participation activation → stewardship/recognition. Staff use Salesforce, slide decks, annotated agendas, and personal coaching relationships to drive results.
 
 For each slide below, you receive:
 - A slide title (the insight it should communicate)
@@ -774,32 +858,40 @@ For each slide below, you receive:
 
 YOUR JOB: Synthesize the quotes and context into compelling slide content. DO NOT simply rephrase the research context into bullets. Instead, write your own sharp observations drawn from the quotes.
 
-FORMAT RULES:
+LAYOUT DECISION — For each slide, choose the best layout:
+- "text" — Standard text slide with bullets (and optionally embedded quotes). Best when there are 3+ distinct points.
+- "text-quote" — Two-column: text bullets on the left, a powerful featured quote on the right. Best when ONE quote is so compelling it deserves its own spotlight.
+- "quote-only" — A single powerful quote fills the whole slide. Use sparingly (max 1-2 per deck) for the most impactful statement.
+
+TEXT CONTENT RULES:
 1. Use • for bullet points. Bullets must be SPECIFIC and DATA-DRIVEN:
    GOOD: "• First-year staff rate the onboarding learning curve a 2 out of 5."
-   GOOD: "• Staff create their own ELT materials because national resources don't meet market needs."
    BAD:  "• Effective communication is crucial for organizational processes."
-   BAD:  "• The team faces challenges in recruitment."
-
-2. Include 1-3 direct quotes as Quote Bubbles. Use this EXACT format:
+2. For "text" layout, you may embed Quote Bubbles in the text using:
    > **Quote Bubble — Speaker Name**
    > "The actual quote."
-
-3. Vary the slide structure — NOT every slide needs the same pattern. Options:
-   - Quote-forward slides: 2-3 powerful quotes with 1-2 bullets (when quotes tell the story)
-   - Insight-forward slides: 3-4 sharp bullets with 1 supporting quote
-   - Mix: alternate bullets and quotes naturally
-
+3. Vary the slide structure — NOT every slide needs the same pattern.
 4. NEVER include citation IDs, insight numbers, timestamps, or internal codes.
-5. Trim quotes to 1-2 punchy sentences. Cut rambling — keep the speaker's voice but edit for impact.
-6. Never repeat the same quote across slides.
-7. Write with authority — no "it appears," "there seems to be," or "it is important to note."
+5. Trim quotes to 1-2 punchy sentences. Cut rambling — keep the speaker's voice.
+6. Never repeat a quote across slides.
+7. Write with authority — no "it appears," "there seems to be."
+
+IMAGE PROMPT — For each slide, write a brief image suggestion (1-2 sentences) that would make a relevant visual. Think: what photo, illustration, or chart would complement this content? Be specific to Heart Walk / AHA context. Default to photo-realistic; use "chart:" or "map:" prefix when a data visualization or geographic image is more useful.
 
 Return ONLY a valid JSON array, no markdown fences:
 [
   {
     "title": "The Slide Title",
-    "content": "> **Quote Bubble — Lauren Verrill**\\n> \\"Staff continuity makes all the difference.\\"\\n\\n• Teams that retain senior staff outperform those with high turnover by a wide margin.\\n• Three of five interviewees cited staff changes as the single biggest campaign disruptor.\\n\\n> **Quote Bubble — Katie Belusa**\\n> \\"We had staff change — it derailed our whole campaign.\\""
+    "layout": "text",
+    "content": "• Bullet one\\n• Bullet two\\n\\n> **Quote Bubble — Speaker Name**\\n> \\"The actual quote.\\"",
+    "image_prompt": "A professional photo of a corporate team gathered around a conference table reviewing campaign materials"
+  },
+  {
+    "title": "Another Slide",
+    "layout": "text-quote",
+    "content": "• Key finding one\\n• Key finding two",
+    "featured_quote": { "text": "This quote deserves the spotlight.", "speaker": "Lauren Verrill" },
+    "image_prompt": "A photo of fundraising volunteers wearing branded Heart Walk t-shirts at an outdoor event"
   },
   ...
 ]
@@ -823,7 +915,9 @@ ${JSON.stringify(slidesForPrompt, null, 1)}`;
           const batchSlides = JSON.parse(cleaned);
           if (Array.isArray(batchSlides)) {
             for (const s of batchSlides) {
-              narrativeSlides.push({ type: "standard", title: String(s.title || ""), content: String(s.content || "") });
+              // Convert AI layout decisions into Designer-compatible field schema
+              const slideObj = buildDesignerSlide(s);
+              narrativeSlides.push(slideObj);
             }
           }
         } catch (e) {
@@ -878,12 +972,26 @@ Return ONLY valid JSON, no markdown fences:
       }
 
       // ── Assemble final narrative deck ──
+      const summaryText = summaryContent.map(b => `• ${b}`).join("\n");
       const narrativeDeck = {
         config: JSON.parse(JSON.stringify(DESIGNER_CONFIG)),
         slides: [
           { type: "cover", title: "Heart Walk Interview Research", subtitle: "Summary of Findings and Recommendations" },
           { type: "section", title: "Executive Summary" },
-          { type: "standard", title: "Executive Summary", content: summaryContent.map(b => `• ${b}`).join("\n") },
+          {
+            type: "standard",
+            title: "Executive Summary",
+            content: summaryText,
+            bodyField: {
+              mode: "text",
+              text: summaryText,
+              imageUrl: "",
+              imageAlign: "center",
+              imagePrompt: "A wide-angle photo of a Heart Walk fundraising event — volunteers and corporate leaders gathered outdoors with AHA banners and team flags",
+              quoteText: "",
+              quoteAttribution: ""
+            }
+          },
           ...narrativeSlides
         ]
       };
@@ -956,6 +1064,24 @@ Return ONLY valid JSON, no markdown fences:
       const hasSlides = Array.isArray(out.deck.slides);
       const badTypes = hasSlides ? out.deck.slides.filter(s => !VALID_TYPES.has(String(s.type || ""))).length : 1;
       add("Designer JSON Shape", hasSlides && out.deck.slides.length > 0 && badTypes === 0, hasSlides ? `slides=${out.deck.slides.length}, invalid_types=${badTypes}` : "Missing slides array");
+
+      // Field schema validation — check that standard/two-column slides have proper field structure
+      if (hasSlides) {
+        const std = out.deck.slides.filter(s => s.type === 'standard');
+        const tc  = out.deck.slides.filter(s => s.type === 'two-column');
+        const stdOk = std.filter(s => s.bodyField && ['text','image','quote'].includes(s.bodyField.mode)).length;
+        const tcOk  = tc.filter(s => s.columns?.leftField?.mode && s.columns?.rightField?.mode).length;
+        add("Field Schema", stdOk === std.length && tcOk === tc.length,
+            `standard: ${stdOk}/${std.length} have bodyField, two-column: ${tcOk}/${tc.length} have columns`);
+
+        // Image prompt coverage — check how many slides have AI image suggestions
+        const allFields = [
+          ...std.map(s => s.bodyField),
+          ...tc.flatMap(s => [s.columns?.leftField, s.columns?.rightField])
+        ].filter(Boolean);
+        const withPrompt = allFields.filter(f => f.imagePrompt && f.imagePrompt.length > 5).length;
+        add("Image Prompt Coverage", withPrompt > 0, `${withPrompt}/${allFields.length} fields have image prompts`);
+      }
 
       const body = hasSlides ? out.deck.slides.filter(s => s.type === "standard").map(s => String(s.content || "")).join("\n") : "";
       const missing = out.claims.filter(c => !body.includes(`Insight I${c.insight.insight_id}`)).length;
