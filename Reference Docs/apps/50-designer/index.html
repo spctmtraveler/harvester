@@ -132,6 +132,110 @@
         .slide-content h3 { font-family: var(--font-h3); font-size: var(--size-h3); color: var(--color-h3); font-weight: 700; margin: 20px 0 10px 0; }
         .slide-content, .slide-content p, .slide-content li { font-family: var(--font-normal); font-size: var(--size-normal); color: var(--color-normal); line-height: 1.5; margin-bottom: 10px; }
         .slide-content ul, .slide-content ol { margin-top: 0; padding-left: 1.5em; margin-bottom: 10px; }
+        .body-wrapper { height: 100%; min-height: 0; }
+        .field-shell { position: relative; height: 100%; min-height: 0; display: flex; flex-direction: column; }
+        .field-controls {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 8px;
+            border: 1px solid rgba(30,29,33,0.15);
+            background: rgba(255,255,255,0.95);
+            border-radius: 8px;
+            width: fit-content;
+            margin-bottom: 8px;
+            font-size: 12px;
+        }
+        .field-controls select, .field-controls input {
+            border: 1px solid #d3d3d3;
+            border-radius: 5px;
+            padding: 4px 6px;
+            font-size: 12px;
+            min-width: 74px;
+        }
+        .field-controls input { min-width: 220px; }
+        .field-body { flex: 1; min-height: 0; border: 1px dashed rgba(30,29,33,0.15); border-radius: 10px; padding: 14px; }
+        .field-body[data-mode="text"] { background: rgba(255,255,255,0.85); }
+        .field-body[data-mode="quote"] { background: transparent; border: none; padding: 0; }
+        .field-body[data-mode="image"] { background: #f8f8f8; }
+        .quote-vector-box {
+            position: relative;
+            background: #efe0ae;
+            border-radius: 26px;
+            padding: 26px 34px 36px;
+            min-height: 180px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            box-sizing: border-box;
+        }
+        .quote-vector-box::after {
+            content: "";
+            position: absolute;
+            bottom: -26px;
+            left: 26%;
+            width: 90px;
+            height: 44px;
+            background: #efe0ae;
+            clip-path: polygon(0 0, 100% 0, 50% 100%);
+        }
+        .quote-body {
+            font-family: var(--font-normal);
+            font-size: var(--size-normal);
+            line-height: 1.45;
+            color: var(--color-normal);
+            white-space: pre-wrap;
+        }
+        .quote-attrib {
+            margin-top: 14px;
+            text-align: right;
+            font-weight: 700;
+            font-family: var(--font-h3);
+            font-size: var(--size-h3);
+            color: var(--color-h3);
+        }
+        .image-field {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            min-height: 220px;
+            display: flex;
+            overflow: hidden;
+            border-radius: 10px;
+            background: #efefef;
+        }
+        .image-field img {
+            max-width: 100%;
+            max-height: 100%;
+            width: auto;
+            height: auto;
+            object-fit: contain;
+            pointer-events: none;
+        }
+        .image-field .image-empty {
+            margin: auto;
+            color: #666;
+            font-size: 14px;
+            text-align: center;
+            padding: 8px;
+        }
+        .two-col-layout {
+            display: grid;
+            grid-template-columns: minmax(200px, var(--split-left, 50%)) 8px minmax(200px, calc(100% - var(--split-left, 50%)));
+            gap: 14px;
+            height: 100%;
+            min-height: 0;
+            align-items: stretch;
+        }
+        .split-divider {
+            width: 8px;
+            border-radius: 6px;
+            background: linear-gradient(180deg, rgba(22,191,236,0.25), rgba(22,191,236,0.55));
+            cursor: col-resize;
+            user-select: none;
+            touch-action: none;
+        }
+        .split-divider:hover { background: linear-gradient(180deg, rgba(22,191,236,0.55), rgba(22,191,236,0.85)); }
         
         .slide-inner {
             width: 100%; height: 100%; display: flex; flex-direction: column;
@@ -184,7 +288,7 @@
 </head>
 <body>
 
-<div id="app-version-banner">Designer v3.2 · Last updated —</div>
+<div id="app-version-banner">Designer v3.3 · Last updated —</div>
 
 <div id="settings-wrapper">
     <svg class="gear-trigger" viewBox="0 0 24 24" onclick="toggleSettings()"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
@@ -230,6 +334,7 @@
         <button onclick="addNewSlide('cover')">+ Cover</button>
         <button onclick="addNewSlide('section')">+ Section</button>
         <button onclick="addNewSlide('standard')">+ Standard</button>
+        <button onclick="addNewSlide('two-column')">+ Two Col</button>
         <span style="color:#ddd">|</span>
         <button onmousedown="exec('bold')"><b>B</b></button>
         <button onmousedown="exec('italic')"><i>I</i></button>
@@ -258,8 +363,8 @@
 </div>
 
 <script>
-    const APP_VERSION = "v3.2";
-    const APP_LAST_UPDATED_UTC = "2026-02-18T20:30:00Z";
+    const APP_VERSION = "v3.3";
+    const APP_LAST_UPDATED_UTC = "2026-02-20T09:30:00Z";
 
     function formatLocalLastUpdated(utcIso) {
         const dt = new Date(utcIso);
@@ -310,6 +415,113 @@
         'var(--c-temporal)': '#08C4BE'
     };
 
+    function escapeHtml(text) {
+        return String(text || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function ensureFieldDefaults(field, fallbackText = '') {
+        const base = field || {};
+        const mode = ['text', 'image', 'quote'].includes(base.mode) ? base.mode : 'text';
+        const imageAlign = ['center', 'left', 'right', 'top', 'bottom'].includes(base.imageAlign) ? base.imageAlign : 'center';
+        return {
+            mode,
+            text: base.text ?? fallbackText,
+            imageUrl: base.imageUrl || '',
+            imageAlign,
+            quoteText: base.quoteText ?? fallbackText,
+            quoteAttribution: base.quoteAttribution || 'Chair'
+        };
+    }
+
+    function ensureSlideSchema(slide) {
+        if (!slide || typeof slide !== 'object') return slide;
+        if (slide.type === 'standard') {
+            slide.bodyField = ensureFieldDefaults(slide.bodyField, slide.content || '• Point 1');
+            if (!slide.content) slide.content = slide.bodyField.text || '';
+        }
+        if (slide.type === 'two-column') {
+            const leftBase = slide.columns?.leftField || { mode: 'text', text: '• Left content' };
+            const rightBase = slide.columns?.rightField || { mode: 'image', imageUrl: '' };
+            const splitPct = Number(slide.columns?.splitPct ?? 50);
+            slide.columns = {
+                splitPct: Number.isFinite(splitPct) ? Math.max(20, Math.min(80, splitPct)) : 50,
+                leftField: ensureFieldDefaults(leftBase, leftBase.text || '• Left content'),
+                rightField: ensureFieldDefaults(rightBase, rightBase.text || '• Right content')
+            };
+        }
+        return slide;
+    }
+
+    function getByPath(obj, path) {
+        return path.split('.').reduce((acc, key) => (acc ? acc[key] : undefined), obj);
+    }
+
+    function setByPath(obj, path, value) {
+        const keys = path.split('.');
+        const last = keys.pop();
+        let ref = obj;
+        keys.forEach(key => {
+            if (!ref[key] || typeof ref[key] !== 'object') ref[key] = {};
+            ref = ref[key];
+        });
+        ref[last] = value;
+    }
+
+    function imageAlignStyle(align) {
+        if (align === 'left') return 'justify-content:flex-start;align-items:center;';
+        if (align === 'right') return 'justify-content:flex-end;align-items:center;';
+        if (align === 'top') return 'justify-content:center;align-items:flex-start;';
+        if (align === 'bottom') return 'justify-content:center;align-items:flex-end;';
+        return 'justify-content:center;align-items:center;';
+    }
+
+    function renderFieldControls(fieldPath, field) {
+        const safeUrl = escapeHtml(field.imageUrl || '');
+        const urlInput = field.mode === 'image'
+            ? `<input type="text" placeholder="Image URL" value="${safeUrl}" data-role="field-image-url" data-field-path="${fieldPath}">`
+            : '';
+        return `<div class="field-controls">
+            <label>Mode</label>
+            <select data-role="field-mode" data-field-path="${fieldPath}">
+                <option value="text" ${field.mode === 'text' ? 'selected' : ''}>Text</option>
+                <option value="image" ${field.mode === 'image' ? 'selected' : ''}>Image</option>
+                <option value="quote" ${field.mode === 'quote' ? 'selected' : ''}>Quote</option>
+            </select>
+            ${urlInput}
+        </div>`;
+    }
+
+    function renderFieldBody(fieldPath, field) {
+        if (field.mode === 'image') {
+            const imageNode = field.imageUrl
+                ? `<img src="${escapeHtml(field.imageUrl)}" alt="Slide image">`
+                : `<div class="image-empty">Add an image URL in the field toolbar.</div>`;
+            return `<div class="field-body" data-mode="image">
+                <div class="image-field" data-role="image-field" data-field-path="${fieldPath}" data-image-align="${field.imageAlign}" style="${imageAlignStyle(field.imageAlign)}">${imageNode}</div>
+            </div>`;
+        }
+
+        if (field.mode === 'quote') {
+            return `<div class="field-body" data-mode="quote">
+                <div class="quote-vector-box">
+                    <div class="quote-body" contenteditable="true" data-role="field-quote-text" data-field-path="${fieldPath}">${escapeHtml(field.quoteText || '')}</div>
+                    <div class="quote-attrib" contenteditable="true" data-role="field-quote-attrib" data-field-path="${fieldPath}">${escapeHtml(field.quoteAttribution || 'Chair')}</div>
+                </div>
+            </div>`;
+        }
+
+        return `<div class="field-body" data-mode="text"><div class="slide-content" contenteditable="true" data-role="field-text" data-field-path="${fieldPath}">${mdToHtml(field.text || '')}</div></div>`;
+    }
+
+    function renderFieldShell(fieldPath, field) {
+        return `<div class="field-shell">${renderFieldControls(fieldPath, field)}${renderFieldBody(fieldPath, field)}</div>`;
+    }
+
     function resizeStage() {
         const baseWidth = 1280; const baseHeight = 720;
         const availWidth = window.innerWidth - 60; const availHeight = window.innerHeight - 60;
@@ -334,6 +546,7 @@
     function render() {
         stage.innerHTML = ''; 
         slidesData.forEach((slide, index) => {
+            ensureSlideSchema(slide);
             const slideEl = document.createElement('div');
             slideEl.className = `slide ${index === currentSlideIndex ? 'active' : ''}`;
             slideEl.dataset.index = index;
@@ -366,9 +579,19 @@
                              <div class="body-wrapper" style="${bodyStyle}"><div class="subtitle-text" contenteditable="true" data-key="subtitle">${slide.subtitle || 'Subtitle'}</div></div>`;
             } else if (slide.type === 'section') {
                 innerHTML = `<div class="title-wrapper" style="${titleStyle}"><h1 contenteditable="true" data-key="title">${slide.title || 'Section'}</h1></div>`;
+            } else if (slide.type === 'two-column') {
+                const splitPct = slide.columns?.splitPct ?? 50;
+                innerHTML = `<div class="title-wrapper" style="${titleStyle}"><h2 contenteditable="true" data-key="title">${iconSVG}${slide.title || 'Two Column Slide'}</h2></div>
+                             <div class="body-wrapper" style="${bodyStyle}">
+                                 <div class="two-col-layout" style="--split-left:${splitPct}%;" data-role="two-col-layout" data-slide-index="${index}">
+                                     ${renderFieldShell('columns.leftField', slide.columns.leftField)}
+                                     <div class="split-divider" data-role="split-divider" data-slide-index="${index}" title="Drag to resize columns"></div>
+                                     ${renderFieldShell('columns.rightField', slide.columns.rightField)}
+                                 </div>
+                             </div>`;
             } else {
                 innerHTML = `<div class="title-wrapper" style="${titleStyle}"><h2 contenteditable="true" data-key="title">${iconSVG}${slide.title || 'Slide Title'}</h2></div>
-                             <div class="body-wrapper" style="${bodyStyle}"><div class="slide-content" contenteditable="true" data-key="content">${mdToHtml(slide.content)}</div></div>`;
+                             <div class="body-wrapper" style="${bodyStyle}">${renderFieldShell('bodyField', slide.bodyField)}</div>`;
             }
             
             slideEl.innerHTML = `${shapeHTML}<div class="slide-inner">${innerHTML}</div>`;
@@ -501,7 +724,12 @@
         }
         
         // Ensure Template Offsets exist (Backward Compat)
-        if(!appConfig.typeOffsets) appConfig.typeOffsets = { cover: {x:0, y:0}, section: {x:0, y:0}, standard: {x:0, y:0} };
+        if(!appConfig.typeOffsets) appConfig.typeOffsets = {};
+        if(!appConfig.typeOffsets.cover) appConfig.typeOffsets.cover = {x:0, y:0};
+        if(!appConfig.typeOffsets.section) appConfig.typeOffsets.section = {x:0, y:0};
+        if(!appConfig.typeOffsets.standard) appConfig.typeOffsets.standard = {x:0, y:0};
+        if(!appConfig.typeOffsets['two-column']) appConfig.typeOffsets['two-column'] = {x:0, y:0};
+        slidesData = (slidesData || []).map(ensureSlideSchema);
 
         applyConfig(); render(); resizeStage();
     }
@@ -510,7 +738,7 @@
     function applyConfig() { document.documentElement.style.setProperty('--global-x', (appConfig.globalX || 0) + 'px'); document.documentElement.style.setProperty('--global-y', (appConfig.globalY || 0) + 'px'); if (appConfig.showShapes) document.body.classList.add('show-shapes'); else document.body.classList.remove('show-shapes'); types.forEach(t => { document.documentElement.style.setProperty(`--font-${t.id}`, appConfig[`font-${t.id}`] || "'Source Sans 3', sans-serif"); document.documentElement.style.setProperty(`--size-${t.id}`, appConfig[`size-${t.id}`] || '18pt'); document.documentElement.style.setProperty(`--color-${t.id}`, appConfig[`color-${t.id}`] || '#1e1d21'); }); }
     function updateTheme() { appConfig.showShapes = document.getElementById('toggle-shapes').checked; types.forEach(t => { appConfig[`font-${t.id}`] = document.getElementById(`font-${t.id}`).value; appConfig[`size-${t.id}`] = document.getElementById(`size-${t.id}`).value + 'pt'; }); applyConfig(); saveState(); }
     function updateSettingsUI() { document.getElementById('toggle-shapes').checked = appConfig.showShapes || false; types.forEach(t => { const fEl = document.getElementById(`font-${t.id}`); const sEl = document.getElementById(`size-${t.id}`); const cBtn = document.getElementById(`color-btn-${t.id}`); if(fEl) fEl.value = appConfig[`font-${t.id}`] || "'Source Sans 3', sans-serif"; if(sEl) sEl.value = (appConfig[`size-${t.id}`] || '').replace('pt',''); if(cBtn) cBtn.style.backgroundColor = appConfig[`color-${t.id}`] || '#000'; }); }
-    function loadDeckData(jsonString) { try { if (jsonString.trim().startsWith('<')) throw new Error("Input appears to be HTML, not JSON."); const data = JSON.parse(jsonString); if (!data.slides || !Array.isArray(data.slides)) throw new Error("Missing 'slides' array in JSON."); appConfig = data.config; slidesData = data.slides; if(!appConfig.typeOffsets) appConfig.typeOffsets = {}; applyConfig(); render(); saveState(); showSlide(0); document.body.classList.add('flash-success'); setTimeout(() => document.body.classList.remove('flash-success'), 600); closeImport(); toggleSettings(); } catch (err) { showError(err.message); } }
+    function loadDeckData(jsonString) { try { if (jsonString.trim().startsWith('<')) throw new Error("Input appears to be HTML, not JSON."); const data = JSON.parse(jsonString); if (!data.slides || !Array.isArray(data.slides)) throw new Error("Missing 'slides' array in JSON."); appConfig = data.config; slidesData = data.slides.map(ensureSlideSchema); if(!appConfig.typeOffsets) appConfig.typeOffsets = {}; if(!appConfig.typeOffsets.cover) appConfig.typeOffsets.cover = {x:0, y:0}; if(!appConfig.typeOffsets.section) appConfig.typeOffsets.section = {x:0, y:0}; if(!appConfig.typeOffsets.standard) appConfig.typeOffsets.standard = {x:0, y:0}; if(!appConfig.typeOffsets['two-column']) appConfig.typeOffsets['two-column'] = {x:0, y:0}; applyConfig(); render(); saveState(); showSlide(0); document.body.classList.add('flash-success'); setTimeout(() => document.body.classList.remove('flash-success'), 600); closeImport(); toggleSettings(); } catch (err) { showError(err.message); } }
     function handleFileSelect(input) { const file = input.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = function(e) { loadDeckData(e.target.result); }; reader.readAsText(file); input.value = ''; }
     async function importFromClipboard() { try { const text = await navigator.clipboard.readText(); loadDeckData(text); } catch (err) { showError("Clipboard access denied or empty."); } }
     function processManualImport() { loadDeckData(document.getElementById('import-area').value); }
@@ -537,9 +765,166 @@
         } 
         saveState(); 
     }
-    
-    container.addEventListener('input', (e) => { const el = e.target; if (!el.dataset.key) return; const index = parseInt(el.closest('.slide').dataset.index); const key = el.dataset.key; if (key === 'content') slidesData[index][key] = htmlToMd(el.innerHTML); else slidesData[index][key] = el.innerText; saveState(); });
-    function addNewSlide(type) { const template = type === 'standard' ? { type: 'standard', title: 'New Slide', content: '* Point 1' } : { type: type, title: 'New Title', subtitle: 'Subtitle' }; slidesData.splice(currentSlideIndex + 1, 0, template); currentSlideIndex++; render(); saveState(); showSlide(currentSlideIndex); }
+
+    function startSplitDrag(dividerEl, clientX) {
+        const slideIndex = parseInt(dividerEl.dataset.slideIndex, 10);
+        const layout = dividerEl.closest('.two-col-layout');
+        if (!layout || Number.isNaN(slideIndex)) return;
+
+        const bounds = layout.getBoundingClientRect();
+        const slide = slidesData[slideIndex];
+        ensureSlideSchema(slide);
+
+        const onMove = (moveEvent) => {
+            const x = moveEvent.clientX - bounds.left;
+            const pct = (x / bounds.width) * 100;
+            const clamped = Math.max(20, Math.min(80, pct));
+            slide.columns.splitPct = Math.round(clamped * 10) / 10;
+            layout.style.setProperty('--split-left', `${slide.columns.splitPct}%`);
+        };
+
+        const onUp = () => {
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onUp);
+            saveState();
+        };
+
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+        onMove({ clientX });
+    }
+
+    function edgeAlignFromClick(rect, x, y) {
+        const edgeThreshold = 22;
+        if (y - rect.top <= edgeThreshold) return 'top';
+        if (rect.bottom - y <= edgeThreshold) return 'bottom';
+        if (x - rect.left <= edgeThreshold) return 'left';
+        if (rect.right - x <= edgeThreshold) return 'right';
+        return 'center';
+    }
+
+    container.addEventListener('input', (e) => {
+        const el = e.target;
+        const slideEl = el.closest('.slide');
+        if (!slideEl) return;
+        const index = parseInt(slideEl.dataset.index, 10);
+        if (Number.isNaN(index)) return;
+        const slide = slidesData[index];
+        ensureSlideSchema(slide);
+
+        if (el.dataset.role === 'field-text') {
+            const field = getByPath(slide, el.dataset.fieldPath);
+            field.text = htmlToMd(el.innerHTML);
+            if (el.dataset.fieldPath === 'bodyField') slide.content = field.text;
+            saveState();
+            return;
+        }
+        if (el.dataset.role === 'field-quote-text') {
+            const field = getByPath(slide, el.dataset.fieldPath);
+            field.quoteText = el.innerText;
+            saveState();
+            return;
+        }
+        if (el.dataset.role === 'field-quote-attrib') {
+            const field = getByPath(slide, el.dataset.fieldPath);
+            field.quoteAttribution = el.innerText;
+            saveState();
+            return;
+        }
+
+        if (!el.dataset.key) return;
+        const key = el.dataset.key;
+        if (key === 'content') slide[key] = htmlToMd(el.innerHTML);
+        else slide[key] = el.innerText;
+        saveState();
+    });
+
+    container.addEventListener('change', (e) => {
+        const el = e.target;
+        const slideEl = el.closest('.slide');
+        if (!slideEl) return;
+        const index = parseInt(slideEl.dataset.index, 10);
+        if (Number.isNaN(index)) return;
+        const slide = slidesData[index];
+        ensureSlideSchema(slide);
+
+        if (el.dataset.role === 'field-mode') {
+            const field = getByPath(slide, el.dataset.fieldPath);
+            field.mode = el.value;
+            if (el.dataset.fieldPath === 'bodyField') slide.content = field.text || '';
+            render();
+            saveState();
+            showSlide(currentSlideIndex);
+        }
+    });
+
+    container.addEventListener('blur', (e) => {
+        const el = e.target;
+        if (el.dataset.role !== 'field-image-url') return;
+        const slideEl = el.closest('.slide');
+        if (!slideEl) return;
+        const index = parseInt(slideEl.dataset.index, 10);
+        if (Number.isNaN(index)) return;
+        const slide = slidesData[index];
+        const field = getByPath(slide, el.dataset.fieldPath);
+        if (!field) return;
+        field.imageUrl = el.value.trim();
+        saveState();
+        render();
+        showSlide(currentSlideIndex);
+    }, true);
+
+    container.addEventListener('mousedown', (e) => {
+        const divider = e.target.closest('[data-role="split-divider"]');
+        if (divider) {
+            e.preventDefault();
+            startSplitDrag(divider, e.clientX);
+        }
+    });
+
+    container.addEventListener('click', (e) => {
+        const imageField = e.target.closest('[data-role="image-field"]');
+        if (!imageField) return;
+        const slideEl = imageField.closest('.slide');
+        if (!slideEl) return;
+        const index = parseInt(slideEl.dataset.index, 10);
+        if (Number.isNaN(index)) return;
+        const slide = slidesData[index];
+        const fieldPath = imageField.dataset.fieldPath;
+        const field = getByPath(slide, fieldPath);
+        if (!field) return;
+
+        const rect = imageField.getBoundingClientRect();
+        field.imageAlign = edgeAlignFromClick(rect, e.clientX, e.clientY);
+        imageField.style.cssText += imageAlignStyle(field.imageAlign);
+        saveState();
+        render();
+        showSlide(currentSlideIndex);
+    });
+
+    function addNewSlide(type) {
+        let template;
+        if (type === 'standard') {
+            template = { type: 'standard', title: 'New Slide', content: '* Point 1', bodyField: ensureFieldDefaults({ mode: 'text', text: '* Point 1' }, '* Point 1') };
+        } else if (type === 'two-column') {
+            template = {
+                type: 'two-column',
+                title: 'Two-Column Slide',
+                columns: {
+                    splitPct: 50,
+                    leftField: ensureFieldDefaults({ mode: 'text', text: '* Left panel notes' }, '* Left panel notes'),
+                    rightField: ensureFieldDefaults({ mode: 'image', imageUrl: '', imageAlign: 'center' }, '• Right panel notes')
+                }
+            };
+        } else {
+            template = { type: type, title: 'New Title', subtitle: 'Subtitle' };
+        }
+        slidesData.splice(currentSlideIndex + 1, 0, template);
+        currentSlideIndex++;
+        render();
+        saveState();
+        showSlide(currentSlideIndex);
+    }
     function deleteSlide() { if (slidesData.length <= 1) return; if (confirm("Delete slide?")) { slidesData.splice(currentSlideIndex, 1); if (currentSlideIndex >= slidesData.length) currentSlideIndex--; render(); saveState(); showSlide(currentSlideIndex); } }
     function showSlide(idx) { if (idx < 0 || idx >= slidesData.length) return; currentSlideIndex = idx; document.querySelectorAll('.slide').forEach((s, i) => s.classList.toggle('active', i === idx)); updateSelectionMenu(); }
     function exportDeck() { navigator.clipboard.writeText(JSON.stringify({ config: appConfig, slides: slidesData }, null, 2)).then(() => alert("JSON Copied!")); }
@@ -606,6 +991,61 @@
             return items;
         };
 
+        const addFieldToPpt = (pptSlide, field, x, y, w, h) => {
+            const safeField = ensureFieldDefaults(field, '');
+            if (safeField.mode === 'image') {
+                if (safeField.imageUrl) {
+                    try {
+                        pptSlide.addImage({ path: safeField.imageUrl, x, y, w, h, sizing: { type: 'contain', x, y, w, h } });
+                    } catch {
+                        pptSlide.addText(`Image: ${safeField.imageUrl}`, { x, y, w, h, color: '777777', fontSize: 12, fit: 'resize' });
+                    }
+                } else {
+                    pptSlide.addText('Image placeholder', { x, y, w, h, color: '777777', fontSize: 12, valign: 'mid', align: 'center' });
+                }
+                return;
+            }
+
+            if (safeField.mode === 'quote') {
+                pptSlide.addShape(pres.ShapeType.roundRect, {
+                    x,
+                    y,
+                    w,
+                    h,
+                    fill: { color: 'EFE0AE' },
+                    line: { color: 'E7D49B', width: 1 },
+                    radius: 0.12
+                });
+                pptSlide.addText(safeField.quoteText || '', {
+                    x: x + 0.2,
+                    y: y + 0.2,
+                    w: w - 0.4,
+                    h: h - 0.7,
+                    color: getHex('color-normal', '333333'),
+                    fontSize: getPt('size-normal', '16pt'),
+                    valign: 'top'
+                });
+                pptSlide.addText(safeField.quoteAttribution || 'Chair', {
+                    x: x + 0.2,
+                    y: y + h - 0.45,
+                    w: w - 0.4,
+                    h: 0.2,
+                    color: getHex('color-h3', '1e1d21'),
+                    bold: true,
+                    fontSize: getPt('size-h3', '18pt') - 2,
+                    align: 'right'
+                });
+                return;
+            }
+
+            const textObjects = parseBullets(safeField.text || '');
+            textObjects.forEach(obj => {
+                obj.options.color = getHex('color-normal', '333333');
+                obj.options.fontFace = 'Arial';
+            });
+            pptSlide.addText(textObjects, { x, y, w, h, valign: 'top' });
+        };
+
         slidesData.forEach((data, index) => {
             let slide = pres.addSlide();
             
@@ -646,7 +1086,6 @@
                 });
             } 
             else {
-                // Standard Slide
                 slide.addText(data.title, { 
                     x: 0.5, y: 0.4, w: '90%', h: 1, 
                     fontSize: getPt('size-h2', '28pt'), 
@@ -654,18 +1093,21 @@
                     bold: true, fontFace: 'Arial'
                 });
 
-                // Body content
-                if(data.content) {
-                    let textObjects = parseBullets(data.content);
-                    textObjects.forEach(obj => {
-                        obj.options.color = getHex('color-normal', '333333');
-                        obj.options.fontFace = 'Arial';
-                    });
-                    
-                    slide.addText(textObjects, {
-                        x: 0.5, y: 1.8, w: '90%', h: 4.5,
-                        valign: 'top'
-                    });
+                if (data.type === 'two-column') {
+                    ensureSlideSchema(data);
+                    const split = Math.max(20, Math.min(80, Number(data.columns?.splitPct ?? 50)));
+                    const totalW = 12.3;
+                    const gap = 0.18;
+                    const leftW = (totalW - gap) * (split / 100);
+                    const rightW = (totalW - gap) - leftW;
+                    const baseX = 0.5;
+                    const baseY = 1.8;
+                    const bodyH = 4.7;
+                    addFieldToPpt(slide, data.columns.leftField, baseX, baseY, leftW, bodyH);
+                    addFieldToPpt(slide, data.columns.rightField, baseX + leftW + gap, baseY, rightW, bodyH);
+                } else {
+                    const field = ensureFieldDefaults(data.bodyField, data.content || '');
+                    addFieldToPpt(slide, field, 0.5, 1.8, 12.3, 4.7);
                 }
             }
 
