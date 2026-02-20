@@ -1,0 +1,227 @@
+Insights
+Refresh
+INSIGHT 45
+senti 0
+Volunteers are often selected from marketing or HR departments and may feel compelled to participate.
+flags: (no flags)
+No evidence links found
+INSIGHT 44
+senti 0
+Katie Belusa transitioned from a health equity grant role to a corporate health equity consulting role.
+flags: explain
+No evidence links found
+INSIGHT 43
+senti 0
+Caleb Bone describes the system as a 'behemoth monster' similar to SharePoint.
+flags: (no flags)
+No evidence links found
+INSIGHT 42
+senti 0
+Caleb Bone feels comfortable using the system despite its complexity.
+flags: explain
+No evidence links found
+INSIGHT 41
+senti 0
+ELT practices vary by market and are adjusted annually based on team and campaign needs.
+flags: explain
+No evidence links found
+INSIGHT 40
+senti 0
+The American Heart Association recruits strong young leaders often through family connections.
+flags: explain
+No evidence links found
+INSIGHT 39
+senti +2
+Katie Belusa transitioned to a role with Heart Walk in June 2025 and enjoys her work.
+flags: explain
+No evidence links found
+INSIGHT 38
+senti 0
+Caleb Bone has been with the Heart Walk organization for over seven years, progressing from a director to a senior development director role.
+flags: explain
+No evidence links found
+INSIGHT 37
+senti 0
+SharePoint is seen as less user-friendly compared to other tools like Google Drive.
+flags: explain
+No evidence links found
+INSIGHT 36
+senti +2
+Salesforce is a valuable tool for managing sponsorship pipelines and tracking opportunities.
+flags: explain
+No evidence links found
+INSIGHT 35
+senti -1
+The Heart Walk campaign faces challenges in engaging leadership and volunteers.
+flags: problem, explain
+No evidence links found
+INSIGHT 34
+senti +1
+GAP meetings are a valuable tool for organizing and strategizing Heart Walk efforts.
+flags: explain
+No evidence links found
+INSIGHT 33
+senti 0
+Persistent follow-up and creative engagement strategies are essential for maintaining corporate relationships.
+flags: problem, solution, explain
+No evidence links found
+INSIGHT 32
+senti +2
+Heart Walk teams utilize consultants extensively for strategic planning and leadership development.
+flags: solution, explain
+No evidence links found
+INSIGHT 31
+senti -1
+Engaging younger leaders in Heart Walk initiatives is challenging, with older generations being more involved.
+flags: problem, explain
+No evidence links found
+INSIGHT 30
+senti +1
+The Heart Walk's use of tools like SharePoint is generally effective, but there are minor usability issues.
+flags: explain
+No evidence links found
+INSIGHT 29
+senti 0
+There is a need for better communication strategies to effectively convey Heart Walk's mission and purpose.
+flags: explain
+No evidence links found
+INSIGHT 28
+senti -1
+Economic and political factors are impacting corporate sponsorship and involvement in Heart Walk activities.
+flags: problem, explain
+No evidence links found
+INSIGHT 27
+senti -1
+The Heart Walk's ELT meetings and market board meetings face challenges due to members being overcommitted and not fulfilling their roles.
+flags: problem, explain
+No evidence links found
+INSIGHT 26
+senti 0
+SharePoint is generally seen as a useful tool, though it can be difficult to navigate at times.
+flags: problem, explain
+No evidence links found
+INSIGHT 25
+senti +1
+The Heart Walk team is experiencing leadership challenges due to turnover and a lack of chairs.
+flags: explain
+No evidence links found
+INSIGHT 24
+senti +1
+The Heart Walk team is utilizing existing volunteers and legacy chairs to maintain engagement and recruit new members.
+flags: explain
+No evidence links found
+INSIGHT 23
+senti 0
+The Heart Walk team is facing challenges with Salesforce due to its current limitations and cumbersome reporting features.
+flags: problem, explain
+No evidence links found
+INSIGHT 22
+senti -1
+Communicating the benefits of Heart Walk participation to prospective companies can be challenging.
+flags: problem, explain
+No evidence links found
+INSIGHT 21
+senti 0
+ELT meetings are strategically scheduled and used for recruitment and engagement.
+flags: explain
+No evidence links found
+INSIGHT 20
+senti 0
+The Senior Development Director plays a crucial role in ELT recruitment and management.
+flags: explain
+No evidence links found
+INSIGHT 19
+senti 0
+Recruitment for leadership roles often relies on personal connections and timing.
+flags: explain
+No evidence links found
+INSIGHT 18
+senti 0
+The updated company and coach planners are practical and frequently used, while the participant experience guide's usefulness is uncertain.
+flags: explain
+No evidence links found
+INSIGHT 17
+senti +1
+The Nation of Lifesaver initiative has helped clarify the Heart Walk's purpose, which was previously perceived as broad.
+flags: explain
+No evidence links found
+INSIGHT 16
+senti +1
+Salesforce and SharePoint are essential tools but have limitations in functionality and ease of use.
+flags: problem, solution, explain
+No evidence links found
+INSIGHT 15
+senti +2
+The Nation of Lifesavers initiative has helped clarify the mission and engage ELT members.
+flags: solution, explain
+No evidence links found
+INSIGHT 14
+senti 0
+Personal and business connections are crucial for recruiting ELT members.
+flags: explain
+No evidence links found
+INSIGHT 13
+senti +1
+The recruitment process for the Executive Leadership Team (ELT) involves collaboration between senior staff and volunteers, with a focus on securing chairs well in advance.
+flags: explain
+No evidence links found
+INSIGHT 12
+senti +1
+Challenges in ELT recruitment include finding the right leaders and securing buy-in from organizations.
+flags: problem, explain
+No evidence links found
+INSIGHT 11
+senti +1
+The quality of ELT recruitment is influenced by the effectiveness of the chair and existing ELT members.
+flags: explain
+No evidence links found
+INSIGHT 10
+senti +1
+The Heart Walk campaign aims to teach CPR to one person in every household by 2030.
+flags: explain
+No evidence links found
+INSIGHT 9
+senti +1
+The Nation of Lifesavers initiative has helped clarify the mission and identity of local ELTs.
+flags: explain
+No evidence links found
+INSIGHT 8
+senti +1
+The recruitment of Executive Leadership Team (ELT) members involves leveraging existing relationships and strategic introductions.
+flags: explain
+No evidence links found
+INSIGHT 7
+senti -1
+Salesforce has limitations in functionality and ease of use, impacting its effectiveness.
+flags: problem, explain
+No evidence links found
+INSIGHT 6
+senti -1
+Communicating the benefits of participation to prospective companies can be challenging, especially when starting from scratch.
+flags: problem, explain
+No evidence links found
+INSIGHT 5
+senti +1
+Personal and business connections are crucial for successful ELT recruitment.
+flags: explain
+No evidence links found
+INSIGHT 4
+senti 0
+Challenges in recruiting the right ELT members include finding individuals with capacity and interest, especially from key organizations.
+flags: problem
+No evidence links found
+INSIGHT 3
+senti +1
+ELT meetings are strategically scheduled and used to engage prospective members and finalize the team.
+flags: explain
+No evidence links found
+INSIGHT 2
+senti +1
+The ELT recruitment process involves targeting healthcare organizations and large sponsors, with efforts to secure new leaders and companies.
+flags: explain
+No evidence links found
+INSIGHT 1
+senti +1
+The Senior Development Director in Nashville is responsible for chair recruitment and works closely with the VP of Development and Executive Director.
+flags: explain
+No evidence links found

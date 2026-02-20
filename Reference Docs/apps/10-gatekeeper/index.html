@@ -2964,6 +2964,122 @@
     applySegmentationPromptFromUI(false);
     $("appTag").textContent = `App: ${$("appName").value.trim()}`;
     log("Ready. Load files to preview semantic block segmentation.", "ok");
+
+    // ── Auto-run from URL parameters ──
+    (async function checkAutorun() {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("autorun") !== "1") return;
+
+      log("Auto-run triggered via URL parameter.", "ok");
+      const TRANSCRIPT_BASE = window.location.origin + "/harvester/transcripts/";
+      const TRANSCRIPT_FILES = [
+        "Caleb Bone.md",
+        "Katie Belusa.md",
+        "Kenz Geschke.md",
+        "Lauren Verrill.md",
+        "Lydia Hazel.md"
+      ];
+
+      // Optional: reset DB first
+      if (params.get("reset") === "1") {
+        log("Resetting tables before auto-ingest...", "warn");
+        await resetTables();
+        await new Promise(r => setTimeout(r, 500));
+      }
+
+      log(`Fetching ${TRANSCRIPT_FILES.length} transcripts from server...`, "ok");
+      let loaded = 0;
+      for (const fname of TRANSCRIPT_FILES) {
+        try {
+          const url = TRANSCRIPT_BASE + encodeURIComponent(fname);
+          const resp = await fetch(url);
+          if (!resp.ok) { log(`Failed to fetch ${fname}: ${resp.status}`, "warn"); continue; }
+          const text = await resp.text();
+          const file = new File([text], fname, { type: "text/markdown" });
+          const inferredName = fname.replace(/\.md$/i, "");
+          const code = inferredName.split(/\s+/).map(w => w[0]).join("").toUpperCase();
+          const derived = { interview_id: "", interview_prefix: "" };
+          const tok = await segmentSemanticBlocks(text, $("locale").value.trim() || "en", {
+            fileName: fname,
+            intervieweeNameHint: inferredName,
+            useAI: false,
+            silentLogs: true
+          });
+          state.files.push({
+            file,
+            meta: { interviewee_name: inferredName, date: "", interviewee_code: code },
+            derived,
+            lastSegmentation: null,
+            preview: {
+              blocks: tok.blockItems.length,
+              hasSegmenter: tok.hasSeg,
+              segmentationMode: tok.segmentationMode || "heuristic_preview"
+            },
+          });
+          loaded++;
+          log(`Loaded from server: ${fname} (${tok.blockItems.length} blocks)`, "ok");
+        } catch (e) {
+          log(`Error loading ${fname}: ${e.message}`, "bad");
+        }
+      }
+
+      if (loaded === 0) {
+        log("No transcripts loaded. Auto-run aborted.", "bad");
+        return;
+      }
+
+      renderFiles();
+      await refreshSpotFileOptions();
+      updateLoadButtonLabel();
+      $("btnIngest").disabled = false;
+      $("btnDryRun").disabled = false;
+
+      try {
+        if (!state.initialized) await initDB();
+        const appName = $("appName").value.trim();
+        for (const f of state.files) {
+          const resolved = await resolveInterviewForFile(appName, f.meta, f.file.name);
+          f.derived.interview_id = resolved.interview_id;
+          f.derived.interview_prefix = resolved.interview_prefix;
+        }
+      } catch (err) {
+        log("DB init for ID resolution failed: " + (err?.message || err), "warn");
+      }
+
+      log(`Starting auto-ingest of ${loaded} transcripts...`, "ok");
+      const result = await ingestAll({ dryRun: false });
+      log(`Auto-ingest complete: ${result.totalInserted} inserted, ${result.totalSkipped} skipped, ${result.totalParsed} parsed.`, "ok");
+
+      // Auto-deposit results
+      try {
+        const appName = $("appName").value.trim();
+        await DBHelper.query(appName, `
+          CREATE TABLE IF NOT EXISTS app_output (
+              output_id   INT PRIMARY KEY AUTO_INCREMENT,
+              app_stage   VARCHAR(50) NOT NULL,
+              status      VARCHAR(20) DEFAULT 'ok',
+              payload     LONGTEXT,
+              created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          )
+        `);
+        const sentenceCount = (await DBHelper.query(appName, "SELECT COUNT(*) AS c FROM sentences"))?.rows?.[0]?.c || 0;
+        const interviewCount = (await DBHelper.query(appName, "SELECT COUNT(*) AS c FROM interviews"))?.rows?.[0]?.c || 0;
+        const payload = {
+          completed_at_utc: new Date().toISOString(),
+          files_loaded: loaded,
+          total_parsed: result.totalParsed,
+          total_inserted: result.totalInserted,
+          total_skipped: result.totalSkipped,
+          sentences_in_db: parseInt(sentenceCount),
+          interviews_in_db: parseInt(interviewCount)
+        };
+        const escaped = JSON.stringify(payload).replace(/'/g, "\\'");
+        await DBHelper.query(appName, `INSERT INTO app_output (app_stage, status, payload) VALUES ('gatekeeper', 'completed', '${escaped}')`);
+        log("Results deposited to app_output.", "ok");
+      } catch (e) {
+        log("Auto-deposit failed: " + (e?.message || e), "bad");
+      }
+    })();
   </script>
 </body>
 </html>

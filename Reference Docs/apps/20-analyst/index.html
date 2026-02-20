@@ -887,6 +887,59 @@ Return a JSON array ONLY — no commentary, no markdown fences. Array length mus
         if (promptEl) promptEl.value = DEFAULT_ANALYST_PROMPT_TEMPLATE;
         await refreshStats();
         log("ok", "BOOT", "Analyst ready.");
+
+        // ── Auto-run from URL parameters ──
+        const params = new URLSearchParams(window.location.search);
+        if (params.get("autorun") === "1") {
+            log("info", "AUTORUN", "Auto-run triggered via URL parameter.");
+            const bsParam = parseInt(params.get("batchSize"));
+            if (bsParam && bsParam >= 5 && bsParam <= 60) {
+                document.getElementById("batchSize").value = bsParam;
+                log("info", "AUTORUN", `Batch size override: ${bsParam}`);
+            }
+            const modelParam = params.get("model");
+            if (modelParam) {
+                const sel = document.getElementById("modelSelect");
+                const opt = Array.from(sel.options).find(o => o.value === modelParam);
+                if (opt) { sel.value = modelParam; log("info", "AUTORUN", `Model override: ${modelParam}`); }
+            }
+            if (params.get("reset") === "1") {
+                log("warn", "AUTORUN", "Resetting coding outputs before auto-run...");
+                await window.resetAllCoding();
+                await sleep(500);
+            }
+            log("ok", "AUTORUN", "Starting processing...");
+            await window.startProcessing();
+            log("ok", "AUTORUN", "Processing loop finished. Depositing results...");
+            await autoDepositResults();
+        }
+    }
+
+    // ── Auto-deposit results to app_output table ──
+    async function autoDepositResults() {
+        try {
+            await DBHelper.query(APP_NAME, `
+                CREATE TABLE IF NOT EXISTS app_output (
+                    output_id   INT PRIMARY KEY AUTO_INCREMENT,
+                    app_stage   VARCHAR(50) NOT NULL,
+                    status      VARCHAR(20) DEFAULT 'ok',
+                    payload     LONGTEXT,
+                    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            `);
+            const statusRows = (await DBHelper.query(APP_NAME, "SELECT review_status, COUNT(*) AS c FROM sentences GROUP BY review_status"))?.rows || [];
+            const tagRows = (await DBHelper.query(APP_NAME, "SELECT COUNT(DISTINCT tag_key) AS c FROM tags"))?.rows || [];
+            const payload = {
+                completed_at_utc: new Date().toISOString(),
+                sentence_status: statusRows,
+                unique_tags: parseInt(tagRows[0]?.c || 0)
+            };
+            const escaped = JSON.stringify(payload).replace(/'/g, "\\'");
+            await DBHelper.query(APP_NAME, `INSERT INTO app_output (app_stage, status, payload) VALUES ('analyst', 'completed', '${escaped}')`);
+            log("ok", "AUTORUN", "Results deposited to app_output.");
+        } catch (e) {
+            log("err", "AUTORUN", "Auto-deposit failed: " + (e?.message || e));
+        }
     }
 
     /* ── Schema Migration ── */

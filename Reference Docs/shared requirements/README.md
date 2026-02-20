@@ -26,9 +26,9 @@ Status source: checkbox totals in app requirement files.
 |---|---:|---:|---:|
 | Gatekeeper (Job 1) | 19 | 20 | 95% |
 | Analyst (Job 2) | 21 | 21 | 100% |
-| Synthesizer (Job 3) | 16 | 16 | 100% |
-| Reporter (Job 4) | 0 | 17 | 0% |
-| **Project Overall** | **56** | **74** | **76%** |
+| Synthesizer (Job 3) | 8 | 16 | 50% |
+| Reporter (Job 4) | 24 | 28 | 86% |
+| **Project Overall** | **72** | **85** | **85%** |
 
 ## Suggested usage
 

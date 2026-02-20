@@ -1,0 +1,68 @@
+{
+  "insights": [
+    {
+      "summary_plain": "The recruitment process for the Executive Leadership Team (ELT) involves collaboration between senior staff and existing chairs, with a focus on early engagement and role clarity.",
+      "summary_long": "The recruitment process for the ELT is a collaborative effort involving the Senior Development Director, Executive Director, and VP of Development. The process emphasizes early engagement, ideally securing chairs more than 12 months in advance, and providing clear role descriptions to set expectations.",
+      "evidence": [
+        {
+          "sentence_id": "CB01.0002",
+          "quote_rank": 3,
+          "support_role": "direct_quote"
+        },
+        {
+          "sentence_id": "CB01.0003",
+          "quote_rank": 2,
+          "support_role": "evidence"
+        }
+      ]
+    },
+    {
+      "summary_plain": "Business relationships and personal networks are crucial for successful ELT recruitment.",
+      "summary_long": "Business relationships and personal networks play a significant role in recruiting for the ELT. These connections often facilitate setting expectations and fulfilling roles effectively, as individuals are more likely to commit when approached by someone they know.",
+      "evidence": [
+        {
+          "sentence_id": "CB01.0008",
+          "quote_rank": 3,
+          "support_role": "direct_quote"
+        },
+        {
+          "sentence_id": "CB01.0009",
+          "quote_rank": 2,
+          "support_role": "evidence"
+        }
+      ]
+    },
+    {
+      "summary_plain": "The quality of the chair and ELT significantly impacts recruitment success.",
+      "summary_long": "The effectiveness of ELT recruitment is heavily influenced by the quality of the current chair and ELT members. Successful recruitment often involves leveraging existing relationships and identifying potential leaders within participating organizations.",
+      "evidence": [
+        {
+          "sentence_id": "CB01.0009",
+          "quote_rank": 3,
+          "support_role": "direct_quote"
+        },
+        {
+          "sentence_id": "CB01.0010",
+          "quote_rank": 2,
+          "support_role": "evidence"
+        }
+      ]
+    }
+  ],
+  "_meta": {
+    "input_block_count": 5,
+    "input_ids_received": [
+      "CB01.0002",
+      "CB01.0003",
+      "CB01.0008",
+      "CB01.0009",
+      "CB01.0010"
+    ],
+    "insights_produced": 3,
+    "blocks_used_count": 5,
+    "blocks_unused": [],
+    "rule_violations_caught": [],
+    "warnings": [],
+    "model_notes": ""
+  }
+}

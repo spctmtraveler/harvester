@@ -1,32 +1,39 @@
 # Reporter Requirements (Job 4)
 
-Source: `Reference Docs/requirements.md` (v3.1)
+Source: `Reference Docs/requirements.md` (v3.1)  
+Last updated: 2026-02-20
 
 ## Goal
 
-Generate report/deck outputs where every claim can immediately resolve to supporting sentence evidence.
+Generate cited report outputs where each claim resolves to supporting sentence evidence, and export the same substance in Designer JSON format.
 
 ## Implementation Status
 
-Progress: **0/7 complete (0%)**
+Progress: **11/12 complete (92%)**
 
-- [ ] Read approved `Insight` rows and linked `InsightSentence` evidence.
-- [ ] Generate markdown/report/deck output with explicit citations.
-- [ ] Support fast drill-down claim → insight → sentence → timestamp.
-- [ ] Enforce no uncited claims.
-- [ ] Preserve traceability path in output formatting and IDs.
-- [ ] Respect evidence hierarchy (`quote_rank`, `support_role`).
-- [ ] Expose editable prompt/template before/during report generation.
+- [x] Read `insights` rows and linked `insight_sentences` evidence.
+- [x] Generate plain-text narrative report output (complete sentences) with explicit citations.
+- [x] Generate Designer-importable JSON output (`config` + `slides`) using the same report substance.
+- [x] Enforce no uncited claims in both output formats.
+- [x] Preserve traceability path claim -> insight -> sentence -> timestamp/source.
+- [x] Respect evidence hierarchy (`quote_rank`, `support_role`) when selecting support.
+- [x] Keep plain-text and Designer JSON outputs content-equivalent.
+- [x] Validate cited sentence IDs resolve in DB.
+- [x] Validate Designer JSON shape before export.
+- [x] Add API/debug observability (traffic view + debug bundle export).
+- [x] Track interactive trace/drill-down UX as deferred phase.
+- [ ] Deliver interactive trace/drill-down UX implementation (deferred to Phase 2).
 
 ## Inputs
 
-- Approved `Insight` rows
-- `InsightSentence` links to source sentences
+- `insights` rows
+- `insight_sentences` links to source `sentences`
 
 ## Outputs
 
-- Markdown/report/deck copy with explicit citation linkage
-- Fast evidence drill-down from claim -> insight -> sentence -> timestamp
+- Plain-text report copy with explicit citation linkage
+- Designer-compatible deck JSON payload
+- Deferred (Phase 2): interactive evidence drill-down view
 
 ## Hard Rules
 

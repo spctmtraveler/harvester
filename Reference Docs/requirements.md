@@ -1,11 +1,13 @@
 # HWIE Requirements v3.1 — Zero‑Loss Relational Evidence Engine (SQL DB)
 
-## Current Implementation Snapshot (2026-02-18)
+## Current Implementation Snapshot (2026-02-20)
 
 - [x] Job 1 Gatekeeper implemented (semantic block ingest + stable IDs + reset control)
 - [x] Job 2 Analyst implemented (canonical coding + explanation requirement + editable prompt template)
-- [x] Job 3 Synthesizer implemented (insight extraction + evidence links + editable prompt template)
-- [ ] Job 4 Reporter implementation pending
+- [x] Job 3 Synthesizer implemented at feature level (insight extraction UI + evidence-link model + debug tooling)
+- [x] Job 4 Reporter Phase 1 implemented (plain text output + Designer JSON output + smoke tests + debug suite)
+- [ ] Job 3 persistence hardening pending (known orphan-insight / missing-link failures in latest runs)
+- [ ] Job 4 Phase 2 interactive trace explorer pending
 
 See `Reference Docs/shared requirements/README.md` for per-app and overall completion percentages.
 

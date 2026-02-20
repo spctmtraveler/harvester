@@ -1,0 +1,33 @@
+{
+  "timestamp": "2026-02-19T22:32:54.2022470-06:00",
+  "prompt_length": 14097,
+  "batch_size": 5,
+  "response_length": 2545,
+  "has_meta": true,
+  "insights_invalid": 0,
+  "meta": {
+    "input_block_count": 5,
+    "input_ids_received": [
+      "CB01.0002",
+      "CB01.0003",
+      "CB01.0008",
+      "CB01.0009",
+      "CB01.0010"
+    ],
+    "insights_produced": 3,
+    "blocks_used_count": 5,
+    "blocks_unused": [],
+    "rule_violations_caught": [],
+    "warnings": [],
+    "model_notes": ""
+  },
+  "insights_valid": 3,
+  "response_time_sec": 7.15,
+  "insights_total": 3,
+  "seed_tags": [
+    "role_senior_development_director",
+    "action_recruit"
+  ],
+  "model": "gpt-4o",
+  "seed_id": "CB01.0002"
+}

@@ -1,37 +1,42 @@
 # Synthesizer Requirements (Job 3)
 
-Source: `Reference Docs/requirements.md` (v3.1)
+Source: `Reference Docs/requirements.md` (v3.1)  
+Last updated: 2026-02-20
 
-Progress: **16/16 complete (100%)**
+Progress: **8/16 complete (50%)**
 
 ## Goal
 
-Cluster coded semantic blocks into discrete insights with evidence links.
+Cluster coded semantic blocks into discrete insights with reliable persisted evidence links.
 
-## Inputs
+## Implementation Status
 
-- [x] Coded semantic blocks from `sentences` table
+- [x] Ingest coded semantic block batches from `sentences` and `sentence_tags`.
+- [x] Generate insight candidates using AI prompt + JSON schema parsing.
+- [x] Validate evidence schema (`sentence_id`, `quote_rank`, `support_role`) before persistence.
+- [x] Derive insight sentiment/flags from linked evidence sentence rows.
+- [x] Expose editable prompt template in-app.
+- [x] Provide queue controls and reset controls for synthesis outputs.
+- [x] Provide smoke test UI and debug export tooling.
+- [x] Record request/response diagnostics in API Traffic view.
+- [ ] Reliably capture non-null `run_id` for each synthesis batch in `ai_runs`.
+- [ ] Reliably finalize `ai_runs.status` from `running` to `completed` / `error`.
+- [ ] Reliably retrieve inserted `insight_id` across proxy/stateless DB sessions.
+- [ ] Guarantee `insight_sentences` links persist for all accepted insights.
+- [ ] Enforce no orphan insights in persisted DB state.
+- [ ] Enforce quote-strength requirement (`>=1 quote_rank >= 2`) in persisted DB state.
+- [ ] Prevent empty-array (`[]`) loops from repeatedly recycling the same queue item.
+- [ ] Complete end-to-end run on latest dataset with non-zero evidence links and no orphan defects.
 
-## Outputs
+## Known Open Defects (Current)
 
-- [x] `Insight` rows created:
-  - [x] Concise summary statement
-  - [x] Flags (`is_problem`, etc.) derived from supporting blocks
-  - [x] `dominant_sentiment` computed
-- [x] `InsightSentence` links populated:
-  - [x] `insight_id` linked
-  - [x] `sentence_id` linked
-  - [x] `quote_rank` (0-3) assigned
-  - [x] `support_role` assigned (`direct_quote`, `evidence`)
+- `ai_runs` rows can remain `running` with missing run linkage in session telemetry.
+- Insight rows can exist without `insight_sentences` links in latest failing runs.
+- Reporter currently reads these rows as uncited/orphan insights and excludes them from claims.
 
-## Hard Rules
+## Hard Rules (Target State)
 
-- [x] **Constraint:** Each insight must have at least 1 supporting block.
-- [x] **Constraint:** Blocks can support multiple insights (many-to-many).
-- [x] **Constraint:** Sentiment score must be mathematically derived (e.g., mean of supporting blocks).
-- [x] **Constraint:** App must expose editable prompt template before/during processing.
-
-## Validation / Smoke Tests
-
-- [x] **Orphan Check:** Ensure no created insight has 0 linked blocks.
-- [x] **Rank Check:** Ensure at least one block per insight has `quote_rank >= 2` (good quote).
+- Every persisted insight must have at least one persisted evidence link.
+- Supporting evidence must only reference input `sentence_id` rows.
+- Sentiment and boolean flags are derived from linked evidence rows.
+- Evidence quality must preserve `quote_rank` and `support_role`.

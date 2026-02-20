@@ -87,3 +87,39 @@ if ($DryRun) {
 } else {
   Write-Host "Done. Uploaded $uploaded file(s)."
 }
+
+# ── Sync transcripts ──
+$transcriptsRoot = Join-Path $workspaceRoot "transcripts"
+if (Test-Path $transcriptsRoot) {
+  $mdFiles = Get-ChildItem -Path $transcriptsRoot -Filter "*.md" -File
+  if ($mdFiles.Count -gt 0) {
+    $remoteTranscripts = "$RemoteRoot/transcripts"
+    Write-Host ""
+    Write-Host "Syncing $($mdFiles.Count) transcript(s) to $remoteTranscripts"
+
+    if ($DryRun) {
+      Write-Host "  [dry-run] ssh $Username@$HostName mkdir -p $remoteTranscripts"
+      foreach ($f in $mdFiles) {
+        Write-Host "  [dry-run] scp $($f.FullName) ${Username}@${HostName}:$remoteTranscripts/$($f.Name)"
+      }
+    } else {
+      & ssh "$Username@$HostName" "mkdir -p '$remoteTranscripts'"
+      if ($LASTEXITCODE -ne 0) {
+        throw "Failed to create remote directory: $remoteTranscripts"
+      }
+      foreach ($f in $mdFiles) {
+        $target = "${Username}@${HostName}:$remoteTranscripts/$($f.Name)"
+        Write-Host "  $($f.Name)"
+        & scp "$($f.FullName)" "$target"
+        if ($LASTEXITCODE -ne 0) {
+          Write-Host "  WARNING: Failed to upload $($f.Name)" -ForegroundColor Yellow
+        } else {
+          $uploaded++
+        }
+      }
+      Write-Host "Transcripts synced."
+    }
+  }
+} else {
+  Write-Host "No transcripts/ folder found — skipping transcript sync."
+}
