@@ -112,8 +112,10 @@
 
     <div class="sec">
       <div class="lbl">Export</div>
-      <button class="ghost" id="btnCopyReport">Copy Plain Text</button>
-      <button class="ghost" id="btnSaveReport">Download Plain Text</button>
+      <button class="ghost" id="btnCopyNarrative">Copy Narrative Report</button>
+      <button class="ghost" id="btnSaveNarrative">Download Narrative Report</button>
+      <button class="ghost" id="btnCopyReport">Copy Cited Report</button>
+      <button class="ghost" id="btnSaveReport">Download Cited Report</button>
       <button class="ghost" id="btnCopyJson">Copy Designer JSON</button>
       <button class="ghost" id="btnSaveJson">Download Designer JSON</button>
     </div>
@@ -132,16 +134,23 @@
 
   <main class="main">
     <nav class="tabs">
-      <div class="tab active" data-tab="report">Report <span class="badge" id="bReport">0</span></div>
+      <div class="tab active" data-tab="narrative">Client Report <span class="badge" id="bNarrative">0</span></div>
+      <div class="tab" data-tab="report">Cited Report <span class="badge" id="bReport">0</span></div>
       <div class="tab" data-tab="json">Designer JSON <span class="badge" id="bJson">0</span></div>
       <div class="tab" data-tab="api">API Traffic <span class="badge" id="bApi">0</span></div>
       <div class="tab" data-tab="tests">Smoke Tests <span class="badge" id="bTests">0</span></div>
       <div class="tab" data-tab="trace">Trace (Later)</div>
     </nav>
 
-    <section id="v-report" class="view active">
-      <h2>Plain-Text Research Report</h2>
+    <section id="v-narrative" class="view active">
+      <h2>Client-Facing Narrative Report</h2>
       <div id="debugHealthBanner" class="health-banner health-neutral">Health: waiting for first data refresh.</div>
+      <div id="narrativeProgress" style="display:none;margin-bottom:10px;padding:10px;background:rgba(31,111,235,.15);border:1px solid var(--blue);border-radius:6px;font:12px var(--mono);color:var(--blue)"></div>
+      <div class="panel"><pre id="narrativeText" style="white-space:pre-wrap;line-height:1.7">Generate outputs to create the client-facing narrative report.</pre></div>
+    </section>
+
+    <section id="v-report" class="view">
+      <h2>Plain-Text Cited Report (Internal / Audit)</h2>
       <div class="panel"><pre id="reportText">Generate outputs to create a report preview.</pre></div>
     </section>
 
@@ -172,10 +181,11 @@
 
   <script type="module">
     import { DBHelper } from "https://happydo.xyz/api_auto_db/db_helper.js";
+    import { askAI } from "https://happydo.xyz/api/ailnl.js";
 
     const APP_NAME = "HWIE_v2";
-    const APP_VERSION = "v1.1";
-    const APP_LAST_UPDATED_UTC = "2026-02-20T23:30:00Z";
+    const APP_VERSION = "v1.2";
+    const APP_LAST_UPDATED_UTC = "2026-02-20T08:00:00Z";
     const VALID_TYPES = new Set(["cover", "section", "standard"]);
     const DEBUG_LIMITS = {
       maxApiTrafficRows: 220,
@@ -199,7 +209,7 @@
     const state = {
       ok: false,
       db: { insights: 0, links: 0, noEvidence: 0, loaded: [], evBy: new Map(), sentenceIds: new Set() },
-      out: { report: "", deck: null, claims: [], noEvidenceDropped: 0, summary: [], groups: { problems: [], solutions: [], mechanisms: [] } },
+      out: { report: "", narrative: "", deck: null, narrativeDeck: null, claims: [], noEvidenceDropped: 0, summary: [], groups: { problems: [], solutions: [], mechanisms: [] } },
       smoke: { ran_at_utc: null, results: [] },
       debug: { apiTraffic: [], logHistory: [] }
     };
@@ -612,7 +622,310 @@
       });
       renderDebugHealth();
       log("ok", `Generated ${claims.length} cited claims and ${deck.slides.length} slides.`);
-      switchTab("report");
+      switchTab("narrative");
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  Narrative AI Pass — transforms raw claims into client deck
+    // ═══════════════════════════════════════════════════════════
+
+    function narrativeProgress(msg) {
+      const el = $("narrativeProgress");
+      if (!el) return;
+      el.style.display = "block";
+      el.textContent = msg;
+    }
+
+    function buildClaimBundle(claims) {
+      // Build a compact data bundle of all claims + evidence for AI
+      return claims.map(c => {
+        const quotes = c.evidence.map(e => {
+          const speaker = sourceName(e.source_file || "").replace(/\.md$/i, "") || "Staff";
+          const qt = (e.clean_text || e.raw_text || "").replace(/\s+/g, " ").trim();
+          return { speaker, quote: qt.length > 400 ? qt.slice(0, 397) + "..." : qt, role: e.support_role };
+        });
+        return { id: c.insight.insight_id, claim: c.claim, section: c.section, quotes };
+      });
+    }
+
+    async function generateNarrative() {
+      if (!state.out.claims?.length) {
+        log("warn", "No claims to narrate. Generate outputs first.", "NARRATIVE");
+        return;
+      }
+      const m = settings();
+      const model = "gpt-4o";
+      const claimBundle = buildClaimBundle(state.out.claims);
+      const totalClaims = claimBundle.length;
+
+      narrativeProgress(`Starting narrative generation (${totalClaims} claims)...`);
+      log("ok", `Starting narrative AI pass with ${totalClaims} claims...`, "NARRATIVE");
+
+      // ── Step 1: Ask AI to group/consolidate claims into themed slides ──
+      narrativeProgress("Step 1/3: Grouping claims into thematic slides...");
+
+      const groupPrompt = `You are a senior qualitative research strategist preparing a client-facing presentation deck based on staff interview findings.
+
+Below are ${totalClaims} research claims from Heart Walk staff interviews. Many overlap, repeat, or cover the same ground.
+
+YOUR TASK: Group these claims into 10-16 thematic slide topics that tell a coherent story.
+
+SLIDE TITLE STYLE — titles should be punchy, insight-driven take-aways — NOT bland topic labels. Examples of GOOD titles:
+- "Staff Are Crucial"
+- "Make It Easy to Ask"
+- "Not Everyone Is a Salesperson"
+- "Execs Are Very Busy — Staff Can Help"
+- "Find Their Why"
+- "Relationships, Not Transactions"
+- "Set Clear Expectations"
+
+Examples of BAD titles (too generic, too academic):
+- "Communication and Resource Issues"
+- "Organizational Challenge Areas"
+- "Volunteer Engagement and Management"
+
+RULES:
+- Every claim ID must appear in exactly one group
+- Aggressively merge duplicates and near-duplicates (many claims say the same thing differently)
+- Drop or merge claims that are vague platitudes (e.g. "effective communication is crucial")
+- Order groups by narrative arc: context → key findings → tensions/challenges → solutions/opportunities
+- Each group should have 3-8 claims (merge thin groups, split bloated ones)
+- Aim for 10-16 total slides — enough to cover themes without redundancy
+
+Return ONLY valid JSON — no markdown fences, no commentary:
+{
+  "slides": [
+    { "title": "Slide Title Here", "claim_ids": [325, 326, 330], "section_type": "context|finding|problem|solution|opportunity" },
+    ...
+  ]
+}
+
+CLAIMS DATA:
+${JSON.stringify(claimBundle, null, 1)}`;
+
+      trackApiTraffic({ stage: "narrative_group_request", model, claims: totalClaims });
+      let groupRaw;
+      try {
+        groupRaw = await askAI(groupPrompt, model, { temperature: 0.2 });
+      } catch (e) {
+        log("err", `Narrative grouping failed: ${e?.message || e}`, "NARRATIVE");
+        return;
+      }
+      const groupStr = String(groupRaw || "").trim();
+      if (!groupStr || groupStr.startsWith("(") || groupStr.length < 20) {
+        log("err", "AI returned empty/error for grouping step: " + groupStr.slice(0, 200), "NARRATIVE");
+        return;
+      }
+      trackApiTraffic({ stage: "narrative_group_response", response_length: groupStr.length });
+
+      let slideGroups;
+      try {
+        const cleaned = groupStr.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
+        slideGroups = JSON.parse(cleaned);
+      } catch (e) {
+        log("err", "Failed to parse grouping JSON: " + e.message, "NARRATIVE");
+        log("info", "Raw grouping response: " + groupStr.slice(0, 500), "NARRATIVE");
+        return;
+      }
+
+      if (!slideGroups?.slides?.length) {
+        log("err", "Grouping returned no slides array.", "NARRATIVE");
+        return;
+      }
+
+      log("ok", `Grouped into ${slideGroups.slides.length} thematic slides.`, "NARRATIVE");
+
+      // ── Step 2: For each slide group, generate narrative content ──
+      const claimMap = new Map();
+      for (const c of claimBundle) claimMap.set(c.id, c);
+
+      const narrativeSlides = [];
+      const BATCH_SIZE = 4; // Process 4 slide groups per AI call to reduce round-trips
+      const slideBatches = chunks(slideGroups.slides, BATCH_SIZE);
+
+      for (let bi = 0; bi < slideBatches.length; bi++) {
+        const batch = slideBatches[bi];
+        const batchStart = bi * BATCH_SIZE + 1;
+        const batchEnd = batchStart + batch.length - 1;
+        narrativeProgress(`Step 2/3: Writing narrative for slides ${batchStart}-${batchEnd} of ${slideGroups.slides.length}...`);
+
+        // Restructure: emphasize quotes, use claims as background only
+        const slidesForPrompt = batch.map(sg => {
+          const groupClaims = sg.claim_ids.map(id => claimMap.get(id)).filter(Boolean);
+          const allQuotes = groupClaims.flatMap(c => c.quotes.map(q => ({
+            speaker: q.speaker,
+            quote: q.quote,
+            context: c.claim  // claim text is background context only
+          })));
+          return {
+            title: sg.title,
+            section_type: sg.section_type,
+            research_context: groupClaims.map(c => c.claim),
+            direct_quotes: allQuotes
+          };
+        });
+
+        const narrativePrompt = `You are writing a polished, client-facing qualitative research report in a slide deck format. This is a FINAL deliverable for C-suite executives. It must read like output from a top strategy consulting firm — sharp, specific, and actionable.
+
+For each slide below, you receive:
+- A slide title (the insight it should communicate)
+- Research context (analyst notes — use as background, NOT as bullet text)
+- Direct quotes from interviewees (your PRIMARY material)
+
+YOUR JOB: Synthesize the quotes and context into compelling slide content. DO NOT simply rephrase the research context into bullets. Instead, write your own sharp observations drawn from the quotes.
+
+FORMAT RULES:
+1. Use • for bullet points. Bullets must be SPECIFIC and DATA-DRIVEN:
+   GOOD: "• First-year staff rate the onboarding learning curve a 2 out of 5."
+   GOOD: "• Staff create their own ELT materials because national resources don't meet market needs."
+   BAD:  "• Effective communication is crucial for organizational processes."
+   BAD:  "• The team faces challenges in recruitment."
+
+2. Include 1-3 direct quotes as Quote Bubbles. Use this EXACT format:
+   > **Quote Bubble — Speaker Name**
+   > "The actual quote."
+
+3. Vary the slide structure — NOT every slide needs the same pattern. Options:
+   - Quote-forward slides: 2-3 powerful quotes with 1-2 bullets (when quotes tell the story)
+   - Insight-forward slides: 3-4 sharp bullets with 1 supporting quote
+   - Mix: alternate bullets and quotes naturally
+
+4. NEVER include citation IDs, insight numbers, timestamps, or internal codes.
+5. Trim quotes to 1-2 punchy sentences. Cut rambling — keep the speaker's voice but edit for impact.
+6. Never repeat the same quote across slides.
+7. Write with authority — no "it appears," "there seems to be," or "it is important to note."
+
+Return ONLY a valid JSON array, no markdown fences:
+[
+  {
+    "title": "The Slide Title",
+    "content": "> **Quote Bubble — Lauren Verrill**\\n> \\"Staff continuity makes all the difference.\\"\\n\\n• Teams that retain senior staff outperform those with high turnover by a wide margin.\\n• Three of five interviewees cited staff changes as the single biggest campaign disruptor.\\n\\n> **Quote Bubble — Katie Belusa**\\n> \\"We had staff change — it derailed our whole campaign.\\""
+  },
+  ...
+]
+
+SLIDES TO WRITE:
+${JSON.stringify(slidesForPrompt, null, 1)}`;
+
+        trackApiTraffic({ stage: "narrative_content_request", batch: bi + 1, slides: batch.length });
+        let contentRaw;
+        try {
+          contentRaw = await askAI(narrativePrompt, model, { temperature: 0.3 });
+        } catch (e) {
+          log("err", `Narrative content batch ${bi + 1} failed: ${e?.message || e}`, "NARRATIVE");
+          continue;
+        }
+        const contentStr = String(contentRaw || "").trim();
+        trackApiTraffic({ stage: "narrative_content_response", batch: bi + 1, response_length: contentStr.length });
+
+        try {
+          const cleaned = contentStr.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
+          const batchSlides = JSON.parse(cleaned);
+          if (Array.isArray(batchSlides)) {
+            for (const s of batchSlides) {
+              narrativeSlides.push({ type: "standard", title: String(s.title || ""), content: String(s.content || "") });
+            }
+          }
+        } catch (e) {
+          log("warn", `Failed to parse narrative batch ${bi + 1}: ${e.message}`, "NARRATIVE");
+          // Try to salvage: use raw content
+          for (const sg of batch) {
+            narrativeSlides.push({ type: "standard", title: sg.title, content: "(Content generation failed for this slide)" });
+          }
+        }
+      }
+
+      // ── Step 3: Generate executive summary ──
+      narrativeProgress("Step 3/3: Writing executive summary...");
+
+      const slideTitles = narrativeSlides.map(s => s.title);
+      const summaryPrompt = `You are writing the executive summary for a professional qualitative research report on Heart Walk staff interviews. This is the first substantive slide the client reads — it must be sharp and specific.
+
+The report contains ${totalClaims} research findings organized into these thematic slides:
+${slideTitles.map((t, i) => `${i + 1}. ${t}`).join("\n")}
+
+Interview subjects: ${[...new Set(state.out.claims.flatMap(c => c.evidence.map(e => sourceName(e.source_file || "").replace(/\.md$/i, ""))))].filter(Boolean).join(", ")}
+
+Write 5-7 executive summary bullet points that:
+- Open with a ONE-SENTENCE research scope statement (who was interviewed, why)
+- Highlight the 3-4 most important and SPECIFIC findings (not vague generalizations)
+- Name at least one key tension or contradiction discovered
+- Close with a forward-looking action statement
+- Use direct, boardroom-ready language — no jargon, no hedging
+- Each bullet should stand alone as a complete insight
+
+GOOD bullet example: "First-year staff describe onboarding as overwhelming, rating the learning curve 2 out of 5; custom materials fill the gap where national resources fall short."
+BAD bullet example: "There is a notable potential for improving onboarding and training processes."
+
+Return ONLY valid JSON, no markdown fences:
+{ "summary_bullets": ["First bullet", "Second bullet", ...] }`;
+
+      trackApiTraffic({ stage: "narrative_summary_request" });
+      let summaryContent = [];
+      try {
+        const summaryRaw = await askAI(summaryPrompt, model, { temperature: 0.3 });
+        const summaryStr = String(summaryRaw || "").trim();
+        trackApiTraffic({ stage: "narrative_summary_response", response_length: summaryStr.length });
+        const cleaned = summaryStr.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
+        const parsed = JSON.parse(cleaned);
+        summaryContent = parsed.summary_bullets || [];
+      } catch (e) {
+        log("warn", "Executive summary generation failed: " + (e?.message || e), "NARRATIVE");
+        summaryContent = [
+          `This report synthesizes ${totalClaims} evidence-backed findings from Heart Walk staff interviews.`,
+          `Findings span ${slideGroups.slides.length} thematic areas covering recruitment, onboarding, tools, and organizational challenges.`
+        ];
+      }
+
+      // ── Assemble final narrative deck ──
+      const narrativeDeck = {
+        config: JSON.parse(JSON.stringify(DESIGNER_CONFIG)),
+        slides: [
+          { type: "cover", title: "Heart Walk Interview Research", subtitle: "Summary of Findings and Recommendations" },
+          { type: "section", title: "Executive Summary" },
+          { type: "standard", title: "Executive Summary", content: summaryContent.map(b => `• ${b}`).join("\n") },
+          ...narrativeSlides
+        ]
+      };
+
+      // Build readable narrative report text
+      const narrativeReport = [
+        "# Heart Walk Interview Research",
+        "",
+        "**Summary of Findings and Recommendations**",
+        "",
+        "---",
+        "",
+        "## Executive Summary",
+        "",
+        ...summaryContent.map(b => `• ${b}`),
+        "",
+        "---",
+        "",
+        ...narrativeSlides.flatMap(s => [
+          `## ${s.title}`,
+          "",
+          s.content,
+          "",
+          "---",
+          ""
+        ])
+      ].join("\n");
+
+      state.out.narrative = narrativeReport;
+      state.out.narrativeDeck = narrativeDeck;
+
+      $("narrativeText").textContent = narrativeReport;
+      $("jsonText").value = JSON.stringify(narrativeDeck, null, 2);
+      set("bNarrative", narrativeSlides.length);
+      set("bJson", narrativeDeck.slides.length);
+
+      const prog = $("narrativeProgress");
+      if (prog) { prog.textContent = `✓ Narrative complete: ${narrativeSlides.length} slides, ${summaryContent.length} summary bullets`; prog.style.borderColor = "var(--ok)"; prog.style.background = "rgba(46,160,67,.15)"; prog.style.color = "var(--ok)"; }
+
+      trackApiTraffic({ stage: "narrative_done", slides: narrativeSlides.length, summary_bullets: summaryContent.length });
+      log("ok", `Narrative complete: ${narrativeSlides.length} themed slides generated.`, "NARRATIVE");
+      switchTab("narrative");
     }
 
     function test() {
@@ -919,12 +1232,21 @@
       }
 
       $("btnRefresh").addEventListener("click", refreshData);
-      $("btnGenerate").addEventListener("click", generate);
+      $("btnGenerate").addEventListener("click", async () => { await generate(); await generateNarrative(); });
       $("btnTest").addEventListener("click", test);
       $("btnOpenApi").addEventListener("click", () => switchTab("api"));
       $("btnDebugBundle").addEventListener("click", downloadDebugBundle);
       $("btnApiRefresh").addEventListener("click", loadApiTraffic);
       $("btnApiDownload").addEventListener("click", downloadDebugBundle);
+      $("btnCopyNarrative").addEventListener("click", async () => {
+        if (!state.out.narrative) return log("warn", "No narrative output yet.", "EXPORT");
+        try { await copyText(state.out.narrative); log("ok", "Copied narrative report.", "EXPORT"); } catch (e) { log("err", e.message, "EXPORT"); }
+      });
+      $("btnSaveNarrative").addEventListener("click", () => {
+        if (!state.out.narrative) return log("warn", "No narrative output yet.", "EXPORT");
+        download(`heart-walk-narrative-${dateStamp()}.md`, state.out.narrative, "text/markdown;charset=utf-8");
+        log("ok", "Downloaded narrative report.", "EXPORT");
+      });
       $("btnCopyReport").addEventListener("click", async () => {
         if (!state.out.report) return log("warn", "No report output yet.", "EXPORT");
         try { await copyText(state.out.report); log("ok", "Copied plain-text report.", "EXPORT"); } catch (e) { log("err", e.message, "EXPORT"); }
@@ -935,12 +1257,14 @@
         log("ok", "Downloaded plain-text report.", "EXPORT");
       });
       $("btnCopyJson").addEventListener("click", async () => {
-        if (!state.out.deck) return log("warn", "No Designer JSON yet.", "EXPORT");
-        try { await copyText(JSON.stringify(state.out.deck, null, 2)); log("ok", "Copied Designer JSON.", "EXPORT"); } catch (e) { log("err", e.message, "EXPORT"); }
+        const d = state.out.narrativeDeck || state.out.deck;
+        if (!d) return log("warn", "No Designer JSON yet.", "EXPORT");
+        try { await copyText(JSON.stringify(d, null, 2)); log("ok", "Copied Designer JSON.", "EXPORT"); } catch (e) { log("err", e.message, "EXPORT"); }
       });
       $("btnSaveJson").addEventListener("click", () => {
-        if (!state.out.deck) return log("warn", "No Designer JSON yet.", "EXPORT");
-        download(`heart-walk-designer-${dateStamp()}.json`, JSON.stringify(state.out.deck, null, 2), "application/json;charset=utf-8");
+        const d = state.out.narrativeDeck || state.out.deck;
+        if (!d) return log("warn", "No Designer JSON yet.", "EXPORT");
+        download(`heart-walk-designer-${dateStamp()}.json`, JSON.stringify(d, null, 2), "application/json;charset=utf-8");
         log("ok", "Downloaded Designer JSON.", "EXPORT");
       });
 
@@ -953,9 +1277,11 @@
         log("ok", "Auto-run triggered via URL parameter.", "AUTORUN");
         try {
           await sleep(500);
-          log("ok", "Generating outputs...", "AUTORUN");
+          log("ok", "Generating cited outputs...", "AUTORUN");
           await generate();
-          log("ok", "Generation complete. Running tests...", "AUTORUN");
+          log("ok", "Cited generation complete. Building narrative...", "AUTORUN");
+          await generateNarrative();
+          log("ok", "Narrative complete. Running tests...", "AUTORUN");
           test();
           log("ok", "Depositing results...", "AUTORUN");
           await autoDepositResults();
@@ -981,11 +1307,12 @@
         const payload = {
           completed_at_utc: new Date().toISOString(),
           claims_count: state.out.claims?.length || 0,
-          slides_count: state.out.deck?.slides?.length || 0,
-          report_length: state.out.report?.length || 0,
+          slides_count: state.out.narrativeDeck?.slides?.length || state.out.deck?.slides?.length || 0,
+          report_length: state.out.narrative?.length || state.out.report?.length || 0,
           test_results: state.smoke || {},
-          report_preview: (state.out.report || "").slice(0, 4000),
-          designer_json_slides_count: state.out.deck?.slides?.length || 0
+          report_preview: (state.out.narrative || state.out.report || "").slice(0, 60000),
+          narrative_slides_count: state.out.narrativeDeck?.slides?.length || 0,
+          cited_claims_count: state.out.claims?.length || 0
         };
         const payloadJson = JSON.stringify(payload);
         const escaped = payloadJson.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
