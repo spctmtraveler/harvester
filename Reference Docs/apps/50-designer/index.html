@@ -338,6 +338,30 @@
             align-items: center;
             text-align: center;
         }
+        #field-typo-indicator {
+            position: fixed;
+            left: 50%;
+            bottom: 16px;
+            transform: translateX(-50%);
+            z-index: 7000;
+            background: rgba(30,29,33,0.88);
+            color: #f5f5f5;
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 999px;
+            padding: 6px 12px;
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.15px;
+            box-shadow: 0 8px 22px rgba(0,0,0,0.28);
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.14s ease;
+            display: none;
+        }
+        #field-typo-indicator.visible {
+            display: block;
+            opacity: 1;
+        }
 
         /* Outlines */
         [contenteditable]:focus { outline: 4px dashed #aaa; background: rgba(255,255,255,0.8); border-radius: 4px; padding: 10px; box-shadow: 0 5px 15px rgba(0,0,0,0.1); z-index: 20; }
@@ -451,6 +475,8 @@
 <div id="presentation-container">
     <div id="slide-stage"></div>
 </div>
+
+<div id="field-typo-indicator" aria-live="polite"></div>
 
 <div id="import-modal"><div class="modal-content"><h3>Import Deck</h3><label class="btn-file-upload">📂 Upload JSON File<input type="file" id="file-upload" accept=".json" style="display:none" onchange="handleFileSelect(this)"></label><div class="import-divider">OR</div><button class="btn-outline" style="width:100%" onclick="importFromClipboard()">📋 Read from Clipboard</button><div class="import-divider">OR</div><textarea id="import-area" placeholder="Paste JSON here — AI prose wrapping is OK, we'll extract the JSON automatically."></textarea><div class="modal-actions"><button class="btn-close" style="margin:0" onclick="closeImport()">Cancel</button><button class="btn-outline" style="background:var(--powder-blue); color:white; border:none;" onclick="processManualImport()">Load Text</button></div></div></div>
 <div id="import-notice"><div class="notice-title">Import Notes</div><div id="notice-body"></div><button class="notice-ok" onclick="dismissNotice()">OK</button></div>
@@ -612,6 +638,40 @@
             ref = ref[key];
         });
         ref[last] = value;
+    }
+
+    function formatSignedDelta(v) {
+        const n = Number(v || 0);
+        if (!Number.isFinite(n) || n === 0) return '0';
+        return n > 0 ? `+${n}` : `${n}`;
+    }
+
+    function showFieldTypoIndicator(field) {
+        const el = document.getElementById('field-typo-indicator');
+        if (!el || !field) return;
+        const scale = String(field.textScale || 'normal');
+        const delta = Number(field.fontDelta || 0);
+        el.textContent = `P: ${scale}  ·  Δ ${formatSignedDelta(delta)}px`;
+        el.classList.add('visible');
+    }
+
+    function hideFieldTypoIndicator() {
+        const el = document.getElementById('field-typo-indicator');
+        if (!el) return;
+        el.classList.remove('visible');
+    }
+
+    function getFieldFromEditable(el) {
+        if (!el) return null;
+        const role = el.dataset.role;
+        if (!role || !['field-text', 'field-quote-text', 'field-quote-attrib'].includes(role)) return null;
+        const slideEl = el.closest('.slide');
+        if (!slideEl) return null;
+        const index = parseInt(slideEl.dataset.index, 10);
+        if (Number.isNaN(index)) return null;
+        const slide = slidesData[index];
+        ensureSlideSchema(slide);
+        return getByPath(slide, el.dataset.fieldPath);
     }
 
     function imageAlignStyle(align) {
@@ -1190,18 +1250,21 @@
             field.text = htmlToMd(el.innerHTML);
             if (el.dataset.fieldPath === 'bodyField') slide.content = field.text;
             saveState();
+            showFieldTypoIndicator(field);
             return;
         }
         if (el.dataset.role === 'field-quote-text') {
             const field = getByPath(slide, el.dataset.fieldPath);
             field.quoteText = el.innerText;
             saveState();
+            showFieldTypoIndicator(field);
             return;
         }
         if (el.dataset.role === 'field-quote-attrib') {
             const field = getByPath(slide, el.dataset.fieldPath);
             field.quoteAttribution = el.innerText;
             saveState();
+            showFieldTypoIndicator(field);
             return;
         }
 
@@ -1244,6 +1307,7 @@
             const next = (Number(field.fontDelta || 0) + step);
             field.fontDelta = Math.max(-12, Math.min(12, next));
             render(); saveState(); showSlide(currentSlideIndex);
+            showFieldTypoIndicator(field);
             return;
         }
 
@@ -1456,7 +1520,23 @@
         saveState();
         render();
         showSlide(currentSlideIndex);
+        showFieldTypoIndicator(ctx.field);
     }
+
+    container.addEventListener('focusin', (e) => {
+        const field = getFieldFromEditable(e.target);
+        if (field) showFieldTypoIndicator(field);
+    });
+
+    container.addEventListener('focusout', (e) => {
+        const target = e.relatedTarget;
+        if (target && target.closest && target.closest('.field-shell')) return;
+        setTimeout(() => {
+            const active = document.activeElement;
+            if (active && active.closest && active.closest('[data-role="field-text"], [data-role="field-quote-text"], [data-role="field-quote-attrib"]')) return;
+            hideFieldTypoIndicator();
+        }, 0);
+    });
 
     function showContextMenu(x, y) { const menu = document.getElementById('context-menu'); menu.style.left = x + 'px'; menu.style.top = y + 'px'; menu.classList.add('visible'); }
     function setShapeColor(colorVar) { slidesData[currentSlideIndex].shapeColor = colorVar; render(); saveState(); document.getElementById('context-menu').classList.remove('visible'); }
