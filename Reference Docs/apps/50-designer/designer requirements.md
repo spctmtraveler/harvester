@@ -61,115 +61,123 @@ Toggle this by clicking the "Mode" text in Settings.
 Use `**bold**`, `*italic*`, `### Header`, and `* Bullet points`.
 When exporting to PPTX, `### Headers` are converted to Bold text with extra spacing.
 
-## 3. JSON Schema Definition
+## 3. Designer Import Instruction Set (Canonical)
 
-To ingest data into the app, generate a JSON object with two root keys: `config` and `slides`.
+Use this section as the source-of-truth for producing JSON that imports cleanly.
 
-### The Config Object
-```json
-{
-  "config": {
-    "font-title": "'Source Sans 3', sans-serif",
-    "size-title": "32pt",
-    "color-title": "#16bfec",
-    "showShapes": true,
-    "globalX": 0,
-    "globalY": 0,
-    "typeOffsets": {
-        "cover": { "x": 0, "y": 0 },
-        "section": { "x": 0, "y": 0 },
-        "standard": { "x": 0, "y": 0 },
-        "two-column": { "x": 0, "y": 0 }
-    }
-  }
-}
-```
+### What Designer does with imported JSON
 
-### The Slides Array
+Designer imports deck JSON, normalizes missing pieces, renders editable slides, then preserves structure on export/PPTX generation.
+
+Pipeline on import:
+1. Parse JSON (raw object, bare array, or JSON extracted from AI prose wrappers).
+2. Normalize to `{ config, slides }` shape.
+3. Sanitize each slide/field (`ensureSlideSchema` + field defaults).
+4. Render slides and persist to localStorage.
+5. Keep unknown keys for round-trip safety.
+
+### Minimum JSON that always imports
+
 ```json
 {
   "slides": [
-    {
-      "type": "cover",
-      "title": "Project Alpha",
-      "subtitle": "Q1 Report",
-      "shapeColor": "var(--c-emotional)"
-    },
-    {
-      "type": "standard",
-      "title": "Key Metrics",
-      "content": "### Growth\n* Revenue up 20%",
-      "bodyField": {
-        "mode": "text",
-        "text": "### Growth\n* Revenue up 20%",
-        "imageUrl": "",
-        "imageAlign": "center",
-        "imagePrompt": "A chart showing year-over-year revenue growth",
-        "quoteText": "",
-        "quoteAttribution": ""
-      }
-    },
-    {
-      "type": "two-column",
-      "title": "What Leaders Say",
-      "content": "• Key insight\n• Another point",
-      "columns": {
-        "splitPct": 55,
-        "leftField": {
-          "mode": "text",
-          "text": "• Key insight\n• Another point",
-          "imageUrl": "",
-          "imageAlign": "center",
-          "imagePrompt": "",
-          "quoteText": "",
-          "quoteAttribution": ""
-        },
-        "rightField": {
-          "mode": "quote",
-          "text": "",
-          "imageUrl": "",
-          "imageAlign": "center",
-          "imagePrompt": "",
-          "quoteText": "This was a game-changer for us.",
-          "quoteAttribution": "Lauren Verrill"
-        }
-      }
-    }
+    { "type": "standard", "title": "Hello", "content": "* One bullet" }
   ]
 }
 ```
 
-### Slide Types
+`config` is optional. `slides` is required (or a bare array of slide objects).
 
-| Type | Description |
-|------|-------------|
-| `cover` | Title + subtitle, centered, decorative shape |
-| `section` | Section divider, centered H1 |
-| `standard` | Title + single content field (bodyField) |
-| `two-column` | Title + two side-by-side fields with draggable divider |
+### Root-level contract
 
-### Field Object Properties
+| Key | Required | Purpose | If missing / invalid |
+|-----|----------|---------|----------------------|
+| `slides` | Yes (or bare array input) | Slide data to render/edit/export | Import fails only if no recoverable slides are found |
+| `config` | No | Theme/font/color/layout settings | Current/default settings are used |
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `mode` | `"text"` / `"image"` / `"quote"` | Determines rendering mode |
-| `text` | string | Markdown text content (used when mode=text) |
-| `imageUrl` | string | URL or data-URI (used when mode=image) |
-| `imageAlign` | `"center"` / `"left"` / `"right"` / `"top"` / `"bottom"` | Image alignment |
-| `imagePrompt` | string | AI-suggested image description (shown as hint) |
-| `quoteText` | string | Quote body text (used when mode=quote) |
-| `quoteAttribution` | string | Speaker name for quote attribution |
+Accepted root shapes:
+- Object with `slides`
+- Object with `deck` (auto-mapped to `slides`)
+- Single slide object (wrapped into one-slide deck)
+- Bare array of slides (wrapped as `{ config:null, slides:[...] }`)
 
-## 4. Robust Ingestion Strategy
+### Slide object contract
 
-The app includes a Sanitizer Engine to handle imperfect JSON input from external AI agents.
+| Key | Required | Used by | If missing / invalid |
+|-----|----------|---------|----------------------|
+| `type` | No | Selects layout renderer | Defaults to `standard`; unknown values are coerced to `standard` |
+| `title` | No | Header text | Defaults to `"Untitled Deck"` for cover, else empty |
+| `subtitle` | Cover only (practical) | Cover subtitle | Defaults to empty |
+| `shapeColor` | No | Cover/section decorative shape color | Falls back to app default shape color |
+| `content` | No (legacy support) | Legacy text source; still used as fallback when fields missing | Used to auto-build missing field text |
+| `bodyField` | Standard only (practical) | Main editable field for standard slide | Auto-created from `content` |
+| `columns` | Two-column only (practical) | Left/right editable fields + split | Auto-created with default left/right fields |
+
+Supported `type` values and intent:
+- `cover`: Deck title slide
+- `section`: Divider slide
+- `standard`: Title + one content field (`bodyField`)
+- `two-column`: Title + two independent fields (`columns.leftField`, `columns.rightField`)
+
+### Field object contract (for `bodyField`, `leftField`, `rightField`)
+
+| Key | Required | What it is for | Runtime behavior |
+|-----|----------|----------------|------------------|
+| `mode` | No | Rendering mode selector | Invalid/missing → `text` |
+| `text` | No | Markdown-like body copy (text mode) | Used when `mode="text"`; also fallback text source |
+| `imageUrl` | No | URL/data-URI for image mode | Used when `mode="image"`; empty shows drop zone |
+| `imageAlign` | No | Image anchoring (`center`,`left`,`right`,`top`,`bottom`) | Invalid/missing → `center` |
+| `imagePrompt` | No | AI image generation hint/prompt text | Displayed in empty image field; editable; used by AI generate/regenerate |
+| `imageHistory` | No | Previous image versions for undo | If present and array, used for history undo button; else defaults empty |
+| `quoteText` | No | Quote body text for quote mode | Used when `mode="quote"` |
+| `quoteAttribution` | No | Quote speaker label | Editable; can be hidden by toggle without deleting value |
+| `textScale` | No | Paragraph scale (`large`,`normal`,`small`) | Invalid/missing → `normal` |
+| `fontDelta` | No | Per-field size nudge | Coerced/clamped to `-12..12` |
+
+### Two-column-specific keys
+
+| Key | Required | Purpose | If missing / invalid |
+|-----|----------|---------|----------------------|
+| `columns.splitPct` | No | Divider position (% left width) | Coerced/clamped to `20..80` |
+| `columns.leftField` | No (practical) | Left content panel | Auto-created |
+| `columns.rightField` | No (practical) | Right content panel | Auto-created |
+
+### Config keys (common)
+
+These are optional and mainly affect appearance/positioning:
+- Typography and color keys like `font-title`, `size-title`, `color-title` (and same pattern for subtitle/h1/h2/h3/p-*).
+- `showShapes` (cover/section decor on/off).
+- `globalX`, `globalY` (global deck offset).
+- `typeOffsets.cover|section|standard|two-column` (template-level offsets).
+- `hideAttrib` (hide quote attributions visually / PPT export while preserving underlying data).
+
+If config keys are absent, Designer uses defaults and still imports.
+
+## 4. Import Sanitizer Behavior (What happens automatically)
 
 > **Philosophy: "Accept everything, break nothing."**
 
-- **Missing Fields**: If `type` is missing, defaults to `standard`. If `config` is missing, loads default brand palette. If `bodyField` is missing on a standard slide, it is auto-created from `content`.
-- **Unexpected Fields**: Preserved in JSON but ignored for rendering. Data survives Export → Modify → Import cycles.
-- **Backward Compatibility**: Legacy slides without `bodyField` or `columns` are auto-migrated via `ensureSlideSchema()`.
-- **Reporting**: Toast notifications list what was auto-corrected.
+Automatic corrections during import:
+- Missing slide `type` → `standard`.
+- Unknown slide type → coerced to `standard`.
+- Missing `bodyField` on `standard` → created from `content`.
+- Missing `columns` on `two-column` → created with safe defaults.
+- Missing field internals (`mode`, `imageAlign`, etc.) → defaulted/coerced.
+- Markdown-style legacy quote-bubble text may be auto-migrated into proper quote field layout.
+
+Data preservation rules:
+- Unknown/unexpected keys are preserved in the JSON object (not used for rendering unless recognized).
+- Import warnings are surfaced so operators know what was auto-corrected.
+- Round-trip intent: Import → Edit → Export should not silently destroy non-schema keys.
+
+### Practical authoring rules for clean imports
+
+1. Always provide `slides` as an array of objects.
+2. Prefer explicit field objects (`bodyField`, `leftField`, `rightField`) over legacy `content`-only slides.
+3. Keep `type` to supported values only.
+4. Keep `mode` consistent with the populated field payload (`text` vs `imageUrl` vs `quoteText`).
+5. Use `imagePrompt` whenever you want AI generation to be available in that field.
+6. Treat `content` as compatibility text; canonical editing targets are field objects.
 
 ## 5. Server Infrastructure
 
@@ -200,6 +208,6 @@ The app includes a Sanitizer Engine to handle imperfect JSON input from external
 - [x] Markdown parsing and live editing
 - [x] Template/global/local positioning system
 - [x] JSON import/export with sanitization
-- [ ] AI image generation (DALL-E 3 integration — deferred, proxy extension needed)
-- [ ] Image version history (deferred)
-- [ ] Image prompt editing and regeneration (deferred)
+- [x] AI image generation (via `generateImage()` in ailnl.js — editable prompts, regeneration)
+- [x] Image version history (per-field stack, undo button, max 10)
+- [x] Image prompt editing and regeneration

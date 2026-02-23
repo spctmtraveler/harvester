@@ -179,14 +179,16 @@
             border-radius: 4px;
             border: 1px solid rgba(30,29,33,0.22);
             background: rgba(240,240,240,0.95);
+            color: #666;
             cursor: pointer;
             transition: background 0.15s, border-color 0.15s, color 0.15s;
             padding: 0;
+            font-size: 0;
+            overflow: hidden;
         }
         .field-mode-btn:hover { background: #e6e6e6; border-color: rgba(30,29,33,0.35); }
-        .field-mode-btn.active { background: #dadada; border-color: rgba(30,29,33,0.45); }
-        .field-mode-btn i { font-size: 14px; color: #666; pointer-events: none; }
-        .field-mode-btn.active i { color: #333; }
+        .field-mode-btn.active { background: #dadada; border-color: rgba(30,29,33,0.45); color: #333; }
+        .field-mode-btn .mode-ico { width: 14px; height: 14px; display: block; pointer-events: none; }
         .field-font-stepper { display: flex; flex-direction: column; gap: 3px; }
         .field-font-step-btn {
             width: 22px; height: 13px;
@@ -273,7 +275,65 @@
             font-family: var(--font-h3);
             font-size: calc(var(--size-h3) + var(--field-font-delta, 0px));
             color: var(--color-h3);
+            min-height: 14px;
         }
+        .quote-attrib.quote-attrib-empty {
+            margin-top: 4px;
+            font-size: 8px;
+            line-height: 0.7;
+            opacity: 0.35;
+            min-height: 8px;
+        }
+        /* ── AI Image Generation ── */
+        .ai-gen-prompt {
+            width: 100%; max-width: 340px;
+            padding: 5px 8px;
+            border: 1px solid #d3d3d3; border-radius: 5px;
+            font-size: 11px; font-style: italic; color: #666;
+            resize: none; line-height: 1.3;
+            font-family: 'Source Sans 3', sans-serif;
+        }
+        .ai-gen-btn {
+            padding: 6px 14px;
+            border: 1px solid #965ADB; background: #965ADB; color: #fff;
+            border-radius: 5px; font-size: 12px; font-weight: 600;
+            cursor: pointer; white-space: nowrap; transition: background 0.15s;
+        }
+        .ai-gen-btn:hover { background: #7d44c0; }
+        .ai-gen-btn:disabled { opacity: 0.5; cursor: wait; }
+        .image-regen-btn {
+            position: absolute; top: 8px; left: 8px; z-index: 20;
+            width: 30px; height: 30px; border-radius: 50%;
+            border: 1px solid rgba(30,29,33,0.3);
+            background: rgba(255,255,255,0.9);
+            cursor: pointer; display: flex; align-items: center; justify-content: center;
+            font-size: 14px; opacity: 0; transition: opacity 0.18s;
+        }
+        .image-field:hover .image-regen-btn { opacity: 1; }
+        .image-regen-btn:hover { background: white; border-color: #965ADB; }
+        .image-history-btn {
+            position: absolute; top: 8px; right: 8px; z-index: 20;
+            min-width: 30px; height: 30px; border-radius: 15px;
+            border: 1px solid rgba(30,29,33,0.3);
+            background: rgba(255,255,255,0.9);
+            cursor: pointer; display: flex; align-items: center; justify-content: center;
+            font-size: 12px; opacity: 0; transition: opacity 0.18s;
+            padding: 0 8px; gap: 4px;
+            font-family: 'Source Sans 3', sans-serif;
+        }
+        .image-field:hover .image-history-btn { opacity: 1; }
+        .image-history-btn:hover { background: white; border-color: var(--powder-blue); }
+        .image-history-btn .history-count { font-size: 10px; color: #666; font-weight: 600; }
+        /* Smoke test results modal */
+        #smoke-results { position: fixed; inset: 0; background: rgba(0,0,0,0.8); justify-content: center; align-items: center; z-index: 7000; display: none; }
+        #smoke-results.open { display: flex; }
+        .smoke-content { background: white; padding: 25px; border-radius: 8px; width: 520px; max-height: 80vh; overflow-y: auto; box-shadow: 0 20px 50px rgba(0,0,0,0.5); font-family: 'Source Sans 3', sans-serif; }
+        .smoke-content h3 { margin: 0 0 12px 0; color: var(--powder-blue); }
+        .smoke-item { padding: 6px 0; border-bottom: 1px solid #eee; font-size: 13px; display: flex; gap: 8px; align-items: flex-start; }
+        .smoke-item:last-child { border-bottom: none; }
+        .smoke-pass { color: #22D460; font-weight: bold; }
+        .smoke-fail { color: #FF5C5C; font-weight: bold; }
+        .smoke-detail { color: #888; font-size: 11px; margin-left: 24px; margin-top: 2px; }
         .image-field {
             position: relative;
             width: 100%;
@@ -422,6 +482,10 @@
             <input type="checkbox" id="toggle-shapes" onchange="updateTheme()">
             <label for="toggle-shapes">Show Decorative Shapes</label>
         </div>
+        <div class="toggle-row">
+            <input type="checkbox" id="toggle-hide-attrib" onchange="toggleHideAttrib()">
+            <label for="toggle-hide-attrib">Hide Quote Attributions</label>
+        </div>
         <div class="nudge-container">
             <div class="scope-label" id="scope-btn" onclick="toggleScope()">Mode: ALL SLIDES</div>
             <div class="arrow-grid">
@@ -437,6 +501,9 @@
         </div>
 
         <div class="action-row"><button class="btn-outline" onclick="exportDeck()">Export JSON</button><button class="btn-outline" onclick="openImport()">Import JSON</button></div>
+        <div class="ppt-row">
+            <button class="btn-outline" style="font-size:12px; padding:6px;" onclick="runSmokeTests()">🧪 Run Smoke Tests</button>
+        </div>
         
         <button class="btn-close" onclick="toggleSettings()">Close</button>
     </div>
@@ -480,6 +547,7 @@
 
 <div id="import-modal"><div class="modal-content"><h3>Import Deck</h3><label class="btn-file-upload">📂 Upload JSON File<input type="file" id="file-upload" accept=".json" style="display:none" onchange="handleFileSelect(this)"></label><div class="import-divider">OR</div><button class="btn-outline" style="width:100%" onclick="importFromClipboard()">📋 Read from Clipboard</button><div class="import-divider">OR</div><textarea id="import-area" placeholder="Paste JSON here — AI prose wrapping is OK, we'll extract the JSON automatically."></textarea><div class="modal-actions"><button class="btn-close" style="margin:0" onclick="closeImport()">Cancel</button><button class="btn-outline" style="background:var(--powder-blue); color:white; border:none;" onclick="processManualImport()">Load Text</button></div></div></div>
 <div id="import-notice"><div class="notice-title">Import Notes</div><div id="notice-body"></div><button class="notice-ok" onclick="dismissNotice()">OK</button></div>
+<div id="smoke-results"><div class="smoke-content"><h3>🧪 Smoke Test Results</h3><div id="smoke-body"></div><button class="btn-close" style="margin-top:12px" onclick="document.getElementById('smoke-results').classList.remove('open')">Close</button></div></div>
 <div id="error-modal"><div class="error-content"><h3>Import Error</h3><p id="error-message">Content is not valid JSON</p><button class="btn-close" onclick="closeError()">OK</button></div></div>
 <div id="context-menu">
     <div class="color-option" onclick="setShapeColor('var(--c-mental)')"><div class="swatch" style="background:var(--c-mental)"></div>Mental</div>
@@ -491,8 +559,8 @@
 </div>
 
 <script>
-    const APP_VERSION = "v3.6";
-    const APP_LAST_UPDATED_UTC = "2026-02-20T23:59:00Z";
+    const APP_VERSION = "v3.8";
+    const APP_LAST_UPDATED_UTC = "2026-02-23T12:00:00Z";
 
     function formatLocalLastUpdated(utcIso) {
         const dt = new Date(utcIso);
@@ -575,11 +643,49 @@
             imageUrl: base.imageUrl || '',
             imageAlign,
             imagePrompt: base.imagePrompt || '',   // AI-suggested image idea (preserved across mode switches)
+            imageHistory: Array.isArray(base.imageHistory) ? base.imageHistory : [],
             quoteText: base.quoteText ?? fallbackText,
             quoteAttribution: base.quoteAttribution || '',
             textScale,
             fontDelta
         };
+    }
+
+    function extractQuoteBubbleFromMarkdown(text) {
+        const lines = String(text || '').split(/\r?\n/);
+        if (!lines.length) return null;
+
+        let markerIdx = -1;
+        for (let i = 0; i < lines.length; i++) {
+            if (/^\s*>\s*\*\*\s*Quote\s*Bubble/i.test(lines[i] || '')) {
+                markerIdx = i;
+                break;
+            }
+        }
+        if (markerIdx < 0) return null;
+
+        const marker = String(lines[markerIdx] || '');
+        const speakerMatch = marker.match(/quote\s*bubble\s*[—-]\s*(.+?)\*\*/i);
+        const speaker = (speakerMatch?.[1] || '').trim();
+
+        let quoteIdx = -1;
+        for (let i = markerIdx + 1; i < lines.length; i++) {
+            if (/^\s*>/.test(lines[i] || '')) {
+                quoteIdx = i;
+                break;
+            }
+            if (String(lines[i] || '').trim() !== '') break;
+        }
+        if (quoteIdx < 0) return null;
+
+        let quoteText = String(lines[quoteIdx] || '').replace(/^\s*>\s*/, '').trim();
+        quoteText = quoteText.replace(/^"+/, '').replace(/"+$/, '').trim();
+        if (!quoteText) return null;
+
+        const keep = lines.filter((_, idx) => idx !== markerIdx && idx !== quoteIdx);
+        const leftText = keep.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+
+        return { leftText, quoteText, speaker };
     }
 
     /** Recognized slide types → rendering pipelines */
@@ -604,6 +710,20 @@
         if (slide.type === 'standard') {
             slide.bodyField = ensureFieldDefaults(slide.bodyField, slide.content || '');
             if (!slide.content) slide.content = slide.bodyField.text || '';
+
+            if (slide.bodyField.mode === 'text') {
+                const parsedQuote = extractQuoteBubbleFromMarkdown(slide.bodyField.text || slide.content || '');
+                if (parsedQuote?.quoteText) {
+                    slide.type = 'two-column';
+                    slide.content = parsedQuote.leftText || '';
+                    slide.columns = {
+                        splitPct: 55,
+                        leftField: ensureFieldDefaults({ mode: 'text', text: parsedQuote.leftText || '' }, parsedQuote.leftText || ''),
+                        rightField: ensureFieldDefaults({ mode: 'quote', quoteText: parsedQuote.quoteText, quoteAttribution: parsedQuote.speaker || '' }, '')
+                    };
+                    delete slide.bodyField;
+                }
+            }
         }
 
         // Two-column: ensure columns + sub-fields exist
@@ -684,9 +804,9 @@
 
     // ── SVG icon paths for mode selector ──
     const MODE_ICONS = {
-        text: '<i class="fa-solid fa-font" aria-hidden="true"></i>',
-        image: '<i class="fa-solid fa-image" aria-hidden="true"></i>',
-        quote: '<i class="fa-solid fa-comment-dots" aria-hidden="true"></i>'
+        text: '<svg class="mode-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h12M4 17h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+        image: '<svg class="mode-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="6" width="16" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 15l2-2 3 4 3-3 2 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="9" cy="10" r="1" fill="currentColor"/></svg>',
+        quote: '<svg class="mode-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 10.5c0-2.2 1.2-3.8 3.5-4.5v2c-1.1.4-1.5 1.1-1.5 2.5H11V18H7.5v-7.5zm9 0c0-2.2 1.2-3.8 3.5-4.5v2c-1.1.4-1.5 1.1-1.5 2.5H20V18h-3.5v-7.5z" fill="currentColor"/></svg>'
     };
 
     function renderFieldControls(fieldPath, field) {
@@ -707,16 +827,28 @@
         if (field.mode === 'image') {
             if (field.imageUrl) {
                 // ── Image loaded: show it with alignment & edge-click ──
+                const regenBtn = field.imagePrompt
+                    ? `<button class="image-regen-btn" data-role="ai-regen-btn" data-field-path="${fieldPath}" title="Regenerate image with AI">🔄</button>`
+                    : '';
+                const historyLen = (field.imageHistory || []).length;
+                const historyBtn = historyLen > 0
+                    ? `<button class="image-history-btn" data-role="image-history-btn" data-field-path="${fieldPath}" title="Undo to previous image (${historyLen} in history)">↩ <span class="history-count">${historyLen}</span></button>`
+                    : '';
                 return `<div class="field-body" data-mode="image">
                     <div class="image-field" data-role="image-field" data-field-path="${fieldPath}" data-image-align="${field.imageAlign}" style="${imageAlignStyle(field.imageAlign)}">
+                        ${regenBtn}
+                        ${historyBtn}
                         <img src="${escapeHtml(field.imageUrl)}" alt="Slide image">
                     </div>
                 </div>`;
             }
-            // ── No image: show drop-zone + optional AI prompt hint ──
-            const hintHtml = field.imagePrompt
-                ? `<div class="drop-hint">💡 Suggested: "${escapeHtml(field.imagePrompt)}"</div>`
-                : '';
+            // ── No image: show drop-zone + AI prompt + generate ──
+            const promptText = field.imagePrompt || '';
+            const aiGenHtml = promptText ? `
+                    <div class="drop-hint">💡 AI Image Prompt:</div>
+                    <textarea class="ai-gen-prompt" data-role="ai-prompt-edit" data-field-path="${fieldPath}" rows="2">${escapeHtml(promptText)}</textarea>
+                    <button class="ai-gen-btn" data-role="ai-gen-btn" data-field-path="${fieldPath}">🎨 Generate with AI</button>
+            ` : '';
             return `<div class="field-body" data-mode="image">
                 <div class="image-drop-zone" data-role="image-drop-zone" data-field-path="${fieldPath}">
                     <svg class="drop-icon" viewBox="0 0 24 24"><path d="M19 7v2.99s-1.99.01-2 0V7h-3s.01-1.99 0-2h3V2h2v3h3v2h-3zm-3 4V8h-3V5H5a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2v-8h-3zM5 19l3-4 2 3 3-4 4 5H5z"/></svg>
@@ -726,17 +858,21 @@
                         <input type="text" placeholder="https://..." data-role="field-image-url" data-field-path="${fieldPath}">
                         <button data-role="url-load-btn" data-field-path="${fieldPath}">Load</button>
                     </div>
-                    ${hintHtml}
+                    ${aiGenHtml}
                     <input type="file" accept="image/*" data-role="field-image-file" data-field-path="${fieldPath}">
                 </div>
             </div>`;
         }
 
         if (field.mode === 'quote') {
+            const quoteAttribution = String(field.quoteAttribution ?? '').trim();
+            const hideAttrib = !!appConfig.hideAttrib;
+            const attribClass = (quoteAttribution && !hideAttrib) ? 'quote-attrib' : 'quote-attrib quote-attrib-empty';
+            const attribText = (quoteAttribution && !hideAttrib) ? escapeHtml(quoteAttribution) : '&nbsp;';
             return `<div class="field-body" data-mode="quote">
                 <div class="quote-vector-box" style="--field-font-delta:${field.fontDelta || 0}px;">
                     <div class="quote-body" contenteditable="true" data-role="field-quote-text" data-field-path="${fieldPath}">${escapeHtml(field.quoteText || '')}</div>
-                    <div class="quote-attrib" contenteditable="true" data-role="field-quote-attrib" data-field-path="${fieldPath}">${escapeHtml(field.quoteAttribution || 'Chair')}</div>
+                    <div class="${attribClass}" contenteditable="true" data-role="field-quote-attrib" data-field-path="${fieldPath}">${attribText}</div>
                 </div>
             </div>`;
         }
@@ -950,6 +1086,7 @@
         }
 
         if (typeof appConfig.showShapes !== 'boolean') appConfig.showShapes = true;
+        if (typeof appConfig.hideAttrib !== 'boolean') appConfig.hideAttrib = false;
         
         // Ensure Template Offsets exist (Backward Compat)
         if(!appConfig.typeOffsets) appConfig.typeOffsets = {};
@@ -965,7 +1102,8 @@
     function saveState() { localStorage.setItem('heart_walk_deck_pro_v3', JSON.stringify({ config: appConfig, slides: slidesData })); }
     function applyConfig() { document.documentElement.style.setProperty('--global-x', (appConfig.globalX || 0) + 'px'); document.documentElement.style.setProperty('--global-y', (appConfig.globalY || 0) + 'px'); if (appConfig.showShapes) document.body.classList.add('show-shapes'); else document.body.classList.remove('show-shapes'); types.forEach(t => { document.documentElement.style.setProperty(`--font-${t.id}`, appConfig[`font-${t.id}`] || "'Source Sans 3', sans-serif"); document.documentElement.style.setProperty(`--size-${t.id}`, appConfig[`size-${t.id}`] || '18pt'); document.documentElement.style.setProperty(`--color-${t.id}`, appConfig[`color-${t.id}`] || '#1e1d21'); }); }
     function updateTheme() { appConfig.showShapes = document.getElementById('toggle-shapes').checked; types.forEach(t => { appConfig[`font-${t.id}`] = document.getElementById(`font-${t.id}`).value; appConfig[`size-${t.id}`] = document.getElementById(`size-${t.id}`).value + 'pt'; }); applyConfig(); saveState(); }
-    function updateSettingsUI() { document.getElementById('toggle-shapes').checked = (typeof appConfig.showShapes === 'boolean') ? appConfig.showShapes : true; types.forEach(t => { const fEl = document.getElementById(`font-${t.id}`); const sEl = document.getElementById(`size-${t.id}`); const cBtn = document.getElementById(`color-btn-${t.id}`); if(fEl) fEl.value = appConfig[`font-${t.id}`] || "'Source Sans 3', sans-serif"; if(sEl) sEl.value = (appConfig[`size-${t.id}`] || '').replace('pt',''); if(cBtn) cBtn.style.backgroundColor = appConfig[`color-${t.id}`] || '#000'; }); }
+    function toggleHideAttrib() { appConfig.hideAttrib = document.getElementById('toggle-hide-attrib').checked; saveState(); render(); showSlide(currentSlideIndex); }
+    function updateSettingsUI() { document.getElementById('toggle-shapes').checked = (typeof appConfig.showShapes === 'boolean') ? appConfig.showShapes : true; document.getElementById('toggle-hide-attrib').checked = !!appConfig.hideAttrib; types.forEach(t => { const fEl = document.getElementById(`font-${t.id}`); const sEl = document.getElementById(`size-${t.id}`); const cBtn = document.getElementById(`color-btn-${t.id}`); if(fEl) fEl.value = appConfig[`font-${t.id}`] || "'Source Sans 3', sans-serif"; if(sEl) sEl.value = (appConfig[`size-${t.id}`] || '').replace('pt',''); if(cBtn) cBtn.style.backgroundColor = appConfig[`color-${t.id}`] || '#000'; }); }
     // ════════════════════════════════════════════════
     //  Resilient import pipeline — extracts JSON from AI prose,
     //  handles slides-only arrays, missing config, unknown types, etc.
@@ -1262,9 +1400,17 @@
         }
         if (el.dataset.role === 'field-quote-attrib') {
             const field = getByPath(slide, el.dataset.fieldPath);
-            field.quoteAttribution = el.innerText;
+            field.quoteAttribution = String(el.innerText || '').replace(/\u00a0/g, ' ').trim();
+            el.classList.toggle('quote-attrib-empty', !field.quoteAttribution);
+            if (!field.quoteAttribution && el.innerHTML.trim() === '') el.innerHTML = '&nbsp;';
             saveState();
             showFieldTypoIndicator(field);
+            return;
+        }
+        if (el.dataset.role === 'ai-prompt-edit') {
+            const field = getByPath(slide, el.dataset.fieldPath);
+            if (field) field.imagePrompt = el.value;
+            saveState();
             return;
         }
 
@@ -1342,6 +1488,7 @@
             const urlInput = urlBtn.parentElement.querySelector('[data-role="field-image-url"]');
             const field = getByPath(slide, urlBtn.dataset.fieldPath);
             if (field && urlInput) {
+                pushImageHistory(field);
                 field.imageUrl = urlInput.value.trim();
                 saveState(); render(); showSlide(currentSlideIndex);
                 console.log(`[Designer] Image URL loaded: ${field.imageUrl.slice(0, 60)}`);
@@ -1349,9 +1496,47 @@
             return;
         }
 
+        // ── AI Image Generate button ──
+        const aiGenBtn = e.target.closest('[data-role="ai-gen-btn"]');
+        if (aiGenBtn) {
+            e.stopPropagation();
+            const slideEl = aiGenBtn.closest('.slide');
+            if (!slideEl) return;
+            const index = parseInt(slideEl.dataset.index, 10);
+            if (Number.isNaN(index)) return;
+            const promptEl = aiGenBtn.parentElement.querySelector('[data-role="ai-prompt-edit"]');
+            const customPrompt = promptEl ? promptEl.value.trim() : null;
+            generateAIImage(aiGenBtn.dataset.fieldPath, index, customPrompt);
+            return;
+        }
+
+        // ── AI Image Regenerate button ──
+        const aiRegenBtn = e.target.closest('[data-role="ai-regen-btn"]');
+        if (aiRegenBtn) {
+            e.stopPropagation();
+            const slideEl = aiRegenBtn.closest('.slide');
+            if (!slideEl) return;
+            const index = parseInt(slideEl.dataset.index, 10);
+            if (Number.isNaN(index)) return;
+            generateAIImage(aiRegenBtn.dataset.fieldPath, index);
+            return;
+        }
+
+        // ── Image history undo button ──
+        const histBtn = e.target.closest('[data-role="image-history-btn"]');
+        if (histBtn) {
+            e.stopPropagation();
+            const slideEl = histBtn.closest('.slide');
+            if (!slideEl) return;
+            const index = parseInt(slideEl.dataset.index, 10);
+            if (Number.isNaN(index)) return;
+            undoImageHistory(histBtn.dataset.fieldPath, index);
+            return;
+        }
+
         // ── Click on drop-zone opens file picker ──
         const dropZone = e.target.closest('[data-role="image-drop-zone"]');
-        if (dropZone && !e.target.closest('input') && !e.target.closest('button')) {
+        if (dropZone && !e.target.closest('input') && !e.target.closest('button') && !e.target.closest('textarea')) {
             const fileInput = dropZone.querySelector('[data-role="field-image-file"]');
             if (fileInput) fileInput.click();
             return;
@@ -1419,6 +1604,32 @@
     //  Image upload handler — uploads to server, falls back to data-URI
     // ════════════════════════════════════════════════
     const IMAGE_UPLOAD_URL = 'https://happydo.xyz/harvester/api/image-store.php';
+    const IMAGE_HISTORY_MAX = 10;
+
+    /** Push the current imageUrl onto the field's history stack before replacing it */
+    function pushImageHistory(field) {
+        if (!field) return;
+        if (!Array.isArray(field.imageHistory)) field.imageHistory = [];
+        const current = (field.imageUrl || '').trim();
+        if (current && current !== field.imageHistory[field.imageHistory.length - 1]) {
+            field.imageHistory.push(current);
+            // Cap history stack to prevent localStorage bloat
+            if (field.imageHistory.length > IMAGE_HISTORY_MAX) {
+                field.imageHistory = field.imageHistory.slice(-IMAGE_HISTORY_MAX);
+            }
+        }
+    }
+
+    /** Pop the most recent image from history, restoring it as the active image */
+    function undoImageHistory(fieldPath, slideIndex) {
+        const slide = slidesData[slideIndex];
+        ensureSlideSchema(slide);
+        const field = getByPath(slide, fieldPath);
+        if (!field || !Array.isArray(field.imageHistory) || field.imageHistory.length === 0) return;
+        field.imageUrl = field.imageHistory.pop();
+        console.log(`[Designer] Image history undo → restored (${field.imageHistory.length} remaining)`);
+        saveState(); render(); showSlide(currentSlideIndex);
+    }
 
     async function handleImageFile(file, fieldPath, slideIndex) {
         if (!file || !file.type.startsWith('image/')) {
@@ -1431,6 +1642,8 @@
         if (!field) { console.error('[Designer] handleImageFile: field not found at', fieldPath); return; }
 
         console.log(`[Designer] Uploading image: ${file.name} (${(file.size/1024).toFixed(1)} KB) → field ${fieldPath}`);
+
+        pushImageHistory(field);
 
         // Try server upload first
         try {
@@ -1639,16 +1852,19 @@
                     fontSize: quotePt,
                     valign: 'top'
                 });
-                pptSlide.addText(safeField.quoteAttribution || 'Chair', {
-                    x: x + 0.2,
-                    y: y + h - 0.45,
-                    w: w - 0.4,
-                    h: 0.2,
-                    color: getHex('color-h3', '1e1d21'),
-                    bold: true,
-                    fontSize: attribPt,
-                    align: 'right'
-                });
+                const quoteAttrib = String(safeField.quoteAttribution || '').trim();
+                if (quoteAttrib && !appConfig.hideAttrib) {
+                    pptSlide.addText(quoteAttrib, {
+                        x: x + 0.2,
+                        y: y + h - 0.45,
+                        w: w - 0.4,
+                        h: 0.2,
+                        color: getHex('color-h3', '1e1d21'),
+                        bold: true,
+                        fontSize: attribPt,
+                        align: 'right'
+                    });
+                }
                 return;
             }
 
@@ -1732,6 +1948,255 @@
         });
 
         pres.writeFile({ fileName: "HeartWalk_Deck_Fixed.pptx" });
+    }
+
+    // ════════════════════════════════════════════════
+    //  AI Image Generation — uses generateImage() from ailnl.js
+    // ════════════════════════════════════════════════
+    async function generateAIImage(fieldPath, slideIndex, customPrompt) {
+        const slide = slidesData[slideIndex];
+        ensureSlideSchema(slide);
+        const field = getByPath(slide, fieldPath);
+        if (!field) { console.error('[Designer] generateAIImage: field not found at', fieldPath); return; }
+
+        const prompt = customPrompt || field.imagePrompt;
+        if (!prompt) { console.warn('[Designer] No image prompt available'); return; }
+
+        // Persist edited prompt
+        if (customPrompt) field.imagePrompt = customPrompt;
+
+        // Show loading state on the button
+        const btn = document.querySelector(
+            `[data-role="ai-gen-btn"][data-field-path="${fieldPath}"],` +
+            `[data-role="ai-regen-btn"][data-field-path="${fieldPath}"]`
+        );
+        const origLabel = btn ? btn.textContent : '';
+        if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating…'; }
+
+        try {
+            const { generateImage } = await import('https://happydo.xyz/api/ailnl.js');
+            const result = await generateImage(prompt, 'openai', {
+                size: '1536x1024',
+                timeoutMs: 90000,
+                debug: true
+            });
+
+            if (result.error) {
+                console.error('[Designer] AI image generation failed:', result.error);
+                alert('Image generation failed: ' + result.error);
+                return;
+            }
+
+            if (result.url) {
+                // Push old image to history before replacing
+                pushImageHistory(field);
+
+                // If base64 data-URI, attempt server upload for persistence
+                if (result.url.startsWith('data:')) {
+                    try {
+                        const blob = await (await fetch(result.url)).blob();
+                        const file = new File([blob], 'ai-generated.png', { type: 'image/png' });
+                        const form = new FormData();
+                        form.append('image', file);
+                        const resp = await fetch(IMAGE_UPLOAD_URL, { method: 'POST', body: form });
+                        if (resp.ok) {
+                            const uploadResult = await resp.json();
+                            if (uploadResult.url) {
+                                field.imageUrl = uploadResult.url;
+                                console.log('[Designer] ✓ AI image uploaded to server:', uploadResult.url);
+                                saveState(); render(); showSlide(currentSlideIndex);
+                                return;
+                            }
+                        }
+                    } catch (uploadErr) {
+                        console.warn('[Designer] Upload of AI image failed, using data-URI:', uploadErr.message);
+                    }
+                }
+                field.imageUrl = result.url;
+                console.log('[Designer] ✓ AI image generated:', result.url.slice(0, 80));
+                saveState(); render(); showSlide(currentSlideIndex);
+            }
+        } catch (err) {
+            console.error('[Designer] AI image generation error:', err);
+            alert('Image generation error: ' + err.message);
+        } finally {
+            if (btn) { btn.disabled = false; btn.textContent = origLabel; }
+        }
+    }
+
+    // \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+    //  Smoke Tests \u2014 automated validation of core Designer requirements
+    // \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+    function runSmokeTests() {
+        const results = [];
+
+        function pass(name, detail) { results.push({ name, ok: true, detail }); }
+        function fail(name, detail) { results.push({ name, ok: false, detail }); }
+
+        // \u2500\u2500 TEST 1: JSON contract smoke test \u2500\u2500
+        // import + export preserves required schema keys and slide types
+        try {
+            const testPayload = {
+                config: { 'font-title': "'Source Sans 3', sans-serif", 'size-title': '32pt', 'color-title': '#16bfec', showShapes: true },
+                slides: [
+                    { type: 'cover', title: 'Test Cover', subtitle: 'Sub' },
+                    { type: 'section', title: 'Test Section' },
+                    { type: 'standard', title: 'Test Standard', content: '* Bullet', bodyField: { mode: 'text', text: '* Bullet', imageUrl: '', imageAlign: 'center', imagePrompt: 'test prompt', quoteText: '', quoteAttribution: '' } },
+                    { type: 'two-column', title: 'Test TwoCol', columns: { splitPct: 55, leftField: { mode: 'text', text: 'Left' }, rightField: { mode: 'quote', quoteText: 'Quote', quoteAttribution: 'Author' } } }
+                ]
+            };
+            const parsed = smartParseInput(JSON.stringify(testPayload));
+            const slides = parsed.data.slides.map(ensureSlideSchema);
+            const types = slides.map(s => s.type);
+            const hasAllTypes = ['cover', 'section', 'standard', 'two-column'].every(t => types.includes(t));
+            const stdHasBody = slides.find(s => s.type === 'standard')?.bodyField;
+            const tcHasCols = slides.find(s => s.type === 'two-column')?.columns;
+            if (hasAllTypes && stdHasBody && tcHasCols) {
+                pass('JSON Contract', `All 4 slide types preserved, bodyField + columns intact.`);
+            } else {
+                fail('JSON Contract', `Missing: types=${hasAllTypes}, bodyField=${!!stdHasBody}, columns=${!!tcHasCols}`);
+            }
+        } catch (e) {
+            fail('JSON Contract', `Exception: ${e.message}`);
+        }
+
+        // \u2500\u2500 TEST 2: Field-mode smoke test \u2500\u2500
+        try {
+            const modes = ['text', 'image', 'quote'];
+            let allValid = true;
+            let details = [];
+            for (const m of modes) {
+                const f = ensureFieldDefaults({ mode: m, text: 'T', imageUrl: 'http://x.png', quoteText: 'Q', quoteAttribution: 'A' });
+                if (f.mode !== m) { allValid = false; details.push(`${m} mode not preserved`); }
+            }
+            // Test that renderFieldBody doesn't throw for each mode
+            for (const m of modes) {
+                const f = ensureFieldDefaults({ mode: m, text: 'T', imageUrl: m === 'image' ? 'http://x.png' : '', quoteText: 'Q', quoteAttribution: 'A' });
+                const html = renderFieldBody('bodyField', f);
+                if (!html || typeof html !== 'string') { allValid = false; details.push(`${m} render failed`); }
+            }
+            if (allValid) pass('Field Modes', 'All 3 modes (text/image/quote) render without errors.');
+            else fail('Field Modes', details.join('; '));
+        } catch (e) {
+            fail('Field Modes', `Exception: ${e.message}`);
+        }
+
+        // \u2500\u2500 TEST 3: PPTX smoke test \u2500\u2500
+        try {
+            // Verify PptxGenJS is loaded and generatePPTX function exists
+            if (typeof PptxGenJS === 'undefined') {
+                fail('PPTX Export', 'PptxGenJS library not loaded.');
+            } else if (typeof generatePPTX !== 'function') {
+                fail('PPTX Export', 'generatePPTX function not found.');
+            } else {
+                // Verify addFieldToPpt handles all modes without throwing
+                const pres = new PptxGenJS();
+                const testSlide = pres.addSlide();
+                const testFields = [
+                    ensureFieldDefaults({ mode: 'text', text: '* test' }),
+                    ensureFieldDefaults({ mode: 'image', imageUrl: '' }),
+                    ensureFieldDefaults({ mode: 'quote', quoteText: 'Q', quoteAttribution: 'A' })
+                ];
+                let pptOk = true;
+                for (const f of testFields) {
+                    try { addFieldToPpt(testSlide, f, 0.5, 1.0, 5, 3); }
+                    catch (e) { pptOk = false; }
+                }
+                if (pptOk) pass('PPTX Export', 'All field modes added to PPT slide without errors.');
+                else fail('PPTX Export', 'addFieldToPpt threw for one or more modes.');
+            }
+        } catch (e) {
+            fail('PPTX Export', `Exception: ${e.message}`);
+        }
+
+        // \u2500\u2500 TEST 4: Import sanitizer smoke test \u2500\u2500
+        try {
+            const malformed = [
+                '{"slides": [{"title": "No type"}]}',                           // missing type
+                '{"slides": [{"type": "standard", "title": "No body"}]}',       // missing bodyField
+                '{"slides": [{"type": "two-column", "title": "No cols"}]}',     // missing columns
+                '{"slides": [{"type": "banana", "title": "Bad type"}]}',        // unknown type
+                '[{"type": "standard", "title": "Bare array"}]',               // bare array
+                'Here is JSON: {"slides": [{"type": "cover", "title": "Prose"}]}', // AI prose
+            ];
+            let sanitizerOk = true;
+            let issues = [];
+            for (const raw of malformed) {
+                try {
+                    const { data } = smartParseInput(raw);
+                    const slides = data.slides.map(ensureSlideSchema);
+                    if (!slides.length || !slides[0].type) {
+                        sanitizerOk = false;
+                        issues.push(`Failed to recover: ${raw.slice(0, 40)}`);
+                    }
+                } catch (e) {
+                    sanitizerOk = false;
+                    issues.push(`Threw on: ${raw.slice(0, 40)} (${e.message})`);
+                }
+            }
+            if (sanitizerOk) pass('Import Sanitizer', `${malformed.length} malformed payloads auto-corrected without crash.`);
+            else fail('Import Sanitizer', issues.join('; '));
+        } catch (e) {
+            fail('Import Sanitizer', `Exception: ${e.message}`);
+        }
+
+        // \u2500\u2500 TEST 5: Image upload endpoint check \u2500\u2500
+        try {
+            if (typeof IMAGE_UPLOAD_URL === 'string' && IMAGE_UPLOAD_URL.includes('image-store')) {
+                pass('Image Upload', `Endpoint configured: ${IMAGE_UPLOAD_URL}`);
+            } else {
+                fail('Image Upload', 'IMAGE_UPLOAD_URL not configured.');
+            }
+            // Also verify data-URI fallback path exists
+            if (typeof handleImageFile === 'function') {
+                pass('Image Fallback', 'handleImageFile function available (includes data-URI fallback).');
+            } else {
+                fail('Image Fallback', 'handleImageFile not found.');
+            }
+        } catch (e) {
+            fail('Image Upload', `Exception: ${e.message}`);
+        }
+
+        // \u2500\u2500 TEST 6: Reporter handoff smoke test \u2500\u2500
+        try {
+            // Simulate a typical Reporter output payload
+            const reporterPayload = JSON.stringify({
+                config: {},
+                slides: [
+                    { type: 'cover', title: 'Heart Walk Research', subtitle: 'Executive Report' },
+                    { type: 'section', title: 'Findings' },
+                    { type: 'two-column', title: 'Key Finding', content: 'Analysis text',
+                      columns: { splitPct: 55,
+                        leftField: { mode: 'text', text: 'Analysis text', imageUrl: '', imagePrompt: '', quoteText: '', quoteAttribution: '' },
+                        rightField: { mode: 'quote', text: '', imageUrl: '', imagePrompt: '', quoteText: 'It changed everything.', quoteAttribution: '' }
+                      }
+                    },
+                    { type: 'standard', title: 'Recommendations', bodyField: { mode: 'text', text: '* Do this\n* Do that', imageUrl: '', imageAlign: 'center', imagePrompt: 'A roadmap infographic', quoteText: '', quoteAttribution: '' } }
+                ]
+            });
+            const { data, warnings } = smartParseInput(reporterPayload);
+            const slides = data.slides.map(ensureSlideSchema);
+            const coverOk = slides[0]?.type === 'cover' && slides[0]?.title;
+            const tcOk = slides[2]?.type === 'two-column' && slides[2]?.columns?.rightField?.quoteText;
+            const stdOk = slides[3]?.type === 'standard' && slides[3]?.bodyField?.imagePrompt;
+            if (coverOk && tcOk && stdOk) {
+                pass('Reporter Handoff', 'Reporter JSON imported cleanly: cover, two-column+quote, standard+imagePrompt all intact.');
+            } else {
+                fail('Reporter Handoff', `Cover=${!!coverOk}, TwoCol+Quote=${!!tcOk}, Std+Prompt=${!!stdOk}`);
+            }
+        } catch (e) {
+            fail('Reporter Handoff', `Exception: ${e.message}`);
+        }
+
+        // \u2500\u2500 Display results \u2500\u2500
+        const body = document.getElementById('smoke-body');
+        const passed = results.filter(r => r.ok).length;
+        const total = results.length;
+        body.innerHTML = `<div style="margin-bottom:12px; font-weight:600; font-size:14px; color:${passed === total ? '#22D460' : '#FF5C5C'}">${passed}/${total} passed</div>` +
+            results.map(r => `<div class="smoke-item"><span class="${r.ok ? 'smoke-pass' : 'smoke-fail'}">${r.ok ? '\u2713' : '\u2717'}</span> ${r.name}</div><div class="smoke-detail">${r.detail || ''}</div>`).join('');
+        document.getElementById('smoke-results').classList.add('open');
+        console.log(`[Designer] Smoke tests: ${passed}/${total} passed`);
+        results.forEach(r => console.log(`  ${r.ok ? '\u2713' : '\u2717'} ${r.name}: ${r.detail || ''}`));
     }
 
     init();

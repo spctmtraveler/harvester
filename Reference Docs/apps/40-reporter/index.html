@@ -125,6 +125,7 @@
       <button class="ghost" id="btnSaveReport">Download Cited Report</button>
       <button class="ghost" id="btnCopyJson">Copy Designer JSON</button>
       <button class="ghost" id="btnSaveJson">Download Designer JSON</button>
+      <button class="ghost" id="btnClearSaved">Clear Saved Output</button>
     </div>
 
     <div class="sec">
@@ -168,6 +169,7 @@
       <h2>Client-Facing Narrative Report</h2>
       <div id="debugHealthBanner" class="health-banner health-neutral">Health: waiting for first data refresh.</div>
       <div id="narrativeProgress" style="display:none;margin-bottom:10px;padding:10px;background:rgba(31,111,235,.15);border:1px solid var(--blue);border-radius:6px;font:12px var(--mono);color:var(--blue)"></div>
+      <div id="qualityCheckResults" style="display:none;margin-bottom:10px;padding:10px;border:1px solid var(--border);border-radius:6px;font:12px/1.5 var(--mono);white-space:pre-wrap"></div>
       <div class="panel"><pre id="narrativeText" style="white-space:pre-wrap;line-height:1.7">Generate outputs to create the client-facing narrative report.</pre></div>
     </section>
 
@@ -221,7 +223,10 @@
     const APP_NAME = "HWIE_v2";
     const APP_VERSION = "v1.4";
     const APP_LAST_UPDATED_UTC = "2026-02-20T23:55:00Z";
+    const OUTPUT_TABLE = "reporter_saved_output";
+    const OUTPUT_ROW_ID = 1;
     const VALID_TYPES = new Set(["cover", "section", "standard", "two-column"]);
+    let outputTableReady = false;
     const DEBUG_LIMITS = {
       maxApiTrafficRows: 220,
       maxLogRows: 900,
@@ -241,10 +246,25 @@
       "typeOffsets": { "cover": { "x": 0, "y": 0 }, "section": { "x": 0, "y": 0 }, "standard": { "x": 0, "y": 0 } }
     };
 
+    function defaultOutState() {
+      return {
+        report: "",
+        narrative: "",
+        deck: null,
+        narrativeDeck: null,
+        mdToolDeck: null,
+        claims: [],
+        noEvidenceDropped: 0,
+        summary: [],
+        groups: { problems: [], solutions: [], mechanisms: [] },
+        generated_at_utc: null
+      };
+    }
+
     const state = {
       ok: false,
       db: { insights: 0, links: 0, noEvidence: 0, loaded: [], evBy: new Map(), sentenceIds: new Set() },
-      out: { report: "", narrative: "", deck: null, narrativeDeck: null, mdToolDeck: null, claims: [], noEvidenceDropped: 0, summary: [], groups: { problems: [], solutions: [], mechanisms: [] } },
+      out: defaultOutState(),
       smoke: { ran_at_utc: null, results: [] },
       debug: { apiTraffic: [], logHistory: [] }
     };
@@ -375,6 +395,112 @@
       };
     }
 
+    async function ensureOutputTable() {
+      if (outputTableReady) return;
+      await dbQuery(`
+        CREATE TABLE IF NOT EXISTS ${OUTPUT_TABLE} (
+          id INT PRIMARY KEY,
+          saved_at_utc VARCHAR(32),
+          app_version VARCHAR(20),
+          payload LONGTEXT,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        )
+      `, "ensure_output_table");
+      outputTableReady = true;
+    }
+
+    async function saveOutputSnapshot(reason = "") {
+      try {
+        await ensureOutputTable();
+        const payload = {
+          version: 1,
+          saved_at_utc: new Date().toISOString(),
+          app_version: APP_VERSION,
+          out: state.out,
+          smoke: state.smoke
+        };
+        const payloadJson = JSON.stringify(payload);
+        const escaped = payloadJson.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+        await dbQuery(`
+          INSERT INTO ${OUTPUT_TABLE} (id, saved_at_utc, app_version, payload)
+          VALUES (${OUTPUT_ROW_ID}, '${payload.saved_at_utc}', '${APP_VERSION}', '${escaped}')
+          ON DUPLICATE KEY UPDATE
+            saved_at_utc = VALUES(saved_at_utc),
+            app_version = VALUES(app_version),
+            payload = VALUES(payload)
+        `, "save_output_snapshot");
+        if (reason) log("ok", `Saved output snapshot to shared storage (${reason}).`, "CACHE");
+      } catch (e) {
+        log("warn", `Could not save output snapshot: ${e?.message || e}`, "CACHE");
+      }
+    }
+
+    function hydrateOutputViewsFromState() {
+      $("reportText").textContent = state.out.report || "Generate outputs to create a report preview.";
+      $("narrativeText").textContent = state.out.narrative || "Generate outputs to create the client-facing narrative report.";
+      const preferredDeck = state.out.narrativeDeck || state.out.deck || state.out.mdToolDeck || null;
+      $("jsonText").value = preferredDeck ? JSON.stringify(preferredDeck, null, 2) : "{}";
+
+      set("bReport", state.out.claims?.length || 0);
+      set("bNarrative", state.out.narrativeDeck?.slides?.length ? Math.max(0, state.out.narrativeDeck.slides.length - 3) : 0);
+      set("bJson", preferredDeck?.slides?.length || 0);
+      set("bMdTool", state.out.mdToolDeck?.slides?.length || 0);
+      set("bTests", (state.smoke?.results || []).filter((r) => !r.ok).length || 0);
+
+      if (state.out.report || state.out.narrative || preferredDeck) {
+        dot("dotOut", "green");
+      }
+      renderDebugHealth();
+    }
+
+    function restoreOutputCache() {
+      try {
+        const raw = localStorage.getItem(OUTPUT_CACHE_KEY);
+        if (!raw) return false;
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== "object" || !parsed.out || typeof parsed.out !== "object") return false;
+
+        state.out = {
+          ...defaultOutState(),
+          ...parsed.out,
+          groups: {
+            ...defaultOutState().groups,
+            ...(parsed.out.groups || {})
+          },
+          claims: Array.isArray(parsed.out.claims) ? parsed.out.claims : []
+        };
+        if (parsed.smoke && typeof parsed.smoke === "object") {
+          state.smoke = {
+            ran_at_utc: parsed.smoke.ran_at_utc || null,
+            results: Array.isArray(parsed.smoke.results) ? parsed.smoke.results : []
+          };
+        }
+
+        hydrateOutputViewsFromState();
+        log("ok", "Restored previously generated output from this browser.", "CACHE");
+        return true;
+      } catch (e) {
+        log("warn", `Could not restore saved output: ${e?.message || e}`, "CACHE");
+        return false;
+      }
+    }
+
+    function clearSavedOutput() {
+      try {
+        localStorage.removeItem(OUTPUT_CACHE_KEY);
+      } catch (_) {}
+
+      state.out = defaultOutState();
+      state.smoke = { ran_at_utc: null, results: [] };
+      hydrateOutputViewsFromState();
+      updateStats();
+      set("bTests", 0);
+      dot("dotOut", "");
+      renderTests([]);
+      log("ok", "Cleared saved output. You can generate a fresh run anytime.", "CACHE");
+    }
+
     function updateStats() {
       set("nInsights", state.db.insights);
       set("nLinks", state.db.links);
@@ -416,6 +542,12 @@
       }
 
       if (claims === 0) {
+        if (!state.out.generated_at_utc) {
+          return {
+            level: "neutral",
+            text: "Health: INFO | Dataset loaded. Click Generate Outputs to build evidence-backed claims."
+          };
+        }
         return {
           level: "warn",
           text: `Health: WARN | Insights are loaded but no evidence-backed claims were generated. Check quote thresholds and orphan links.`
@@ -927,7 +1059,8 @@ ${mdText}`;
         claims,
         noEvidenceDropped: dropped,
         summary,
-        groups
+        groups,
+        generated_at_utc: new Date().toISOString()
       };
 
       $("reportText").textContent = report;
@@ -942,6 +1075,7 @@ ${mdText}`;
         slides: deck.slides.length,
         dropped_no_evidence: dropped
       });
+      saveOutputCache("generate");
       renderDebugHealth();
       log("ok", `Generated ${claims.length} cited claims and ${deck.slides.length} slides.`);
       switchTab("narrative");
@@ -1011,7 +1145,7 @@ ${mdText}`;
               imageAlign: "center",
               imagePrompt: "",
               quoteText: String(fq.text || ""),
-              quoteAttribution: String(fq.speaker || "Chair")
+              quoteAttribution: ""
             }
           }
         };
@@ -1030,7 +1164,7 @@ ${mdText}`;
             imageAlign: "center",
             imagePrompt: prompt,
             quoteText: String(fq.text || ""),
-            quoteAttribution: String(fq.speaker || "Chair")
+            quoteAttribution: ""
           }
         };
       }
@@ -1066,13 +1200,16 @@ ${mdText}`;
       log("ok", `Starting narrative AI pass with ${totalClaims} claims...`, "NARRATIVE");
 
       // ── Step 1: Ask AI to group/consolidate claims into themed slides ──
-      narrativeProgress("Step 1/3: Grouping claims into thematic slides...");
+      narrativeProgress("Step 1/4: Grouping claims into thematic slides...");
 
-      const groupPrompt = `You are a senior qualitative research strategist preparing a client-facing presentation deck based on staff interview findings.
+      const groupPrompt = `You are a senior qualitative research analyst preparing a client-facing presentation deck based on staff interview findings. Your job is to organize evidence faithfully — never invent, exaggerate, or generalize beyond what the claims actually say.
 
 Below are ${totalClaims} research claims from Heart Walk staff interviews. Many overlap, repeat, or cover the same ground.
 
-YOUR TASK: Group these claims into 10-16 thematic slide topics that tell a coherent story.
+YOUR TASK:
+1. First, read ALL claims and identify the 3-4 most important AGGREGATE findings — themes that multiple interviewees independently raised. These are your "headline" insights.
+2. Then group all claims into 10-16 thematic slide topics that tell a coherent story, making sure the top 3-4 aggregate findings receive prominent placement early in the deck.
+3. Flag which groups represent those top aggregate findings.
 
 SLIDE TITLE STYLE — titles should be punchy, insight-driven take-aways — NOT bland topic labels. Examples of GOOD titles:
 - "Staff Are Crucial"
@@ -1095,11 +1232,12 @@ RULES:
 - Order groups by narrative arc: context → key findings → tensions/challenges → solutions/opportunities
 - Each group should have 3-8 claims (merge thin groups, split bloated ones)
 - Aim for 10-16 total slides — enough to cover themes without redundancy
+- IMPORTANT: A theme is "top aggregate" only if at least 3+ different interviewees raised it independently. Mark these with "is_top_finding": true.
 
 Return ONLY valid JSON — no markdown fences, no commentary:
 {
   "slides": [
-    { "title": "Slide Title Here", "claim_ids": [325, 326, 330], "section_type": "context|finding|problem|solution|opportunity" },
+    { "title": "Slide Title Here", "claim_ids": [325, 326, 330], "section_type": "context|finding|problem|solution|opportunity", "is_top_finding": false },
     ...
   ]
 }
@@ -1151,7 +1289,7 @@ ${JSON.stringify(claimBundle, null, 1)}`;
         const batch = slideBatches[bi];
         const batchStart = bi * BATCH_SIZE + 1;
         const batchEnd = batchStart + batch.length - 1;
-        narrativeProgress(`Step 2/3: Writing narrative for slides ${batchStart}-${batchEnd} of ${slideGroups.slides.length}...`);
+        narrativeProgress(`Step 2/4: Writing narrative for slides ${batchStart}-${batchEnd} of ${slideGroups.slides.length}...`);
 
         // Restructure: emphasize quotes, use claims as background only
         const slidesForPrompt = batch.map(sg => {
@@ -1169,7 +1307,9 @@ ${JSON.stringify(claimBundle, null, 1)}`;
           };
         });
 
-        const narrativePrompt = `You are writing a polished, client-facing qualitative research report in a slide deck format. This is a FINAL deliverable for C-suite executives at the American Heart Association. It must read like output from a top strategy consulting firm — sharp, specific, and actionable.
+        const narrativePrompt = `You are a qualitative research report writer working under the direction of a senior research analyst. This is a client-facing deliverable for C-suite executives at the American Heart Association. It must be clear, specific, and honest — the kind of report that earns trust because every claim can be traced back to what people actually said.
+
+YOUR ROLE: You are the writer, not the analyst. The analysis has already been done. Your job is to faithfully translate evidence into readable slide content. You do NOT editorialize, speculate, or embellish.
 
 DOMAIN CONTEXT: Heart Walk is a market-based fundraising and engagement campaign operated by the AHA. Staff recruit volunteer ELT (Executive Leadership Team) chairs and members — typically corporate executives — who open access to corporate sponsors, make fundraising asks, and mobilize employee participation. The campaign follows a multi-phase arc: leadership recruitment → corporate prospecting → participation activation → stewardship/recognition. Staff use Salesforce, slide decks, annotated agendas, and personal coaching relationships to drive results.
 
@@ -1181,22 +1321,31 @@ For each slide below, you receive:
 YOUR JOB: Synthesize the quotes and context into compelling slide content. DO NOT simply rephrase the research context into bullets. Instead, write your own sharp observations drawn from the quotes.
 
 LAYOUT DECISION — For each slide, choose the best layout:
-- "text" — Standard text slide with bullets (and optionally embedded quotes). Best when there are 3+ distinct points.
+- "text" — Standard text slide with bullets only (no quote markdown markers). Best when there are 3+ distinct points.
 - "text-quote" — Two-column: text bullets on the left, a powerful featured quote on the right. Best when ONE quote is so compelling it deserves its own spotlight.
 - "quote-only" — A single powerful quote fills the whole slide. Use sparingly (max 1-2 per deck) for the most impactful statement.
 
+ACCURACY & INTEGRITY RULES (HIGHEST PRIORITY — override all other style guidance):
+1. NEVER invent statistics, percentages, or quantitative claims (e.g. "75% of staff...", "boosted by 30%") unless a specific number appears verbatim in a direct quote provided to you. Five qualitative interviews do not produce percentages.
+2. Do not generalize one person's experience as a universal finding. If one person said it, write "one staffer noted" or "in one market." If 2-3 said similar things, write "several staff described" or "a recurring theme." If all or nearly all said it independently, you may say "staff consistently reported."
+3. Do not fabricate causal claims. If the evidence shows A and B exist, do not write "A causes B" unless an interviewee explicitly made that causal link.
+4. If a claim in the research context is vague or unsupported by the quotes, OMIT it rather than padding the slide.
+5. Every bullet must be traceable: ask yourself "which quote supports this?" If no quote does, delete the bullet.
+
 TEXT CONTENT RULES:
-1. Use • for bullet points. Bullets must be SPECIFIC and DATA-DRIVEN:
-   GOOD: "• First-year staff rate the onboarding learning curve a 2 out of 5."
+1. Use • for bullet points. Bullets must be SPECIFIC and grounded in the evidence:
+   GOOD: "• One first-year staffer rated the onboarding learning curve a 2 out of 5 — 'coming in as a first-year person, it's a lot.'"
+   GOOD: "• Several staff described SharePoint as cluttered and hard to navigate."
+   BAD:  "• 80% of staff noted inconsistent messaging as a source of frustration."
    BAD:  "• Effective communication is crucial for organizational processes."
-2. For "text" layout, you may embed Quote Bubbles in the text using:
-   > **Quote Bubble — Speaker Name**
-   > "The actual quote."
-3. Vary the slide structure — NOT every slide needs the same pattern.
-4. NEVER include citation IDs, insight numbers, timestamps, or internal codes.
-5. Trim quotes to 1-2 punchy sentences. Cut rambling — keep the speaker's voice.
-6. Never repeat a quote across slides.
-7. Write with authority — no "it appears," "there seems to be."
+2. Do NOT use markdown blockquote syntax (>), and do NOT include lines like "Quote Bubble — ..." inside content.
+3. If a quote should appear visually, use layout="text-quote" or layout="quote-only" and provide featured_quote.
+4. Keep quote attribution anonymous by default: set featured_quote.speaker to an empty string unless explicitly requested.
+5. Vary the slide structure — NOT every slide needs the same pattern.
+6. NEVER include citation IDs, insight numbers, timestamps, or internal codes.
+7. Trim quotes to 1-2 punchy sentences. Cut rambling — keep the speaker's voice.
+8. Never repeat a quote across slides.
+9. Write with appropriate confidence — be direct about what the evidence shows, but do not overstate scope. "Staff described X" is better than both "it appears X might exist" AND "X is a systemic crisis."
 
 IMAGE PROMPT — For each slide, write a brief image suggestion (1-2 sentences) that would make a relevant visual. Think: what photo, illustration, or chart would complement this content? Be specific to Heart Walk / AHA context. Default to photo-realistic; use "chart:" or "map:" prefix when a data visualization or geographic image is more useful.
 
@@ -1205,14 +1354,14 @@ Return ONLY a valid JSON array, no markdown fences:
   {
     "title": "The Slide Title",
     "layout": "text",
-    "content": "• Bullet one\\n• Bullet two\\n\\n> **Quote Bubble — Speaker Name**\\n> \\"The actual quote.\\"",
+    "content": "• Bullet one\\n• Bullet two",
     "image_prompt": "A professional photo of a corporate team gathered around a conference table reviewing campaign materials"
   },
   {
     "title": "Another Slide",
     "layout": "text-quote",
     "content": "• Key finding one\\n• Key finding two",
-    "featured_quote": { "text": "This quote deserves the spotlight.", "speaker": "Lauren Verrill" },
+    "featured_quote": { "text": "This quote deserves the spotlight.", "speaker": "" },
     "image_prompt": "A photo of fundraising volunteers wearing branded Heart Walk t-shirts at an outdoor event"
   },
   ...
@@ -1252,26 +1401,50 @@ ${JSON.stringify(slidesForPrompt, null, 1)}`;
       }
 
       // ── Step 3: Generate executive summary ──
-      narrativeProgress("Step 3/3: Writing executive summary...");
+      narrativeProgress("Step 3/4: Writing executive summary...");
 
       const slideTitles = narrativeSlides.map(s => s.title);
-      const summaryPrompt = `You are writing the executive summary for a professional qualitative research report on Heart Walk staff interviews. This is the first substantive slide the client reads — it must be sharp and specific.
+      const summaryPrompt = `You are a senior qualitative research analyst writing the executive summary for a client-facing report on Heart Walk staff interviews. This is the first substantive slide the client reads — it sets the tone for trust and credibility.
 
 The report contains ${totalClaims} research findings organized into these thematic slides:
 ${slideTitles.map((t, i) => `${i + 1}. ${t}`).join("\n")}
 
 Interview subjects: ${[...new Set(state.out.claims.flatMap(c => c.evidence.map(e => sourceName(e.source_file || "").replace(/\.md$/i, ""))))].filter(Boolean).join(", ")}
 
-Write 5-7 executive summary bullet points that:
-- Open with a ONE-SENTENCE research scope statement (who was interviewed, why)
-- Highlight the 3-4 most important and SPECIFIC findings (not vague generalizations)
-- Name at least one key tension or contradiction discovered
-- Close with a forward-looking action statement
-- Use direct, boardroom-ready language — no jargon, no hedging
-- Each bullet should stand alone as a complete insight
+FOLLOW THIS PROCESS:
 
-GOOD bullet example: "First-year staff describe onboarding as overwhelming, rating the learning curve 2 out of 5; custom materials fill the gap where national resources fall short."
-BAD bullet example: "There is a notable potential for improving onboarding and training processes."
+Step 1 — Identify the top 3-4 findings. A "top finding" must meet ALL of these criteria:
+  a) Multiple interviewees (3+) raised it independently
+  b) It has direct quote evidence (not just analyst paraphrase)
+  c) It has practical implications for Heart Walk operations
+  Rank by: breadth of agreement across interviewees > strength of evidence > operational impact.
+
+Step 2 — Draft 5-7 bullets using this structure:
+  - Bullet 1: ONE-SENTENCE research scope statement (who was interviewed, why, how many)
+  - Bullets 2-4: The top 3-4 findings from Step 1, each as a specific, evidence-grounded statement
+  - Bullet 5-6: One key tension or contradiction, and one bright spot / strength discovered
+  - Final bullet: A forward-looking action statement grounded in what staff actually asked for
+
+Step 3 — Self-check. Before returning, review every bullet and ask:
+  - Does this bullet contain any percentage or statistic? If so, does that exact number appear in a direct quote? If not, REMOVE the number and rephrase qualitatively.
+  - Does this bullet generalize from one person's experience to all staff? If so, add appropriate scope ("one staffer," "several staff," "a recurring theme").
+  - Could a reader verify this claim by reading the slides that follow? If not, rewrite or cut.
+
+STYLE GUIDELINES:
+- Be direct and specific — avoid vague platitudes like "there is potential for improvement"
+- Do NOT invent percentages or statistics. This is a qualitative study of ${[...new Set(state.out.claims.flatMap(c => c.evidence.map(e => sourceName(e.source_file || "").replace(/\.md$/i, ""))))].filter(Boolean).length} interviewees — it does not produce statistical claims.
+- Use appropriate confidence: "Staff consistently described X" or "Several interviewees noted Y" — not "X is a crisis" or "Y affects 80% of operations."
+- Each bullet should stand alone as a complete, verifiable insight.
+
+GOOD bullet examples:
+- "Five Heart Walk staff were interviewed to surface ground-level insights on ELT recruitment, onboarding, and campaign coordination."
+- "Staff consistently describe ELT recruitment as the campaign's hardest recurring challenge — finding committed executives who will make asks, not just lend their name."
+- "One first-year staffer rated the onboarding learning curve 2 out of 5, and several others described filling resource gaps with custom-built materials."
+
+BAD bullet examples (DO NOT do these):
+- "75% of staff cited political navigation as a barrier." (fabricated statistic)
+- "Communication breakdowns are frequent, with 80% of staff noting inconsistent messaging." (fabricated statistic)
+- "There is a notable potential for improving onboarding and training processes." (vague platitude)
 
 Return ONLY valid JSON, no markdown fences:
 { "summary_bullets": ["First bullet", "Second bullet", ...] }`;
@@ -1293,7 +1466,159 @@ Return ONLY valid JSON, no markdown fences:
         ];
       }
 
-      // ── Assemble final narrative deck ──
+      // ── Step 4: Quality verification ──
+      narrativeProgress("Step 4/4: Quality verification — fact-checking against source evidence...");
+      log("ok", "Starting quality verification pass...", "QUALITY");
+
+      let qualityResults = { issues_found: 0, passed: true, issues: [] };
+      const qualityEl = $("qualityCheckResults");
+
+      try {
+        // Build a compact version of the narrative for checking
+        const narrativeForCheck = [
+          "EXECUTIVE SUMMARY BULLETS:",
+          ...summaryContent.map((b, i) => `  Summary bullet ${i + 1}: ${b}`),
+          "",
+          "SLIDE CONTENT:",
+          ...narrativeSlides.map((s, i) => `  Slide ${i + 1} "${s.title}": ${s.content}`)
+        ].join("\n");
+
+        const intervieweeNames = [...new Set(claimBundle.flatMap(c => c.quotes.map(q => q.speaker)))].filter(Boolean);
+
+        const qualityPrompt = `You are a senior qualitative research quality auditor. Your ONLY job is to find factual accuracy problems in a narrative report by checking it against source evidence.
+
+CONTEXT: This narrative was generated from ${claimBundle.length} research claims based on qualitative interviews with ${intervieweeNames.length} Heart Walk staff members: ${intervieweeNames.join(", ")}.
+
+CHECK FOR THESE SPECIFIC PROBLEMS:
+1. FABRICATED STATISTICS — Any percentage, ratio, or precise number ("75%", "30% increase", "4 out of 5 staff") that does NOT appear verbatim in a source quote. A qualitative study of ${intervieweeNames.length} people does not produce statistical claims.
+2. OVER-GENERALIZATION — One person's experience presented as universal ("staff feel..." or "teams report..." when only one person said it). Check how many unique speakers support each claim.
+3. UNSUPPORTED CAUSAL CLAIMS — "A leads to B" or "A causes B" when evidence only shows A and B exist separately.
+4. UNVERIFIABLE CLAIMS — Assertions with no traceable source quote in the evidence.
+5. EDITORIALIZING — Crisis language, dramatic framing, or conclusions that go beyond what interviewees said.
+
+NARRATIVE TO CHECK:
+${narrativeForCheck}
+
+SOURCE EVIDENCE (all available claims with direct quotes — this is the ONLY valid source of truth):
+${JSON.stringify(claimBundle.map(c => ({ id: c.id, claim: c.claim, quotes: c.quotes.map(q => ({ speaker: q.speaker, text: q.quote.slice(0, 300) })) })), null, 1)}
+
+INSTRUCTIONS:
+- Be tough but fair. Flag real problems, not style preferences.
+- A bullet that says "several staff described X" is fine IF 2+ different speakers have supporting quotes.
+- A bullet that says "staff consistently reported X" requires 3+ speakers.
+- Specific numbers that appear in a direct quote (e.g. "rated it a 2 out of 5") are fine.
+- Do NOT flag issues with slide titles — only check factual claims in bullet content and summary.
+
+Return ONLY valid JSON, no markdown fences:
+{
+  "issues_found": <number>,
+  "passed": <true if 0 critical issues>,
+  "issues": [
+    {
+      "location": "Summary bullet 3" or "Slide 5",
+      "issue_type": "fabricated_stat|over_generalization|unsupported_causal|unverifiable|editorializing",
+      "severity": "critical|minor",
+      "original_text": "the exact problematic phrase",
+      "corrected_text": "the fixed version",
+      "explanation": "brief reason"
+    }
+  ]
+}`;
+
+        trackApiTraffic({ stage: "quality_check_request", model });
+        const qcRaw = await askAI(qualityPrompt, model, { temperature: 0.1 });
+        const qcStr = String(qcRaw || "").trim();
+        trackApiTraffic({ stage: "quality_check_response", response_length: qcStr.length });
+
+        const qcCleaned = qcStr.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
+        qualityResults = JSON.parse(qcCleaned);
+
+        if (qualityResults.issues?.length > 0) {
+          const critical = qualityResults.issues.filter(i => i.severity === "critical");
+          const minor = qualityResults.issues.filter(i => i.severity === "minor");
+          log(critical.length ? "warn" : "ok",
+            `Quality check: ${qualityResults.issues.length} issue(s) found (${critical.length} critical, ${minor.length} minor).`, "QUALITY");
+
+          // Auto-correct critical issues via string replacement
+          let corrections = 0;
+          for (const issue of qualityResults.issues) {
+            if (issue.severity !== "critical" || !issue.original_text || !issue.corrected_text) continue;
+            const orig = issue.original_text;
+            const fix = issue.corrected_text;
+
+            // Fix in summary bullets
+            for (let i = 0; i < summaryContent.length; i++) {
+              if (summaryContent[i].includes(orig)) {
+                summaryContent[i] = summaryContent[i].replace(orig, fix);
+                corrections++;
+              }
+            }
+
+            // Fix in narrative slides (content + all field text locations)
+            for (const slide of narrativeSlides) {
+              if (slide.content?.includes(orig)) {
+                slide.content = slide.content.replace(orig, fix);
+                corrections++;
+              }
+              if (slide.bodyField?.text?.includes(orig)) {
+                slide.bodyField.text = slide.bodyField.text.replace(orig, fix);
+              }
+              if (slide.columns?.leftField?.text?.includes(orig)) {
+                slide.columns.leftField.text = slide.columns.leftField.text.replace(orig, fix);
+              }
+              if (slide.columns?.rightField?.text?.includes(orig)) {
+                slide.columns.rightField.text = slide.columns.rightField.text.replace(orig, fix);
+              }
+              // Also fix quoteText if the problematic text leaked into a quote field
+              if (slide.bodyField?.quoteText?.includes(orig)) {
+                slide.bodyField.quoteText = slide.bodyField.quoteText.replace(orig, fix);
+              }
+            }
+          }
+
+          if (corrections > 0) {
+            log("ok", `Auto-corrected ${corrections} critical issue(s) in narrative output.`, "QUALITY");
+          }
+
+          // Display results in UI
+          if (qualityEl) {
+            qualityEl.style.display = "block";
+            qualityEl.style.background = critical.length ? "rgba(218,54,51,.12)" : "rgba(210,153,34,.12)";
+            qualityEl.style.borderColor = critical.length ? "var(--err)" : "var(--warn)";
+            qualityEl.style.color = critical.length ? "#ffb3b0" : "#ffd88a";
+            qualityEl.textContent = [
+              `⚠ Quality Check: ${qualityResults.issues.length} issue(s) found`,
+              critical.length ? `${critical.length} CRITICAL (auto-corrected):` : "",
+              ...critical.map(i => `  ✗ [${i.issue_type}] ${i.explanation}`),
+              minor.length ? `${minor.length} minor (noted but kept):` : "",
+              ...minor.map(i => `  △ [${i.issue_type}] ${i.explanation}`),
+              corrections > 0 ? `\n✓ ${corrections} correction(s) applied automatically.` : ""
+            ].filter(Boolean).join("\n");
+          }
+        } else {
+          log("ok", "Quality check passed — no issues found.", "QUALITY");
+          if (qualityEl) {
+            qualityEl.style.display = "block";
+            qualityEl.style.background = "rgba(46,160,67,.12)";
+            qualityEl.style.borderColor = "var(--ok)";
+            qualityEl.style.color = "#a8e6b4";
+            qualityEl.textContent = "✓ Quality check passed — no fabricated statistics, over-generalizations, or unsupported claims detected.";
+          }
+        }
+      } catch (e) {
+        log("warn", "Quality check could not complete: " + (e?.message || e), "QUALITY");
+        if (qualityEl) {
+          qualityEl.style.display = "block";
+          qualityEl.style.background = "rgba(139,148,158,.12)";
+          qualityEl.style.borderColor = "var(--border)";
+          qualityEl.style.color = "var(--muted)";
+          qualityEl.textContent = "△ Quality check skipped (parse error). Manual review recommended.";
+        }
+      }
+
+      trackApiTraffic({ stage: "quality_check_done", issues: qualityResults.issues_found, passed: qualityResults.passed });
+
+      // ── Assemble final narrative deck (with any corrections applied) ──
       const summaryText = summaryContent.map(b => `• ${b}`).join("\n");
       const narrativeDeck = {
         config: JSON.parse(JSON.stringify(DESIGNER_CONFIG)),
@@ -1342,6 +1667,15 @@ Return ONLY valid JSON, no markdown fences:
         ])
       ].join("\n");
 
+      // Store intermediates for debugging/inspection
+      state.out.intermediates = {
+        claimBundle,
+        slideGroups,
+        qualityResults,
+        interviewees: [...new Set(claimBundle.flatMap(c => c.quotes.map(q => q.speaker)))].filter(Boolean),
+        generated_at_utc: new Date().toISOString()
+      };
+
       state.out.narrative = narrativeReport;
       state.out.narrativeDeck = narrativeDeck;
 
@@ -1354,6 +1688,7 @@ Return ONLY valid JSON, no markdown fences:
       if (prog) { prog.textContent = `✓ Narrative complete: ${narrativeSlides.length} slides, ${summaryContent.length} summary bullets`; prog.style.borderColor = "var(--ok)"; prog.style.background = "rgba(46,160,67,.15)"; prog.style.color = "var(--ok)"; }
 
       trackApiTraffic({ stage: "narrative_done", slides: narrativeSlides.length, summary_bullets: summaryContent.length });
+      saveOutputCache("narrative");
       log("ok", `Narrative complete: ${narrativeSlides.length} themed slides generated.`, "NARRATIVE");
       switchTab("narrative");
     }
@@ -1413,6 +1748,7 @@ Return ONLY valid JSON, no markdown fences:
       const failed = res.filter(x => !x.ok).length;
       state.smoke = { ran_at_utc: new Date().toISOString(), results: res };
       trackApiTraffic({ stage: "smoke_tests", failed_count: failed, test_count: res.length });
+      saveOutputCache("smoke");
       set("bTests", failed);
       renderDebugHealth();
       log(failed ? "warn" : "ok", `Smoke tests: ${res.length - failed} passed, ${failed} failed.`);
@@ -1738,6 +2074,9 @@ Return ONLY valid JSON, no markdown fences:
         download(`heart-walk-designer-${dateStamp()}.json`, JSON.stringify(d, null, 2), "application/json;charset=utf-8");
         log("ok", "Downloaded Designer JSON.", "EXPORT");
       });
+      $("btnClearSaved").addEventListener("click", clearSavedOutput);
+
+      restoreOutputCache();
 
       await refreshData();
       log("ok", "Reporter ready.");
@@ -1783,7 +2122,9 @@ Return ONLY valid JSON, no markdown fences:
           test_results: state.smoke || {},
           report_preview: (state.out.narrative || state.out.report || "").slice(0, 60000),
           narrative_slides_count: state.out.narrativeDeck?.slides?.length || 0,
-          cited_claims_count: state.out.claims?.length || 0
+          cited_claims_count: state.out.claims?.length || 0,
+          intermediates: state.out.intermediates || null,
+          quality_check: state.out.intermediates?.qualityResults || null
         };
         const payloadJson = JSON.stringify(payload);
         const escaped = payloadJson.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
