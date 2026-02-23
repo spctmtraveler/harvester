@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -1840,7 +1840,7 @@
                 return;
             }
 
-                        if (safeField.mode === 'quote') {
+            if (safeField.mode === 'quote') {
                 if (hideAllImages) return;
 
                 const quoteText = String(safeField.quoteText || '').trim();
@@ -1883,7 +1883,9 @@
                     });
                 }
                 return;
-            }\r\n\r\n            const scaleKey = getScaleKey(safeField);
+            }
+
+            const scaleKey = getScaleKey(safeField);
             const basePt = Math.max(8, getPt(`size-${scaleKey}`, '16pt') + ((safeField.fontDelta || 0) * 0.75));
             const textObjects = parseBullets(safeField.text || '', basePt);
             textObjects.forEach(obj => {
