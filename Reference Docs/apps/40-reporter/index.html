@@ -454,11 +454,14 @@
       renderDebugHealth();
     }
 
-    function restoreOutputCache() {
+    async function restoreOutputSnapshot() {
       try {
-        const raw = localStorage.getItem(OUTPUT_CACHE_KEY);
-        if (!raw) return false;
-        const parsed = JSON.parse(raw);
+        await ensureOutputTable();
+        const res = await dbQuery(`SELECT payload, saved_at_utc, app_version FROM ${OUTPUT_TABLE} WHERE id=${OUTPUT_ROW_ID} LIMIT 1`, "load_output_snapshot");
+        const row = res?.rows?.[0];
+        if (!row?.payload) return false;
+
+        const parsed = JSON.parse(row.payload);
         if (!parsed || typeof parsed !== "object" || !parsed.out || typeof parsed.out !== "object") return false;
 
         state.out = {
@@ -478,7 +481,7 @@
         }
 
         hydrateOutputViewsFromState();
-        log("ok", "Restored previously generated output from this browser.", "CACHE");
+        log("ok", `Restored previously generated output from shared storage${row.saved_at_utc ? ` (saved ${row.saved_at_utc} UTC)` : ""}.`, "CACHE");
         return true;
       } catch (e) {
         log("warn", `Could not restore saved output: ${e?.message || e}`, "CACHE");
@@ -486,10 +489,13 @@
       }
     }
 
-    function clearSavedOutput() {
+    async function clearSavedOutput() {
       try {
-        localStorage.removeItem(OUTPUT_CACHE_KEY);
-      } catch (_) {}
+        await ensureOutputTable();
+        await dbQuery(`DELETE FROM ${OUTPUT_TABLE} WHERE id=${OUTPUT_ROW_ID}`, "clear_output_snapshot");
+      } catch (e) {
+        log("warn", `Could not clear saved output: ${e?.message || e}`, "CACHE");
+      }
 
       state.out = defaultOutState();
       state.smoke = { ran_at_utc: null, results: [] };
@@ -498,7 +504,7 @@
       set("bTests", 0);
       dot("dotOut", "");
       renderTests([]);
-      log("ok", "Cleared saved output. You can generate a fresh run anytime.", "CACHE");
+      log("ok", "Cleared saved output from shared storage. You can generate a fresh run anytime.", "CACHE");
     }
 
     function updateStats() {
@@ -1075,7 +1081,7 @@ ${mdText}`;
         slides: deck.slides.length,
         dropped_no_evidence: dropped
       });
-      saveOutputCache("generate");
+      await saveOutputSnapshot("generate");
       renderDebugHealth();
       log("ok", `Generated ${claims.length} cited claims and ${deck.slides.length} slides.`);
       switchTab("narrative");
@@ -1688,12 +1694,12 @@ Return ONLY valid JSON, no markdown fences:
       if (prog) { prog.textContent = `✓ Narrative complete: ${narrativeSlides.length} slides, ${summaryContent.length} summary bullets`; prog.style.borderColor = "var(--ok)"; prog.style.background = "rgba(46,160,67,.15)"; prog.style.color = "var(--ok)"; }
 
       trackApiTraffic({ stage: "narrative_done", slides: narrativeSlides.length, summary_bullets: summaryContent.length });
-      saveOutputCache("narrative");
+      await saveOutputSnapshot("narrative");
       log("ok", `Narrative complete: ${narrativeSlides.length} themed slides generated.`, "NARRATIVE");
       switchTab("narrative");
     }
 
-    function test() {
+    async function test() {
       const out = state.out;
       const res = [];
       const add = (name, ok, detail) => res.push({ name, ok, detail });
@@ -1748,7 +1754,7 @@ Return ONLY valid JSON, no markdown fences:
       const failed = res.filter(x => !x.ok).length;
       state.smoke = { ran_at_utc: new Date().toISOString(), results: res };
       trackApiTraffic({ stage: "smoke_tests", failed_count: failed, test_count: res.length });
-      saveOutputCache("smoke");
+      await saveOutputSnapshot("smoke");
       set("bTests", failed);
       renderDebugHealth();
       log(failed ? "warn" : "ok", `Smoke tests: ${res.length - failed} passed, ${failed} failed.`);
@@ -2074,9 +2080,13 @@ Return ONLY valid JSON, no markdown fences:
         download(`heart-walk-designer-${dateStamp()}.json`, JSON.stringify(d, null, 2), "application/json;charset=utf-8");
         log("ok", "Downloaded Designer JSON.", "EXPORT");
       });
-      $("btnClearSaved").addEventListener("click", clearSavedOutput);
+      $("btnClearSaved").addEventListener("click", async () => {
+        const btn = $("btnClearSaved");
+        if (btn) btn.disabled = true;
+        try { await clearSavedOutput(); } finally { if (btn) btn.disabled = false; }
+      });
 
-      restoreOutputCache();
+      await restoreOutputSnapshot();
 
       await refreshData();
       log("ok", "Reporter ready.");
@@ -2092,7 +2102,7 @@ Return ONLY valid JSON, no markdown fences:
           log("ok", "Cited generation complete. Building narrative...", "AUTORUN");
           await generateNarrative();
           log("ok", "Narrative complete. Running tests...", "AUTORUN");
-          test();
+          await test();
           log("ok", "Depositing results...", "AUTORUN");
           await autoDepositResults();
         } catch (e) {

@@ -558,8 +558,10 @@
     <div class="color-option" onclick="setShapeColor('var(--c-temporal)')"><div class="swatch" style="background:var(--c-temporal)"></div>Temporal</div>
 </div>
 
-<script>`r`n    // Release hygiene: update BOTH APP_VERSION and APP_LAST_UPDATED_UTC before every live push.`r`n    const APP_VERSION = "v3.9";
-    const APP_LAST_UPDATED_UTC = "2026-02-23T21:41:54Z";
+<script>
+    // Release hygiene: update BOTH APP_VERSION and APP_LAST_UPDATED_UTC before every live push.
+    const APP_VERSION = "v4.0";
+    const APP_LAST_UPDATED_UTC = "2026-02-24T04:00:00Z";
 
     function formatLocalLastUpdated(utcIso) {
         const dt = new Date(utcIso);
