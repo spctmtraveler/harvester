@@ -58,14 +58,19 @@ foreach ($dir in $appDirs) {
   }
 
   $remoteDir = "$RemoteRoot/$($dir.Name)"
-  $remoteFile = "$remoteDir/index.html"
-  $remoteTarget = "${Username}@${HostName}:$remoteFile"
 
-  Write-Host "Syncing $($dir.Name)/index.html"
+  # Files to sync for each app (index.html is required; styles.css and app.js are optional)
+  $appFiles = @("index.html", "styles.css", "app.js") |
+    Where-Object { Test-Path (Join-Path $dir.FullName $_) }
+
+  Write-Host "Syncing $($dir.Name)/ ($($appFiles.Count) file(s))"
 
   if ($DryRun) {
     Write-Host "  [dry-run] ssh $Username@$HostName mkdir -p $remoteDir"
-    Write-Host "  [dry-run] scp $localIndex $remoteTarget"
+    foreach ($fname in $appFiles) {
+      $localFile = Join-Path $dir.FullName $fname
+      Write-Host "  [dry-run] scp $localFile ${Username}@${HostName}:$remoteDir/$fname"
+    }
     continue
   }
 
@@ -74,12 +79,15 @@ foreach ($dir in $appDirs) {
     throw "Failed to create remote directory: $remoteDir"
   }
 
-  & scp "$localIndex" "$remoteTarget"
-  if ($LASTEXITCODE -ne 0) {
-    throw "Failed upload: $remoteTarget"
+  foreach ($fname in $appFiles) {
+    $localFile = Join-Path $dir.FullName $fname
+    $remoteTarget = "${Username}@${HostName}:$remoteDir/$fname"
+    & scp "$localFile" "$remoteTarget"
+    if ($LASTEXITCODE -ne 0) {
+      throw "Failed upload: $remoteDir/$fname"
+    }
+    $uploaded++
   }
-
-  $uploaded++
 }
 
 if ($DryRun) {

@@ -1,0 +1,2214 @@
+    import { DBHelper } from "https://happydo.xyz/api_auto_db/db_helper.js";
+    import { askAI } from "https://happydo.xyz/api/ailnl.js";
+
+    const APP_NAME = "HWIE_v2";
+    const APP_VERSION = "v1.4";
+    const APP_LAST_UPDATED_UTC = "2026-02-20T23:55:00Z";
+    const OUTPUT_CACHE_KEY = `${APP_NAME}:reporter-output:v1`;
+    const VALID_TYPES = new Set(["cover", "section", "standard", "two-column"]);
+    const DEBUG_LIMITS = {
+      maxApiTrafficRows: 220,
+      maxLogRows: 900,
+      maxCharsIo: 4000,
+      maxRunsExport: 220,
+      maxInsightsExport: 300,
+      maxLinksExport: 1800
+    };
+    // Reporter provides ONLY structural/behavioral config.
+    // All font, size, color styling is the Designer's responsibility.
+    const DESIGNER_CONFIG = {
+      "globalX": 0, "globalY": 0, "showShapes": false,
+      "typeOffsets": { "cover": { "x": 0, "y": 0 }, "section": { "x": 0, "y": 0 }, "standard": { "x": 0, "y": 0 } }
+    };
+
+    function defaultOutState() {
+      return {
+        report: "",
+        narrative: "",
+        deck: null,
+        narrativeDeck: null,
+        mdToolDeck: null,
+        claims: [],
+        noEvidenceDropped: 0,
+        summary: [],
+        groups: { problems: [], solutions: [], mechanisms: [] },
+        generated_at_utc: null
+      };
+    }
+
+    const state = {
+      ok: false,
+      db: { insights: 0, links: 0, noEvidence: 0, loaded: [], evBy: new Map(), sentenceIds: new Set() },
+      out: defaultOutState(),
+      smoke: { ran_at_utc: null, results: [] },
+      debug: { apiTraffic: [], logHistory: [] }
+    };
+
+    const $ = (id) => document.getElementById(id);
+    const set = (id, v) => { const e = $(id); if (e) e.textContent = String(v); };
+    const dot = (id, cls) => { const e = $(id); if (!e) return; e.className = `dot ${cls}`; };
+    const clamp = (n, a, b) => Math.max(a, Math.min(b, parseInt(n, 10) || 0));
+    const short = (s, n=170) => { s = String(s || "").replace(/\s+/g, " ").trim(); return s.length <= n ? s : `${s.slice(0, n - 1).trimEnd()}...`; };
+    const sentence = (s) => { s = String(s || "").replace(/\s+/g, " ").trim(); if (!s) return ""; return /[.!?]$/.test(s) ? s : `${s}.`; };
+    const sourceName = (s) => { s = String(s || "").trim(); if (!s) return ""; const p = s.replace(/\\/g, "/").split("/"); return p[p.length - 1] || s; };
+    const nowLocal = () => new Date().toLocaleString();
+    const dateStamp = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+    const compactIsoForFilename = (iso) => String(iso || "").replaceAll(":", "").replaceAll("-", "").replaceAll(".", "").replace("T", "_").replace("Z", "Z");
+    const escHtml = (s) => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+    const clipText = (s, maxChars = DEBUG_LIMITS.maxCharsIo) => {
+      const text = String(s || "");
+      if (text.length <= maxChars) return text;
+      return `${text.slice(0, maxChars)}\n\n...[truncated ${text.length - maxChars} chars]`;
+    };
+
+    function splitHeadTail(text, maxChars = 1200) {
+      const value = String(text || "");
+      if (value.length <= maxChars * 2) return { head: value, tail: value };
+      return { head: value.slice(0, maxChars), tail: value.slice(value.length - maxChars) };
+    }
+
+    function parseInputIds(inputIds) {
+      if (Array.isArray(inputIds)) {
+        return inputIds.map((x) => String(x || "").trim()).filter(Boolean);
+      }
+      const text = String(inputIds || "").trim();
+      if (!text) return [];
+      if (text.startsWith("[")) {
+        try {
+          const arr = JSON.parse(text);
+          if (Array.isArray(arr)) return arr.map((x) => String(x || "").trim()).filter(Boolean);
+        } catch (_) {}
+      }
+      return text
+        .split(",")
+        .map((x) => x.trim().replace(/^[\[\]\"']+/, "").replace(/[\[\]\"']+$/, "").trim())
+        .filter(Boolean);
+    }
+
+    function toPrettyJsonOrRaw(value) {
+      const text = String(value || "").trim();
+      if (!text) return "";
+      try {
+        return JSON.stringify(JSON.parse(text), null, 2);
+      } catch (_) {
+        return text;
+      }
+    }
+
+    function trackApiTraffic(entry) {
+      const item = { at_utc: new Date().toISOString(), ...entry };
+      state.debug.apiTraffic.unshift(item);
+      if (state.debug.apiTraffic.length > DEBUG_LIMITS.maxApiTrafficRows) {
+        state.debug.apiTraffic.length = DEBUG_LIMITS.maxApiTrafficRows;
+      }
+      set("bApi", state.debug.apiTraffic.length);
+    }
+
+    function log(level, msg, tag = "REPORTER") {
+      const line = document.createElement("div");
+      line.style.color = level === "err" ? "var(--err)" : level === "warn" ? "var(--warn)" : level === "ok" ? "var(--ok)" : "var(--blue)";
+      line.textContent = `[${new Date().toLocaleTimeString()}] [${tag}] ${msg}`;
+      $("log").prepend(line);
+
+      state.debug.logHistory.unshift({ at: new Date().toISOString(), level, tag, msg: String(msg || "") });
+      if (state.debug.logHistory.length > DEBUG_LIMITS.maxLogRows) {
+        state.debug.logHistory.length = DEBUG_LIMITS.maxLogRows;
+      }
+    }
+
+    async function dbQuery(sql, queryName = "query") {
+      const normalizedSql = String(sql || "").replace(/\s+/g, " ").trim();
+      const slices = splitHeadTail(normalizedSql, 700);
+      const requestId = `rq_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const started = performance.now();
+
+      trackApiTraffic({
+        stage: "db_request",
+        request_id: requestId,
+        query_name: queryName,
+        sql_head: slices.head,
+        sql_tail: slices.tail
+      });
+
+      try {
+        const res = await DBHelper.query(APP_NAME, sql);
+        const elapsed = Math.round(performance.now() - started);
+        trackApiTraffic({
+          stage: "db_response",
+          request_id: requestId,
+          query_name: queryName,
+          elapsed_ms: elapsed,
+          row_count: Array.isArray(res?.rows) ? res.rows.length : 0
+        });
+        return res;
+      } catch (e) {
+        const elapsed = Math.round(performance.now() - started);
+        trackApiTraffic({
+          stage: "db_error",
+          request_id: requestId,
+          query_name: queryName,
+          elapsed_ms: elapsed,
+          error: String(e?.message || e)
+        });
+        throw e;
+      }
+    }
+
+    function switchTab(tab) {
+      document.querySelectorAll(".tab").forEach(x => x.classList.toggle("active", x.dataset.tab === tab));
+      document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.id === `v-${tab}`));
+      if (tab === "api") loadApiTraffic();
+    }
+
+    function settings() {
+      return {
+        maxInsights: clamp($("maxInsights").value, 1, 500),
+        citationsPerClaim: clamp($("citationsPerClaim").value, 1, 6),
+        preferredRank: clamp($("preferredRank").value, 0, 3),
+        includeQuotes: !!$("includeQuotes").checked,
+        narrativeSlideMode: ["mode-a", "mode-b"].includes(String($("narrativeSlideMode")?.value || "").toLowerCase())
+          ? String($("narrativeSlideMode").value).toLowerCase()
+          : "mode-b"
+      };
+    }
+
+    function saveOutputCache(reason = "") {
+      try {
+        const payload = {
+          version: 1,
+          saved_at_utc: new Date().toISOString(),
+          app_version: APP_VERSION,
+          out: state.out,
+          smoke: state.smoke
+        };
+        localStorage.setItem(OUTPUT_CACHE_KEY, JSON.stringify(payload));
+        if (reason) log("ok", `Saved output snapshot (${reason}).`, "CACHE");
+      } catch (e) {
+        log("warn", `Could not save output snapshot: ${e?.message || e}`, "CACHE");
+      }
+    }
+
+    function hydrateOutputViewsFromState() {
+      $("reportText").textContent = state.out.report || "Generate outputs to create a report preview.";
+      $("narrativeText").textContent = state.out.narrative || "Generate outputs to create the client-facing narrative report.";
+      const preferredDeck = state.out.narrativeDeck || state.out.deck || state.out.mdToolDeck || null;
+      $("jsonText").value = preferredDeck ? JSON.stringify(preferredDeck, null, 2) : "{}";
+
+      set("bReport", state.out.claims?.length || 0);
+      set("bNarrative", state.out.narrativeDeck?.slides?.length ? Math.max(0, state.out.narrativeDeck.slides.length - 3) : 0);
+      set("bJson", preferredDeck?.slides?.length || 0);
+      set("bMdTool", state.out.mdToolDeck?.slides?.length || 0);
+      set("bTests", (state.smoke?.results || []).filter((r) => !r.ok).length || 0);
+
+      if (state.out.report || state.out.narrative || preferredDeck) {
+        dot("dotOut", "green");
+      }
+      renderDebugHealth();
+    }
+
+    function restoreOutputCache() {
+      try {
+        const raw = localStorage.getItem(OUTPUT_CACHE_KEY);
+        if (!raw) return false;
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== "object" || !parsed.out || typeof parsed.out !== "object") return false;
+
+        state.out = {
+          ...defaultOutState(),
+          ...parsed.out,
+          groups: {
+            ...defaultOutState().groups,
+            ...(parsed.out.groups || {})
+          },
+          claims: Array.isArray(parsed.out.claims) ? parsed.out.claims : []
+        };
+        if (parsed.smoke && typeof parsed.smoke === "object") {
+          state.smoke = {
+            ran_at_utc: parsed.smoke.ran_at_utc || null,
+            results: Array.isArray(parsed.smoke.results) ? parsed.smoke.results : []
+          };
+        }
+
+        hydrateOutputViewsFromState();
+        log("ok", "Restored previously generated output from this browser.", "CACHE");
+        return true;
+      } catch (e) {
+        log("warn", `Could not restore saved output: ${e?.message || e}`, "CACHE");
+        return false;
+      }
+    }
+
+    function clearSavedOutput() {
+      try {
+        localStorage.removeItem(OUTPUT_CACHE_KEY);
+      } catch (_) {}
+
+      state.out = defaultOutState();
+      state.smoke = { ran_at_utc: null, results: [] };
+      hydrateOutputViewsFromState();
+      updateStats();
+      set("bTests", 0);
+      dot("dotOut", "");
+      renderTests([]);
+      log("ok", "Cleared saved output. You can generate a fresh run anytime.", "CACHE");
+    }
+
+    function updateStats() {
+      set("nInsights", state.db.insights);
+      set("nLinks", state.db.links);
+      set("nLoaded", state.db.loaded.length);
+      set("nNoEv", state.db.noEvidence);
+      set("nClaims", state.out.claims.length);
+      set("nSlides", state.out.deck?.slides?.length || 0);
+      $("btnGenerate").disabled = state.db.loaded.length === 0;
+    }
+
+    function computeHealthStatus() {
+      if (!state.ok) {
+        return { level: "err", text: "Health: ERROR | DB is not connected." };
+      }
+
+      const total = state.db.insights || 0;
+      const links = state.db.links || 0;
+      const orphans = state.db.noEvidence || 0;
+      const claims = state.out.claims.length || 0;
+      const smokeFailures = (state.smoke.results || []).filter((r) => !r.ok).length;
+      const dbErrors = state.debug.apiTraffic.filter((e) => String(e.stage || "") === "db_error").length;
+
+      if (total === 0) {
+        return { level: "neutral", text: "Health: INFO | No insights in DB yet. Run Synthesizer first." };
+      }
+
+      if (links === 0) {
+        return {
+          level: "err",
+          text: `Health: ERROR | ${total} insights, 0 evidence links. Reporter cannot produce cited claims until insight_sentences is populated.`
+        };
+      }
+
+      if (smokeFailures > 0) {
+        return {
+          level: "err",
+          text: `Health: ERROR | ${smokeFailures} smoke test failure(s). Review Smoke Tests and API Traffic tabs.`
+        };
+      }
+
+      if (claims === 0) {
+        if (!state.out.generated_at_utc) {
+          return {
+            level: "neutral",
+            text: "Health: INFO | Dataset loaded. Click Generate Outputs to build evidence-backed claims."
+          };
+        }
+        return {
+          level: "warn",
+          text: `Health: WARN | Insights are loaded but no evidence-backed claims were generated. Check quote thresholds and orphan links.`
+        };
+      }
+
+      if (orphans > 0 || dbErrors > 0) {
+        const parts = [];
+        if (orphans > 0) parts.push(`${orphans} orphan insight(s)`);
+        if (dbErrors > 0) parts.push(`${dbErrors} DB error event(s) this session`);
+        return {
+          level: "warn",
+          text: `Health: WARN | ${parts.join(" | ")}. Outputs may be incomplete.`
+        };
+      }
+
+      return {
+        level: "ok",
+        text: `Health: OK | ${total} insights, ${links} evidence links, ${claims} cited claim(s) generated.`
+      };
+    }
+
+    function renderDebugHealth() {
+      const el = $("debugHealthBanner");
+      if (!el) return;
+      const health = computeHealthStatus();
+      el.className = `health-banner health-${health.level}`;
+      el.textContent = health.text;
+    }
+
+    async function refreshData() {
+      if (!state.ok) return;
+      dot("dotData", "");
+      try {
+        const s = settings();
+        const [a, b, c] = await Promise.all([
+          dbQuery("SELECT COUNT(*) AS cnt FROM insights", "count_insights"),
+          dbQuery("SELECT COUNT(*) AS cnt FROM insight_sentences", "count_insight_sentences"),
+          dbQuery("SELECT COUNT(*) AS cnt FROM insights i WHERE NOT EXISTS (SELECT 1 FROM insight_sentences x WHERE x.insight_id=i.insight_id)", "count_orphan_insights")
+        ]);
+        state.db.insights = parseInt(a?.rows?.[0]?.cnt || 0, 10) || 0;
+        state.db.links = parseInt(b?.rows?.[0]?.cnt || 0, 10) || 0;
+        state.db.noEvidence = parseInt(c?.rows?.[0]?.cnt || 0, 10) || 0;
+
+        const ires = await dbQuery(`
+          SELECT insight_id, summary_plain, summary_long, dominant_sentiment_score, is_problem, is_solution, is_explanation, is_workaround
+          FROM insights ORDER BY insight_id DESC LIMIT ${s.maxInsights}
+        `, "load_insights_for_reporter");
+        state.db.loaded = (ires?.rows || []).map(r => ({
+          insight_id: parseInt(r.insight_id, 10),
+          summary_plain: String(r.summary_plain || ""),
+          summary_long: String(r.summary_long || ""),
+          dominant_sentiment_score: clamp(r.dominant_sentiment_score, -2, 2),
+          is_problem: !!parseInt(r.is_problem, 10),
+          is_solution: !!parseInt(r.is_solution, 10),
+          is_explanation: !!parseInt(r.is_explanation, 10),
+          is_workaround: !!parseInt(r.is_workaround, 10)
+        }));
+
+        const ids = state.db.loaded.map(x => x.insight_id).filter(Number.isFinite);
+        state.db.evBy = new Map();
+        state.db.sentenceIds = new Set();
+        if (ids.length) {
+          const q = await dbQuery(`
+            SELECT x.insight_id, x.sentence_id, x.quote_rank, x.support_role,
+                   s.raw_text, s.clean_text, s.timestamp_block, s.speaker, s.source_file, s.interview_id
+            FROM insight_sentences x
+            LEFT JOIN sentences s ON s.sentence_id=x.sentence_id
+            WHERE x.insight_id IN (${ids.join(",")})
+            ORDER BY x.insight_id DESC, x.quote_rank DESC, x.sentence_id ASC
+          `, "load_insight_sentence_links");
+          for (const r of (q?.rows || [])) {
+            const iid = parseInt(r.insight_id, 10);
+            if (!state.db.evBy.has(iid)) state.db.evBy.set(iid, []);
+            const ev = {
+              sentence_id: String(r.sentence_id || "").trim(),
+              quote_rank: clamp(r.quote_rank, 0, 3),
+              support_role: ["direct_quote","evidence","context","counterpoint"].includes(String(r.support_role || "")) ? String(r.support_role) : "evidence",
+              raw_text: String(r.raw_text || ""), clean_text: String(r.clean_text || ""),
+              timestamp_block: String(r.timestamp_block || ""), speaker: String(r.speaker || ""),
+              source_file: String(r.source_file || ""), interview_id: String(r.interview_id || "")
+            };
+            state.db.evBy.get(iid).push(ev);
+            if (ev.sentence_id) state.db.sentenceIds.add(ev.sentence_id);
+          }
+        }
+
+        dot("dotData", "green");
+        updateStats();
+
+        // Warn when insights exist but no evidence links (upstream data integrity issue)
+        if (state.db.insights > 0 && state.db.links === 0) {
+          dot("dotData", "yellow");
+          log("warn", `Data integrity warning: ${state.db.insights} insights found but 0 evidence links in insight_sentences.`);
+        } else if (state.db.noEvidence > 0) {
+          log("warn", `${state.db.noEvidence} of ${state.db.insights} insights have no evidence links (orphans). Reporter will exclude them.`);
+        }
+
+        log("ok", `Loaded ${state.db.loaded.length} insights for Reporter.`);
+        renderDebugHealth();
+      } catch (e) {
+        dot("dotData", "red");
+        log("err", `Refresh failed: ${e.message}`);
+        renderDebugHealth();
+        throw e;
+      }
+    }
+
+    function pickEvidence(rows, perClaim, preferredRank) {
+      const seen = new Set(), uniq = [];
+      for (const r of [...(rows || [])].sort((a,b)=>(b.quote_rank-a.quote_rank)||String(a.sentence_id).localeCompare(String(b.sentence_id)))) {
+        const sid = String(r.sentence_id || "").trim();
+        if (!sid || seen.has(sid)) continue;
+        seen.add(sid); uniq.push(r);
+      }
+      const hi = uniq.filter(x => x.quote_rank >= preferredRank);
+      const lo = uniq.filter(x => x.quote_rank < preferredRank);
+      const out = hi.slice(0, perClaim);
+      if (out.length < perClaim) out.push(...lo.slice(0, perClaim - out.length));
+      if (!out.length && uniq.length) out.push(uniq[0]);
+      return out;
+    }
+
+    function sectionFor(i) { if (i.is_problem) return "problems"; if (i.is_solution) return "solutions"; return "mechanisms"; }
+
+    function citeToken(iid, evs) {
+      const refs = [], src = new Set();
+      for (const e of evs) {
+        refs.push(e.timestamp_block ? `${e.sentence_id}@${e.timestamp_block}` : e.sentence_id);
+        const s = sourceName(e.source_file || e.interview_id || "");
+        if (s) src.add(s);
+      }
+      return `[I${iid} | ${refs.join("; ")}${src.size ? ` | src:${Array.from(src).join(",")}` : ""}]`;
+    }
+
+    function summaryLines(claims, dropped) {
+      const c = { p: 0, s: 0, m: 0, neg: 0, neu: 0, pos: 0 };
+      for (const x of claims) {
+        if (x.section === "problems") c.p++; else if (x.section === "solutions") c.s++; else c.m++;
+        if (x.insight.dominant_sentiment_score < 0) c.neg++; else if (x.insight.dominant_sentiment_score > 0) c.pos++; else c.neu++;
+      }
+      const out = [];
+      out.push(sentence(`This report synthesizes ${claims.length} evidence-backed insights from the loaded Reporter dataset`));
+      out.push(sentence(`Findings include ${c.p} problem insights, ${c.s} solution insights, and ${c.m} mechanism insights`));
+      out.push(sentence(`Sentiment distribution is ${c.neg} negative, ${c.neu} neutral, and ${c.pos} positive`));
+      if (dropped > 0) out.push(sentence(`${dropped} loaded insights were excluded because they had no evidence links`));
+      out.push("Each claim below includes citation tokens tied to source semantic blocks.");
+      return out;
+    }
+
+    function renderSection(title, claims, includeQuotes) {
+      const out = [title];
+      if (!claims.length) return [...out, "No evidence-backed insights are available for this section.", ""];
+      let n = 1;
+      for (const c of claims) {
+        out.push(`${n++}. ${c.claim} ${c.citation}`);
+        if (includeQuotes) for (const e of c.evidence) out.push(`   Supporting evidence: "${sentence(short(e.clean_text || e.raw_text || ""))}" (${e.sentence_id}${e.timestamp_block ? ` @${e.timestamp_block}` : ""}, rank ${e.quote_rank}, ${e.support_role}).`);
+      }
+      out.push("");
+      return out;
+    }
+
+    function chunks(arr, n) { const out=[]; for(let i=0;i<arr.length;i+=n) out.push(arr.slice(i,i+n)); return out; }
+
+    function claimMd(c, includeQuotes) {
+      const lines = [`### Insight I${c.insight.insight_id}`, `${c.claim} ${c.citation}`];
+      for (const e of c.evidence) {
+        lines.push(`* Evidence: ${e.sentence_id}${e.timestamp_block ? ` @${e.timestamp_block}` : ""}${sourceName(e.source_file || e.interview_id || "") ? ` - ${sourceName(e.source_file || e.interview_id || "")}` : ""} (rank ${e.quote_rank}, ${e.support_role})`);
+        if (includeQuotes) lines.push(`* Quote: "${short(e.clean_text || e.raw_text || "")}"`);
+      }
+      return lines.join("\n");
+    }
+
+    function addSectionSlides(slides, title, claims, includeQuotes) {
+      slides.push({ type: "section", title });
+      if (!claims.length) { slides.push({ type: "standard", title, content: "* No evidence-backed insights are available for this section." }); return; }
+      const cc = chunks(claims, 3);
+      for (let i=0;i<cc.length;i++) {
+        slides.push({ type: "standard", title: cc.length > 1 ? `${title} (${i+1}/${cc.length})` : title, content: cc[i].map(c => claimMd(c, includeQuotes)).join("\n\n") });
+      }
+    }
+
+    function makeDeck(summary, groups, claims, includeQuotes) {
+      const slides = [
+        { type: "cover", title: "Heart Walk Evidence Report", subtitle: `Generated ${nowLocal()} | ${claims.length} cited claims` },
+        { type: "section", title: "Executive Summary" },
+        { type: "standard", title: "Executive Summary", content: summary.map(x => `* ${x}`).join("\n") }
+      ];
+      addSectionSlides(slides, "Problems", groups.problems, includeQuotes);
+      addSectionSlides(slides, "Solutions", groups.solutions, includeQuotes);
+      addSectionSlides(slides, "Mechanisms", groups.mechanisms, includeQuotes);
+      return { config: JSON.parse(JSON.stringify(DESIGNER_CONFIG)), slides };
+    }
+
+    function setMdToolStatus(kind, msg) {
+      const el = $("mdToolStatus");
+      if (!el) return;
+      el.className = "mdtool-status";
+      if (kind === "running") el.classList.add("running");
+      if (kind === "ok") el.classList.add("ok");
+      if (kind === "err") el.classList.add("err");
+      el.textContent = String(msg || "");
+    }
+
+    function extractFirstJsonObject(text) {
+      const s = String(text || "");
+      let inString = false;
+      let escaped = false;
+      let depth = 0;
+      let start = -1;
+
+      for (let i = 0; i < s.length; i++) {
+        const ch = s[i];
+
+        if (inString) {
+          if (escaped) {
+            escaped = false;
+            continue;
+          }
+          if (ch === "\\") {
+            escaped = true;
+            continue;
+          }
+          if (ch === '"') inString = false;
+          continue;
+        }
+
+        if (ch === '"') {
+          inString = true;
+          continue;
+        }
+
+        if (ch === "{") {
+          if (depth === 0) start = i;
+          depth++;
+          continue;
+        }
+
+        if (ch === "}") {
+          if (depth > 0) depth--;
+          if (depth === 0 && start >= 0) return s.slice(start, i + 1);
+        }
+      }
+
+      return null;
+    }
+
+    function normalizeMdBodyField(field, fallbackText = "", fallbackPrompt = "") {
+      const out = {
+        mode: "text",
+        text: String(fallbackText || ""),
+        imageUrl: "",
+        imageAlign: "center",
+        imagePrompt: String(fallbackPrompt || ""),
+        quoteText: "",
+        quoteAttribution: ""
+      };
+
+      if (!field || typeof field !== "object") return out;
+
+      const mode = String(field.mode || "text").toLowerCase();
+      out.mode = ["text", "image", "quote"].includes(mode) ? mode : "text";
+      out.text = String(field.text ?? fallbackText ?? "");
+      out.imageUrl = String(field.imageUrl || "");
+      out.imageAlign = ["left", "center", "right"].includes(String(field.imageAlign || "").toLowerCase())
+        ? String(field.imageAlign || "").toLowerCase()
+        : "center";
+      out.imagePrompt = String(field.imagePrompt || fallbackPrompt || "");
+      out.quoteText = String(field.quoteText || "");
+      out.quoteAttribution = String(field.quoteAttribution || "");
+      return out;
+    }
+
+    function normalizeMdColumns(columns, fallbackText = "") {
+      const splitRaw = parseInt(columns?.splitPct, 10);
+      const splitPct = Number.isFinite(splitRaw) ? Math.max(25, Math.min(75, splitRaw)) : 55;
+      return {
+        splitPct,
+        leftField: normalizeMdBodyField(columns?.leftField, fallbackText, ""),
+        rightField: normalizeMdBodyField(columns?.rightField, "", "")
+      };
+    }
+
+    function sanitizeMdToolSlide(slide) {
+      const src = slide && typeof slide === "object" ? slide : {};
+      const typeRaw = String(src.type || "standard").toLowerCase();
+      const type = VALID_TYPES.has(typeRaw) ? typeRaw : "standard";
+      const title = String(src.title || (type === "cover" ? "Report" : "Slide"));
+      const content = String(src.content || "");
+
+      const out = { type, title, content };
+      if (src.shapeColor !== undefined) out.shapeColor = String(src.shapeColor);
+
+      for (const nKey of ["x", "y", "titleX", "titleY", "bodyX", "bodyY"]) {
+        const v = Number(src[nKey]);
+        if (Number.isFinite(v)) out[nKey] = v;
+      }
+
+      if (type === "cover") {
+        out.subtitle = String(src.subtitle || "");
+      } else if (type === "two-column") {
+        out.columns = normalizeMdColumns(src.columns, content);
+      } else if (type === "standard") {
+        out.bodyField = normalizeMdBodyField(src.bodyField, content, "");
+      }
+
+      return out;
+    }
+
+    function sanitizeMdToolDeck(candidate) {
+      if (!candidate || typeof candidate !== "object") {
+        throw new Error("AI output is not a JSON object.");
+      }
+
+      const baseConfig = JSON.parse(JSON.stringify(DESIGNER_CONFIG));
+      let config = baseConfig;
+      if (candidate.config && typeof candidate.config === "object") {
+        config = { ...baseConfig, ...candidate.config };
+        if (candidate.config.typeOffsets && typeof candidate.config.typeOffsets === "object") {
+          config.typeOffsets = {
+            ...baseConfig.typeOffsets,
+            ...candidate.config.typeOffsets
+          };
+        }
+      }
+
+      const slidesInput = Array.isArray(candidate.slides) ? candidate.slides : [];
+      if (!slidesInput.length) {
+        throw new Error("AI output did not include a non-empty slides array.");
+      }
+
+      const slides = slidesInput.map(sanitizeMdToolSlide).filter(Boolean).slice(0, 35);
+      if (!slides.length) {
+        throw new Error("No valid slides after normalization.");
+      }
+
+      return { config, slides };
+    }
+
+    function shouldRetryMdToolAiError(message) {
+      const msg = String(message || "").toLowerCase();
+      return msg.includes("signal is aborted") || msg.includes("aborted") || msg.includes("timeout") || msg.includes("timed out") || msg.includes("network");
+    }
+
+    function normalizeMdToolErrorMessage(message) {
+      const raw = String(message || "Unknown AI error.").trim();
+      if (/signal is aborted without reason/i.test(raw)) {
+        return "AI request timed out while converting Markdown. Try again or reduce input size.";
+      }
+      if (/^error:\s*/i.test(raw)) return raw;
+      return raw;
+    }
+
+    async function requestMdToolAiJson(prompt, model) {
+      const timeouts = [90000, 180000];
+      let lastError = "AI returned empty response.";
+
+      for (let i = 0; i < timeouts.length; i++) {
+        const timeoutMs = timeouts[i];
+        const raw = await askAI(prompt, model, { temperature: 0.1, timeoutMs });
+        const rawText = String(raw || "").trim();
+        if (rawText && !rawText.startsWith("Error:")) {
+          if (i > 0) {
+            trackApiTraffic({ stage: "md_tool_retry_success", model, attempt: i + 1, timeout_ms: timeoutMs, response_chars: rawText.length });
+          }
+          return rawText;
+        }
+
+        lastError = rawText || "AI returned empty response.";
+        const hasNextAttempt = i < timeouts.length - 1;
+        if (!hasNextAttempt || !shouldRetryMdToolAiError(lastError)) {
+          throw new Error(lastError);
+        }
+
+        trackApiTraffic({ stage: "md_tool_retry", model, attempt: i + 1, timeout_ms: timeoutMs, error: lastError });
+        await sleep(250);
+      }
+
+      throw new Error(lastError);
+    }
+
+    async function convertMdToDesignerJson() {
+      const mdText = String($("mdToolInput")?.value || "").trim();
+      const model = String($("mdToolModel")?.value || "gpt-4o");
+      const btn = $("btnMdToolConvert");
+
+      if (!mdText) {
+        setMdToolStatus("err", "Paste Markdown text first.");
+        log("warn", "MD tool conversion skipped: empty markdown input.", "MD_TOOL");
+        switchTab("mdtool");
+        return;
+      }
+
+      if (btn) btn.disabled = true;
+      setMdToolStatus("running", `Converting Markdown (${mdText.length} chars) using ${model}...`);
+      trackApiTraffic({ stage: "md_tool_request", model, input_chars: mdText.length });
+
+      const prompt = `You convert markdown reports into JSON payloads for a slide designer.
+
+Return ONLY valid JSON (no markdown fences, no commentary) as:
+{
+  "config": { ... },
+  "slides": [ ... ]
+}
+
+Designer constraints:
+- Allowed slide types: "cover", "section", "standard", "two-column"
+- Include top-level "config" and "slides"
+- Preserve the report content; do not invent facts not present in markdown
+- Max 35 slides
+
+Schema guidance:
+- cover: { "type":"cover", "title":"...", "subtitle":"..." }
+- section: { "type":"section", "title":"..." }
+- standard:
+  {
+    "type":"standard",
+    "title":"...",
+    "content":"...",
+    "bodyField":{
+      "mode":"text|image|quote",
+      "text":"...",
+      "imageUrl":"",
+      "imageAlign":"left|center|right",
+      "imagePrompt":"",
+      "quoteText":"",
+      "quoteAttribution":""
+    }
+  }
+- two-column:
+  {
+    "type":"two-column",
+    "title":"...",
+    "content":"...",
+    "columns":{
+      "splitPct":55,
+      "leftField":{ bodyField schema },
+      "rightField":{ bodyField schema }
+    }
+  }
+
+IMPORTANT: The "config" object must contain ONLY structural keys (globalX, globalY, showShapes, typeOffsets).
+Do NOT include any font, size, or color keys — the Designer app manages all styling.
+
+Use this structural config:
+${JSON.stringify(DESIGNER_CONFIG, null, 2)}
+
+Markdown input:
+${mdText}`;
+
+      try {
+        const rawText = await requestMdToolAiJson(prompt, model);
+        trackApiTraffic({ stage: "md_tool_response", model, response_chars: rawText.length, raw_output_preview: rawText.slice(0, 1500) });
+
+        const stripped = rawText.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "").trim();
+        let parsed = null;
+        try {
+          parsed = JSON.parse(stripped);
+        } catch (_) {
+          const obj = extractFirstJsonObject(stripped);
+          if (!obj) throw new Error("Could not locate JSON object in AI response.");
+          parsed = JSON.parse(obj);
+        }
+
+        const deck = sanitizeMdToolDeck(parsed);
+        state.out.mdToolDeck = deck;
+
+        const pretty = JSON.stringify(deck, null, 2);
+        $("mdToolJson").value = pretty;
+        $("jsonText").value = pretty;
+        set("bMdTool", deck.slides.length);
+        set("bJson", deck.slides.length);
+
+        setMdToolStatus("ok", `Converted successfully: ${deck.slides.length} slides.`);
+        trackApiTraffic({ stage: "md_tool_done", model, slides: deck.slides.length });
+        log("ok", `MD tool produced ${deck.slides.length} slides.`, "MD_TOOL");
+        switchTab("mdtool");
+      } catch (e) {
+        const err = normalizeMdToolErrorMessage(e?.message || e);
+        setMdToolStatus("err", `Conversion failed: ${err}`);
+        trackApiTraffic({ stage: "md_tool_error", model, error: err });
+        log("err", `MD tool conversion failed: ${err}`, "MD_TOOL");
+        switchTab("mdtool");
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    function loadNarrativeIntoMdTool() {
+      const source = String(state.out.narrative || state.out.report || "").trim();
+      if (!source) {
+        setMdToolStatus("err", "No existing report content to load. Generate outputs first.");
+        log("warn", "No narrative/report text available for MD tool input.", "MD_TOOL");
+        return;
+      }
+      $("mdToolInput").value = source;
+      setMdToolStatus("ok", `Loaded ${source.length} characters from current report output.`);
+      log("ok", "Loaded current report output into MD tool input.", "MD_TOOL");
+      switchTab("mdtool");
+    }
+
+    function useMdToolJsonAsActive() {
+      if (!state.out.mdToolDeck) {
+        log("warn", "No MD tool JSON available yet.", "MD_TOOL");
+        return;
+      }
+      const pretty = JSON.stringify(state.out.mdToolDeck, null, 2);
+      $("jsonText").value = pretty;
+      set("bJson", state.out.mdToolDeck.slides.length);
+      log("ok", "MD tool JSON set as active Designer JSON view.", "MD_TOOL");
+      switchTab("json");
+    }
+
+    async function generate() {
+      trackApiTraffic({ stage: "generate_start", settings: settings() });
+      await refreshData();
+      const s = settings();
+      const groups = { problems: [], solutions: [], mechanisms: [] };
+      const claims = [];
+      let dropped = 0;
+      for (const i of state.db.loaded) {
+        const ev = pickEvidence(state.db.evBy.get(i.insight_id) || [], s.citationsPerClaim, s.preferredRank);
+        if (!ev.length) { dropped++; continue; }
+        const claim = sentence(i.summary_plain || i.summary_long || `Insight ${i.insight_id}`);
+        const section = sectionFor(i);
+        const c = { insight: i, claim, section, evidence: ev, citation: citeToken(i.insight_id, ev), sentenceIds: ev.map(x => x.sentence_id).filter(Boolean) };
+        claims.push(c); groups[section].push(c);
+      }
+      const summary = summaryLines(claims, dropped);
+      const report = [
+        "Heart Walk Research Report (Cited)",
+        `Generated: ${nowLocal()}`,
+        `Data Source: ${APP_NAME}`,
+        "",
+        "Executive Summary", ...summary, "",
+        ...renderSection("Problems", groups.problems, s.includeQuotes),
+        ...renderSection("Solutions", groups.solutions, s.includeQuotes),
+        ...renderSection("Mechanisms / Explanation", groups.mechanisms, s.includeQuotes),
+        "Citation Key",
+        "Citation format: [I<insight_id> | <sentence_id>@<timestamp> ... | src:<source_file>].",
+        "Only evidence-backed claims are included in this output."
+      ].join("\n");
+
+      const deck = makeDeck(summary, groups, claims, s.includeQuotes);
+      state.out = {
+        ...state.out,
+        report,
+        deck,
+        claims,
+        noEvidenceDropped: dropped,
+        summary,
+        groups,
+        generated_at_utc: new Date().toISOString()
+      };
+
+      $("reportText").textContent = report;
+      $("jsonText").value = JSON.stringify(deck, null, 2);
+      set("bReport", claims.length);
+      set("bJson", deck.slides.length);
+      dot("dotOut", "green");
+      updateStats();
+      trackApiTraffic({
+        stage: "generate_done",
+        claims: claims.length,
+        slides: deck.slides.length,
+        dropped_no_evidence: dropped
+      });
+      saveOutputCache("generate");
+      renderDebugHealth();
+      log("ok", `Generated ${claims.length} cited claims and ${deck.slides.length} slides.`);
+      switchTab("narrative");
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  Narrative AI Pass — transforms raw claims into client deck
+    // ═══════════════════════════════════════════════════════════
+
+    function narrativeProgress(msg) {
+      const el = $("narrativeProgress");
+      if (!el) return;
+      el.style.display = "block";
+      el.textContent = msg;
+    }
+
+    function buildClaimBundle(claims) {
+      // Build a compact data bundle of all claims + evidence for AI
+      return claims.map(c => {
+        const quotes = c.evidence.map(e => {
+          const speaker = sourceName(e.source_file || "").replace(/\.md$/i, "") || "Staff";
+          const qt = (e.clean_text || e.raw_text || "").replace(/\s+/g, " ").trim();
+          return { speaker, quote: qt.length > 400 ? qt.slice(0, 397) + "..." : qt, role: e.support_role };
+        });
+        return { id: c.insight.insight_id, claim: c.claim, section: c.section, quotes };
+      });
+    }
+
+    /**
+     * Convert an AI-generated slide object (with layout, content, featured_quote, image_prompt)
+     * into a Designer-compatible slide with field-mode schema.
+     *
+     * Layout mapping:
+     *   "text"        → type: "standard"    | bodyField.mode = "text"
+     *   "text-quote"  → type: "two-column"  | left = text, right = quote
+     *   "quote-only"  → type: "standard"    | bodyField.mode = "quote"
+     *   (default)     → type: "standard"    | bodyField.mode = "text" (backward compat)
+     */
+    function buildDesignerSlide(aiSlide) {
+      const title = String(aiSlide.title || "Untitled");
+      const content = String(aiSlide.content || "");
+      const layout = String(aiSlide.layout || "text").toLowerCase();
+      const prompt = String(aiSlide.image_prompt || "");
+      const fq = aiSlide.featured_quote || null;
+
+      if (layout === "text-quote" && fq) {
+        // Two-column: text on left, quote on right
+        return {
+          type: "two-column",
+          title,
+          content,                   // backward compat: flat text
+          columns: {
+            splitPct: 55,
+            leftField: {
+              mode: "text",
+              text: content,
+              imageUrl: "",
+              imageAlign: "center",
+              imagePrompt: prompt,
+              quoteText: "",
+              quoteAttribution: ""
+            },
+            rightField: {
+              mode: "quote",
+              text: "",
+              imageUrl: "",
+              imageAlign: "center",
+              imagePrompt: "",
+              quoteText: String(fq.text || ""),
+              quoteAttribution: String(fq.speaker || "")
+            }
+          }
+        };
+      }
+
+      if (layout === "quote-only" && fq) {
+        // Full-slide quote
+        return {
+          type: "standard",
+          title,
+          content,
+          bodyField: {
+            mode: "quote",
+            text: content,
+            imageUrl: "",
+            imageAlign: "center",
+            imagePrompt: prompt,
+            quoteText: String(fq.text || ""),
+            quoteAttribution: String(fq.speaker || "")
+          }
+        };
+      }
+
+      // Default: standard text slide
+      return {
+        type: "standard",
+        title,
+        content,
+        bodyField: {
+          mode: "text",
+          text: content,
+          imageUrl: "",
+          imageAlign: "center",
+          imagePrompt: prompt,
+          quoteText: "",
+          quoteAttribution: ""
+        }
+      };
+    }
+
+    function cleanSlideTitle(text, fallback = "Untitled") {
+      const value = String(text || "").replace(/^#+\s*/g, "").replace(/\s+/g, " ").trim();
+      return value || fallback;
+    }
+
+    function normalizeBulletCopy(text, maxBullets = 5) {
+      const raw = String(text || "");
+      const lines = raw
+        .split(/\r?\n/)
+        .map((line) => String(line || "").trim())
+        .filter(Boolean)
+        .map((line) => line
+          .replace(/^>\s*/g, "")
+          .replace(/^#{1,6}\s+/g, "")
+          .replace(/^[-*]\s+/g, "")
+          .replace(/^\d+[.)]\s+/g, "")
+          .replace(/^Quote\s*Bubble\s*[—-]?\s*/i, "")
+          .trim())
+        .filter(Boolean);
+
+      const deduped = [];
+      const seen = new Set();
+      for (const line of lines) {
+        const key = line.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        deduped.push(line);
+      }
+
+      const limited = deduped.slice(0, maxBullets);
+      return limited.map((line) => line.startsWith("•") ? line : `• ${line}`).join("\n");
+    }
+
+    function normalizeParagraphCopy(text, maxLines = 4) {
+      const raw = String(text || "");
+      const lines = raw
+        .split(/\r?\n/)
+        .map((line) => String(line || "").trim())
+        .filter(Boolean)
+        .map((line) => line
+          .replace(/^>\s*/g, "")
+          .replace(/^#{1,6}\s+/g, "")
+          .replace(/^[-*]\s+/g, "")
+          .replace(/^\d+[.)]\s+/g, "")
+          .trim())
+        .filter(Boolean)
+        .slice(0, maxLines);
+      return lines.map((line) => line.startsWith("•") ? line : `• ${line}`).join("\n");
+    }
+
+    function normalizeSupportingQuotes(input, featuredQuote) {
+      const list = [];
+      const seen = new Set();
+
+      const tryPush = (item) => {
+        const text = String(item?.text || item?.quote || "").replace(/\s+/g, " ").trim();
+        if (!text) return;
+        const key = text.toLowerCase();
+        if (seen.has(key)) return;
+        seen.add(key);
+        list.push({
+          text: text.length > 260 ? `${text.slice(0, 257).trimEnd()}...` : text,
+          speaker: String(item?.speaker || "").trim()
+        });
+      };
+
+      if (Array.isArray(input)) {
+        for (const item of input) tryPush(item);
+      }
+      if (featuredQuote && typeof featuredQuote === "object") {
+        tryPush({ text: featuredQuote.text, speaker: featuredQuote.speaker });
+      }
+      return list.slice(0, 2);
+    }
+
+    function normalizeNarrativeDraftSlide(src) {
+      const title = cleanSlideTitle(src?.title, "Untitled");
+      const layoutRaw = String(src?.layout || "text").toLowerCase();
+      const layout = ["text", "text-quote", "quote-only"].includes(layoutRaw) ? layoutRaw : "text";
+      return {
+        title,
+        layout,
+        content: normalizeBulletCopy(src?.content || "", 5),
+        elaboration: normalizeParagraphCopy(src?.elaboration || "", 4),
+        image_prompt: String(src?.image_prompt || "").trim(),
+        featured_quote: src?.featured_quote && typeof src.featured_quote === "object"
+          ? {
+              text: String(src.featured_quote.text || "").replace(/\s+/g, " ").trim(),
+              speaker: String(src.featured_quote.speaker || "").trim()
+            }
+          : null,
+        supporting_quotes: normalizeSupportingQuotes(src?.supporting_quotes, src?.featured_quote)
+      };
+    }
+
+    function buildQuoteSupportSlide(baseTitle, quotes) {
+      const title = `${cleanSlideTitle(baseTitle)} — Supporting Quote${quotes.length > 1 ? "s" : ""}`;
+      if (quotes.length === 1) {
+        return {
+          type: "standard",
+          title,
+          content: quotes[0].text,
+          bodyField: {
+            mode: "quote",
+            text: "",
+            imageUrl: "",
+            imageAlign: "center",
+            imagePrompt: "",
+            quoteText: quotes[0].text,
+            quoteAttribution: quotes[0].speaker || ""
+          }
+        };
+      }
+
+      return {
+        type: "two-column",
+        title,
+        content: "",
+        columns: {
+          splitPct: 50,
+          leftField: {
+            mode: "quote",
+            text: "",
+            imageUrl: "",
+            imageAlign: "center",
+            imagePrompt: "",
+            quoteText: quotes[0].text,
+            quoteAttribution: quotes[0].speaker || ""
+          },
+          rightField: {
+            mode: "quote",
+            text: "",
+            imageUrl: "",
+            imageAlign: "center",
+            imagePrompt: "",
+            quoteText: quotes[1].text,
+            quoteAttribution: quotes[1].speaker || ""
+          }
+        }
+      };
+    }
+
+    function buildElaborationSlide(baseTitle, elaboration) {
+      const clean = normalizeParagraphCopy(elaboration || "", 4);
+      if (!clean) return null;
+      return {
+        type: "standard",
+        title: `${cleanSlideTitle(baseTitle)} — What This Means`,
+        content: clean,
+        bodyField: {
+          mode: "text",
+          text: clean,
+          imageUrl: "",
+          imageAlign: "center",
+          imagePrompt: "",
+          quoteText: "",
+          quoteAttribution: ""
+        }
+      };
+    }
+
+    function buildNarrativeOutputSlides(draftSlides, mode) {
+      const slideMode = mode === "mode-a" ? "mode-a" : "mode-b";
+      const out = [];
+
+      for (const draft of draftSlides) {
+        const normalized = normalizeNarrativeDraftSlide(draft || {});
+        const main = buildDesignerSlide(normalized);
+        out.push(main);
+
+        if (normalized.supporting_quotes.length > 0) {
+          out.push(buildQuoteSupportSlide(normalized.title, normalized.supporting_quotes));
+        }
+
+        if (slideMode === "mode-b") {
+          const elaborationSlide = buildElaborationSlide(normalized.title, normalized.elaboration);
+          if (elaborationSlide) out.push(elaborationSlide);
+        }
+      }
+
+      return out;
+    }
+
+    function narrativeSlideText(slide) {
+      if (!slide || typeof slide !== "object") return "";
+      if (slide.type === "two-column") {
+        const l = String(slide.columns?.leftField?.text || slide.columns?.leftField?.quoteText || "").trim();
+        const r = String(slide.columns?.rightField?.text || slide.columns?.rightField?.quoteText || "").trim();
+        return [l, r].filter(Boolean).join("\n\n");
+      }
+      if (slide.bodyField?.mode === "quote") {
+        return String(slide.bodyField.quoteText || slide.content || "").trim();
+      }
+      return String(slide.bodyField?.text || slide.content || "").trim();
+    }
+
+    async function generateNarrative() {
+      if (!state.out.claims?.length) {
+        log("warn", "No claims to narrate. Generate outputs first.", "NARRATIVE");
+        return;
+      }
+      const m = settings();
+      const model = "gpt-4o";
+      const claimBundle = buildClaimBundle(state.out.claims);
+      const totalClaims = claimBundle.length;
+
+      narrativeProgress(`Starting narrative generation (${totalClaims} claims)...`);
+      log("ok", `Starting narrative AI pass with ${totalClaims} claims...`, "NARRATIVE");
+
+      // ── Step 1: Ask AI to group/consolidate claims into themed slides ──
+      narrativeProgress("Step 1/5: Grouping claims into thematic slides...");
+
+      const groupPrompt = `You are a senior qualitative research analyst preparing a client-facing presentation deck based on staff interview findings. Your job is to organize evidence faithfully — never invent, exaggerate, or generalize beyond what the claims actually say.
+
+Below are ${totalClaims} research claims from Heart Walk staff interviews. Many overlap, repeat, or cover the same ground.
+
+YOUR TASK:
+1. First, read ALL claims and identify the 3-4 most important AGGREGATE findings — themes that multiple interviewees independently raised. These are your "headline" insights.
+2. Then group all claims into 10-16 thematic slide topics that tell a coherent story, making sure the top 3-4 aggregate findings receive prominent placement early in the deck.
+3. Flag which groups represent those top aggregate findings.
+
+SLIDE TITLE STYLE — titles should be punchy, insight-driven take-aways — NOT bland topic labels. Examples of GOOD titles:
+- "Staff Are Crucial"
+- "Make It Easy to Ask"
+- "Not Everyone Is a Salesperson"
+- "Execs Are Very Busy — Staff Can Help"
+- "Find Their Why"
+- "Relationships, Not Transactions"
+- "Set Clear Expectations"
+
+Examples of BAD titles (too generic, too academic):
+- "Communication and Resource Issues"
+- "Organizational Challenge Areas"
+- "Volunteer Engagement and Management"
+
+RULES:
+- Every claim ID must appear in exactly one group
+- Aggressively merge duplicates and near-duplicates (many claims say the same thing differently)
+- Drop or merge claims that are vague platitudes (e.g. "effective communication is crucial")
+- Order groups by narrative arc: context → key findings → tensions/challenges → solutions/opportunities
+- Each group should have 3-8 claims (merge thin groups, split bloated ones)
+- Aim for 10-16 total slides — enough to cover themes without redundancy
+- IMPORTANT: A theme is "top aggregate" only if at least 3+ different interviewees raised it independently. Mark these with "is_top_finding": true.
+
+Return ONLY valid JSON — no markdown fences, no commentary:
+{
+  "slides": [
+    { "title": "Slide Title Here", "claim_ids": [325, 326, 330], "section_type": "context|finding|problem|solution|opportunity", "is_top_finding": false },
+    ...
+  ]
+}
+
+CLAIMS DATA:
+${JSON.stringify(claimBundle, null, 1)}`;
+
+      trackApiTraffic({ stage: "narrative_group_request", model, claims: totalClaims });
+      let groupRaw;
+      try {
+        groupRaw = await askAI(groupPrompt, model, { temperature: 0.2 });
+      } catch (e) {
+        log("err", `Narrative grouping failed: ${e?.message || e}`, "NARRATIVE");
+        return;
+      }
+      const groupStr = String(groupRaw || "").trim();
+      if (!groupStr || groupStr.startsWith("(") || groupStr.length < 20) {
+        log("err", "AI returned empty/error for grouping step: " + groupStr.slice(0, 200), "NARRATIVE");
+        return;
+      }
+      trackApiTraffic({ stage: "narrative_group_response", response_length: groupStr.length });
+
+      let slideGroups;
+      try {
+        const cleaned = groupStr.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
+        slideGroups = JSON.parse(cleaned);
+      } catch (e) {
+        log("err", "Failed to parse grouping JSON: " + e.message, "NARRATIVE");
+        log("info", "Raw grouping response: " + groupStr.slice(0, 500), "NARRATIVE");
+        return;
+      }
+
+      if (!slideGroups?.slides?.length) {
+        log("err", "Grouping returned no slides array.", "NARRATIVE");
+        return;
+      }
+
+      log("ok", `Grouped into ${slideGroups.slides.length} thematic slides.`, "NARRATIVE");
+
+      // ── Step 2: For each slide group, generate narrative content ──
+      const claimMap = new Map();
+      for (const c of claimBundle) claimMap.set(c.id, c);
+
+      const narrativeSlides = [];
+      const BATCH_SIZE = 4; // Process 4 slide groups per AI call to reduce round-trips
+      const slideBatches = chunks(slideGroups.slides, BATCH_SIZE);
+
+      for (let bi = 0; bi < slideBatches.length; bi++) {
+        const batch = slideBatches[bi];
+        const batchStart = bi * BATCH_SIZE + 1;
+        const batchEnd = batchStart + batch.length - 1;
+        narrativeProgress(`Step 2/5: Writing narrative for slides ${batchStart}-${batchEnd} of ${slideGroups.slides.length}...`);
+
+        // Restructure: emphasize quotes, use claims as background only
+        const slidesForPrompt = batch.map(sg => {
+          const groupClaims = sg.claim_ids.map(id => claimMap.get(id)).filter(Boolean);
+          const allQuotes = groupClaims.flatMap(c => c.quotes.map(q => ({
+            speaker: q.speaker,
+            quote: q.quote,
+            context: c.claim  // claim text is background context only
+          })));
+          return {
+            title: sg.title,
+            section_type: sg.section_type,
+            research_context: groupClaims.map(c => c.claim),
+            direct_quotes: allQuotes
+          };
+        });
+
+        const narrativePrompt = `You are a qualitative research report writer working under the direction of a senior research analyst. This is a client-facing deliverable for C-suite executives at the American Heart Association. It must be clear, specific, and honest — the kind of report that earns trust because every claim can be traced back to what people actually said.
+
+YOUR ROLE: You are the writer, not the analyst. The analysis has already been done. Your job is to faithfully translate evidence into readable slide content. You do NOT editorialize, speculate, or embellish.
+
+DOMAIN CONTEXT: Heart Walk is a market-based fundraising and engagement campaign operated by the AHA. Staff recruit volunteer ELT (Executive Leadership Team) chairs and members — typically corporate executives — who open access to corporate sponsors, make fundraising asks, and mobilize employee participation. The campaign follows a multi-phase arc: leadership recruitment → corporate prospecting → participation activation → stewardship/recognition. Staff use Salesforce, slide decks, annotated agendas, and personal coaching relationships to drive results.
+
+For each slide below, you receive:
+- A slide title (the insight it should communicate)
+- Research context (analyst notes — use as background, NOT as bullet text)
+- Direct quotes from interviewees (your PRIMARY material)
+
+YOUR JOB: Synthesize the quotes and context into compelling slide content. DO NOT simply rephrase the research context into bullets. Instead, write your own sharp observations drawn from the quotes.
+
+OUTPUT SHAPE — For each slide, return:
+- "layout": usually "text" (primary substantive slide)
+- "content": 3-5 crisp bullets for client display
+- "supporting_quotes": up to 2 best quotes for optional quote slide insertion
+- "elaboration": 2-4 bullets that explain implications / actions (used for Mode B elaboration slide)
+- "image_prompt": concise visual prompt
+
+When selecting supporting quotes:
+- Prefer quotes with concrete tactics, tool usage, operational friction, or process detail
+- Do not repeat the same quote across slides
+- Keep each quote to 1-2 sentences
+
+ACCURACY & INTEGRITY RULES (HIGHEST PRIORITY — override all other style guidance):
+1. NEVER invent statistics, percentages, or quantitative claims (e.g. "75% of staff...", "boosted by 30%") unless a specific number appears verbatim in a direct quote provided to you. Five qualitative interviews do not produce percentages.
+2. Do not generalize one person's experience as a universal finding. If one person said it, write "one staffer noted" or "in one market." If 2-3 said similar things, write "several staff described" or "a recurring theme." If all or nearly all said it independently, you may say "staff consistently reported."
+3. Do not fabricate causal claims. If the evidence shows A and B exist, do not write "A causes B" unless an interviewee explicitly made that causal link.
+4. If a claim in the research context is vague or unsupported by the quotes, OMIT it rather than padding the slide.
+5. Every bullet must be traceable: ask yourself "which quote supports this?" If no quote does, delete the bullet.
+
+TEXT CONTENT RULES:
+1. Use • for bullet points. Bullets must be SPECIFIC and grounded in the evidence:
+   GOOD: "• One first-year staffer rated the onboarding learning curve a 2 out of 5 — 'coming in as a first-year person, it's a lot.'"
+   GOOD: "• Several staff described SharePoint as cluttered and hard to navigate."
+   BAD:  "• 80% of staff noted inconsistent messaging as a source of frustration."
+   BAD:  "• Effective communication is crucial for organizational processes."
+2. Do NOT use markdown blockquote syntax (>), and do NOT include lines like "Quote Bubble — ..." inside content.
+3. Prioritize concrete tactical details over generic restatements. If evidence includes specific methods/tools/workarounds (e.g., templates, automation aids, process adaptations, policy blockers), include them plainly.
+4. Keep quote attribution concise (first name or role only) when provided.
+5. Vary the slide structure — NOT every slide needs the same pattern.
+6. NEVER include citation IDs, insight numbers, timestamps, or internal codes.
+7. Avoid repetitive lead-ins across bullets (e.g., do not start multiple bullets with "Several staff..."). Vary sentence openings while keeping factual scope.
+8. Write with appropriate confidence — be direct about what the evidence shows, but do not overstate scope.
+9. Never emit markdown headings (##, ###), blockquote markers (>), or orphan heading lines in content/elaboration.
+
+IMAGE PROMPT — For each slide, write a brief image suggestion (1-2 sentences) that would make a relevant visual. Think: what photo, illustration, or chart would complement this content? Be specific to Heart Walk / AHA context. Default to photo-realistic; use "chart:" or "map:" prefix when a data visualization or geographic image is more useful.
+
+Return ONLY a valid JSON array, no markdown fences:
+[
+  {
+    "title": "The Slide Title",
+    "layout": "text",
+    "content": "• Bullet one\\n• Bullet two",
+    "supporting_quotes": [
+      { "text": "Quote text...", "speaker": "Kenz" },
+      { "text": "Quote text...", "speaker": "Lydia" }
+    ],
+    "elaboration": "• Why this matters...\\n• Recommended implication...",
+    "image_prompt": "A professional photo of a corporate team gathered around a conference table reviewing campaign materials"
+  },
+  ...
+]
+
+SLIDES TO WRITE:
+${JSON.stringify(slidesForPrompt, null, 1)}`;
+
+        trackApiTraffic({ stage: "narrative_content_request", batch: bi + 1, slides: batch.length });
+        let contentRaw;
+        try {
+          contentRaw = await askAI(narrativePrompt, model, { temperature: 0.3 });
+        } catch (e) {
+          log("err", `Narrative content batch ${bi + 1} failed: ${e?.message || e}`, "NARRATIVE");
+          continue;
+        }
+        const contentStr = String(contentRaw || "").trim();
+        trackApiTraffic({ stage: "narrative_content_response", batch: bi + 1, response_length: contentStr.length });
+
+        try {
+          const cleaned = contentStr.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
+          const batchSlides = JSON.parse(cleaned);
+          if (Array.isArray(batchSlides)) {
+            for (const s of batchSlides) {
+              narrativeSlides.push(normalizeNarrativeDraftSlide(s));
+            }
+          }
+        } catch (e) {
+          log("warn", `Failed to parse narrative batch ${bi + 1}: ${e.message}`, "NARRATIVE");
+          // Try to salvage: use raw content
+          for (const sg of batch) {
+            narrativeSlides.push(normalizeNarrativeDraftSlide({
+              title: sg.title,
+              layout: "text",
+              content: "• Content generation failed for this slide.",
+              elaboration: "• Re-run narrative generation for this section.",
+              supporting_quotes: []
+            }));
+          }
+        }
+      }
+
+      // ── Step 3: Generate executive summary ──
+      narrativeProgress("Step 3/5: Writing executive summary...");
+
+      const slideTitles = narrativeSlides.map(s => s.title);
+      const summaryPrompt = `You are a senior qualitative research analyst writing the executive summary for a client-facing report on Heart Walk staff interviews. This is the first substantive slide the client reads — it sets the tone for trust and credibility.
+
+The report contains ${totalClaims} research findings organized into these thematic slides:
+${slideTitles.map((t, i) => `${i + 1}. ${t}`).join("\n")}
+
+Interview subjects: ${[...new Set(state.out.claims.flatMap(c => c.evidence.map(e => sourceName(e.source_file || "").replace(/\.md$/i, ""))))].filter(Boolean).join(", ")}
+
+FOLLOW THIS PROCESS:
+
+Step 1 — Identify the top 3-4 findings. A "top finding" must meet ALL of these criteria:
+  a) Multiple interviewees (3+) raised it independently
+  b) It has direct quote evidence (not just analyst paraphrase)
+  c) It has practical implications for Heart Walk operations
+  Rank by: breadth of agreement across interviewees > strength of evidence > operational impact.
+
+Step 2 — Draft 5-7 bullets using this structure:
+  - Bullet 1: ONE-SENTENCE research scope statement (who was interviewed, why, how many)
+  - Bullets 2-4: The top 3-4 findings from Step 1, each as a specific, evidence-grounded statement
+  - Bullet 5-6: One key tension or contradiction, and one bright spot / strength discovered
+  - Final bullet: A forward-looking action statement grounded in what staff actually asked for
+
+Step 3 — Self-check. Before returning, review every bullet and ask:
+  - Does this bullet contain any percentage or statistic? If so, does that exact number appear in a direct quote? If not, REMOVE the number and rephrase qualitatively.
+  - Does this bullet generalize from one person's experience to all staff? If so, add appropriate scope ("one staffer," "several staff," "a recurring theme").
+  - Could a reader verify this claim by reading the slides that follow? If not, rewrite or cut.
+
+STYLE GUIDELINES:
+- Be direct and specific — avoid vague platitudes like "there is potential for improvement"
+- Do NOT invent percentages or statistics. This is a qualitative study of ${[...new Set(state.out.claims.flatMap(c => c.evidence.map(e => sourceName(e.source_file || "").replace(/\.md$/i, ""))))].filter(Boolean).length} interviewees — it does not produce statistical claims.
+- Use appropriate confidence: "Staff consistently described X" or "Several interviewees noted Y" — not "X is a crisis" or "Y affects 80% of operations."
+- Each bullet should stand alone as a complete, verifiable insight.
+- Include at least 2 concrete operational details (tools, workflows, policy/process friction, or practical workarounds) when supported by evidence.
+- Use consultative synthesis language, not raw transcript narration.
+- Vary bullet lead-ins; do not start multiple bullets with the same phrase pattern.
+
+GOOD bullet examples:
+- "Five Heart Walk staff were interviewed to surface ground-level insights on ELT recruitment, onboarding, and campaign coordination."
+- "Staff consistently describe ELT recruitment as the campaign's hardest recurring challenge — finding committed executives who will make asks, not just lend their name."
+- "One first-year staffer rated the onboarding learning curve 2 out of 5, and several others described filling resource gaps with custom-built materials."
+
+BAD bullet examples (DO NOT do these):
+- "75% of staff cited political navigation as a barrier." (fabricated statistic)
+- "Communication breakdowns are frequent, with 80% of staff noting inconsistent messaging." (fabricated statistic)
+- "There is a notable potential for improving onboarding and training processes." (vague platitude)
+
+Return ONLY valid JSON, no markdown fences:
+{ "summary_bullets": ["First bullet", "Second bullet", ...] }`;
+
+      trackApiTraffic({ stage: "narrative_summary_request" });
+      let summaryContent = [];
+      try {
+        const summaryRaw = await askAI(summaryPrompt, model, { temperature: 0.3 });
+        const summaryStr = String(summaryRaw || "").trim();
+        trackApiTraffic({ stage: "narrative_summary_response", response_length: summaryStr.length });
+        const cleaned = summaryStr.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
+        const parsed = JSON.parse(cleaned);
+        summaryContent = parsed.summary_bullets || [];
+      } catch (e) {
+        log("warn", "Executive summary generation failed: " + (e?.message || e), "NARRATIVE");
+        summaryContent = [
+          `This report synthesizes ${totalClaims} evidence-backed findings from Heart Walk staff interviews.`,
+          `Findings span ${slideGroups.slides.length} thematic areas covering recruitment, onboarding, tools, and organizational challenges.`
+        ];
+      }
+      summaryContent = normalizeBulletCopy(summaryContent.join("\n"), 7)
+        .split("\n")
+        .map((line) => line.replace(/^•\s*/, "").trim())
+        .filter(Boolean);
+
+      // ── Step 4: Quality verification ──
+      narrativeProgress("Step 4/5: Quality verification — fact-checking against source evidence...");
+      log("ok", "Starting quality verification pass...", "QUALITY");
+
+      let qualityResults = { issues_found: 0, passed: true, issues: [] };
+      const qualityEl = $("qualityCheckResults");
+
+      try {
+        // Build a compact version of the narrative for checking
+        const narrativeForCheck = [
+          "EXECUTIVE SUMMARY BULLETS:",
+          ...summaryContent.map((b, i) => `  Summary bullet ${i + 1}: ${b}`),
+          "",
+          "SLIDE CONTENT:",
+          ...narrativeSlides.map((s, i) => [
+            `  Slide ${i + 1} \"${s.title}\" content: ${s.content}`,
+            `  Slide ${i + 1} \"${s.title}\" elaboration: ${s.elaboration || "(none)"}`,
+            `  Slide ${i + 1} \"${s.title}\" supporting_quotes: ${JSON.stringify(s.supporting_quotes || [])}`
+          ].join("\n"))
+        ].join("\n");
+
+        const intervieweeNames = [...new Set(claimBundle.flatMap(c => c.quotes.map(q => q.speaker)))].filter(Boolean);
+
+        const qualityPrompt = `You are a senior qualitative research quality auditor. Your ONLY job is to find factual accuracy problems in a narrative report by checking it against source evidence.
+
+CONTEXT: This narrative was generated from ${claimBundle.length} research claims based on qualitative interviews with ${intervieweeNames.length} Heart Walk staff members: ${intervieweeNames.join(", ")}.
+
+CHECK FOR THESE SPECIFIC PROBLEMS:
+1. FABRICATED STATISTICS — Any percentage, ratio, or precise number ("75%", "30% increase", "4 out of 5 staff") that does NOT appear verbatim in a source quote. A qualitative study of ${intervieweeNames.length} people does not produce statistical claims.
+2. OVER-GENERALIZATION — One person's experience presented as universal ("staff feel..." or "teams report..." when only one person said it). Check how many unique speakers support each claim.
+3. UNSUPPORTED CAUSAL CLAIMS — "A leads to B" or "A causes B" when evidence only shows A and B exist separately.
+4. UNVERIFIABLE CLAIMS — Assertions with no traceable source quote in the evidence.
+5. EDITORIALIZING — Crisis language, dramatic framing, or conclusions that go beyond what interviewees said.
+6. STRUCTURAL_ARTIFACT — orphan headings, markdown markers, or malformed bullet formatting in content.
+7. REPETITIVE_TONE — repetitive bullet openings that make copy sound automated.
+
+NARRATIVE TO CHECK:
+${narrativeForCheck}
+
+SOURCE EVIDENCE (all available claims with direct quotes — this is the ONLY valid source of truth):
+${JSON.stringify(claimBundle.map(c => ({ id: c.id, claim: c.claim, quotes: c.quotes.map(q => ({ speaker: q.speaker, text: q.quote.slice(0, 300) })) })), null, 1)}
+
+INSTRUCTIONS:
+- Be tough but fair. Flag real problems, not style preferences.
+- A bullet that says "several staff described X" is fine IF 2+ different speakers have supporting quotes.
+- A bullet that says "staff consistently reported X" requires 3+ speakers.
+- Specific numbers that appear in a direct quote (e.g. "rated it a 2 out of 5") are fine.
+- Do NOT flag issues with slide titles — only check factual claims in bullet content and summary.
+
+Return ONLY valid JSON, no markdown fences:
+{
+  "issues_found": <number>,
+  "passed": <true if 0 critical issues>,
+  "issues": [
+    {
+      "location": "Summary bullet 3" or "Slide 5",
+      "issue_type": "fabricated_stat|over_generalization|unsupported_causal|unverifiable|editorializing|structural_artifact|repetitive_tone",
+      "severity": "critical|minor",
+      "original_text": "the exact problematic phrase",
+      "corrected_text": "the fixed version",
+      "explanation": "brief reason"
+    }
+  ]
+}`;
+
+        trackApiTraffic({ stage: "quality_check_request", model });
+        const qcRaw = await askAI(qualityPrompt, model, { temperature: 0.1 });
+        const qcStr = String(qcRaw || "").trim();
+        trackApiTraffic({ stage: "quality_check_response", response_length: qcStr.length });
+
+        const qcCleaned = qcStr.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
+        qualityResults = JSON.parse(qcCleaned);
+
+        if (qualityResults.issues?.length > 0) {
+          const critical = qualityResults.issues.filter(i => i.severity === "critical");
+          const minor = qualityResults.issues.filter(i => i.severity === "minor");
+          log(critical.length ? "warn" : "ok",
+            `Quality check: ${qualityResults.issues.length} issue(s) found (${critical.length} critical, ${minor.length} minor).`, "QUALITY");
+
+          // Auto-correct critical issues via string replacement
+          let corrections = 0;
+          for (const issue of qualityResults.issues) {
+            if (issue.severity !== "critical" || !issue.original_text || !issue.corrected_text) continue;
+            const orig = issue.original_text;
+            const fix = issue.corrected_text;
+
+            // Fix in summary bullets
+            for (let i = 0; i < summaryContent.length; i++) {
+              if (summaryContent[i].includes(orig)) {
+                summaryContent[i] = summaryContent[i].replace(orig, fix);
+                corrections++;
+              }
+            }
+
+            // Fix in narrative slide drafts (content + elaboration + supporting quotes)
+            for (const slide of narrativeSlides) {
+              if (slide.content?.includes(orig)) {
+                slide.content = slide.content.replace(orig, fix);
+                corrections++;
+              }
+              if (slide.elaboration?.includes(orig)) {
+                slide.elaboration = slide.elaboration.replace(orig, fix);
+                corrections++;
+              }
+              if (slide.featured_quote?.text?.includes(orig)) {
+                slide.featured_quote.text = slide.featured_quote.text.replace(orig, fix);
+              }
+              if (Array.isArray(slide.supporting_quotes)) {
+                for (const sq of slide.supporting_quotes) {
+                  if (sq?.text?.includes(orig)) sq.text = sq.text.replace(orig, fix);
+                }
+              }
+            }
+          }
+
+          if (corrections > 0) {
+            log("ok", `Auto-corrected ${corrections} critical issue(s) in narrative output.`, "QUALITY");
+          }
+
+          // Display results in UI
+          if (qualityEl) {
+            qualityEl.style.display = "block";
+            qualityEl.style.background = critical.length ? "rgba(218,54,51,.12)" : "rgba(210,153,34,.12)";
+            qualityEl.style.borderColor = critical.length ? "var(--err)" : "var(--warn)";
+            qualityEl.style.color = critical.length ? "#ffb3b0" : "#ffd88a";
+            qualityEl.textContent = [
+              `⚠ Quality Check: ${qualityResults.issues.length} issue(s) found`,
+              critical.length ? `${critical.length} CRITICAL (auto-corrected):` : "",
+              ...critical.map(i => `  ✗ [${i.issue_type}] ${i.explanation}`),
+              minor.length ? `${minor.length} minor (noted but kept):` : "",
+              ...minor.map(i => `  △ [${i.issue_type}] ${i.explanation}`),
+              corrections > 0 ? `\n✓ ${corrections} correction(s) applied automatically.` : ""
+            ].filter(Boolean).join("\n");
+          }
+        } else {
+          log("ok", "Quality check passed — no issues found.", "QUALITY");
+          if (qualityEl) {
+            qualityEl.style.display = "block";
+            qualityEl.style.background = "rgba(46,160,67,.12)";
+            qualityEl.style.borderColor = "var(--ok)";
+            qualityEl.style.color = "#a8e6b4";
+            qualityEl.textContent = "✓ Quality check passed — no fabricated statistics, over-generalizations, or unsupported claims detected.";
+          }
+        }
+      } catch (e) {
+        log("warn", "Quality check could not complete: " + (e?.message || e), "QUALITY");
+        if (qualityEl) {
+          qualityEl.style.display = "block";
+          qualityEl.style.background = "rgba(139,148,158,.12)";
+          qualityEl.style.borderColor = "var(--border)";
+          qualityEl.style.color = "var(--muted)";
+          qualityEl.textContent = "△ Quality check skipped (parse error). Manual review recommended.";
+        }
+      }
+
+      trackApiTraffic({ stage: "quality_check_done", issues: qualityResults.issues_found, passed: qualityResults.passed });
+
+      // ── Step 5: Client-readiness polish ──
+      narrativeProgress("Step 5/5: Client-readiness polish...");
+      try {
+        const polishPrompt = `You are editing a client report for executive readers.
+
+TASK:
+Rewrite for clarity, precision, and consultative tone while preserving factual meaning.
+
+HARD RULES:
+- Keep the same number of summary bullets.
+- Keep the same number of slides and the same slide titles.
+- Do not add new facts, statistics, interviewees, or claims.
+- Keep evidence scope language accurate (one staffer / several staff / staff consistently).
+- Avoid repetitive openings (e.g., repeated "Several staff...").
+- Keep bullets concise and presentation-ready.
+- Keep elaboration practical and decision-oriented.
+- Return ONLY valid JSON.
+
+INPUT JSON:
+${JSON.stringify({ summaryContent, narrativeSlides }, null, 2)}
+
+RETURN JSON:
+{
+  "summary_bullets": ["..."],
+  "slides": [
+    {
+      "title": "...",
+      "layout": "text",
+      "content": "• ...",
+      "elaboration": "• ...",
+      "supporting_quotes": [{"text":"...","speaker":"..."}],
+      "image_prompt": "..."
+    }
+  ]
+}`;
+
+        trackApiTraffic({ stage: "narrative_polish_request", model, slide_count: narrativeSlides.length });
+        const polishRaw = await askAI(polishPrompt, model, { temperature: 0.2 });
+        const polishStr = String(polishRaw || "").trim();
+        trackApiTraffic({ stage: "narrative_polish_response", response_length: polishStr.length });
+
+        const cleaned = polishStr.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
+        const parsed = JSON.parse(cleaned);
+        const polishedSummary = Array.isArray(parsed?.summary_bullets) ? parsed.summary_bullets : [];
+        const polishedSlides = Array.isArray(parsed?.slides) ? parsed.slides : [];
+
+        if (polishedSummary.length === summaryContent.length && polishedSlides.length === narrativeSlides.length) {
+          summaryContent = normalizeBulletCopy(polishedSummary.join("\n"), 7)
+            .split("\n")
+            .map((line) => line.replace(/^•\s*/, "").trim())
+            .filter(Boolean);
+
+          narrativeSlides.length = 0;
+          for (const ps of polishedSlides) narrativeSlides.push(normalizeNarrativeDraftSlide(ps));
+          log("ok", "Client-readiness polish pass applied.", "NARRATIVE");
+        } else {
+          log("warn", "Polish pass skipped due to shape mismatch.", "NARRATIVE");
+        }
+      } catch (e) {
+        log("warn", "Polish pass skipped: " + (e?.message || e), "NARRATIVE");
+      }
+
+      // ── Assemble final narrative deck (with any corrections applied) ──
+      const summaryText = normalizeBulletCopy(summaryContent.join("\n"), 7);
+      const finalNarrativeSlides = buildNarrativeOutputSlides(narrativeSlides, m.narrativeSlideMode);
+      const narrativeDeck = {
+        config: JSON.parse(JSON.stringify(DESIGNER_CONFIG)),
+        slides: [
+          { type: "cover", title: "Heart Walk Interview Research", subtitle: "Summary of Findings and Recommendations" },
+          { type: "section", title: "Executive Summary" },
+          {
+            type: "standard",
+            title: "Executive Summary",
+            content: summaryText,
+            bodyField: {
+              mode: "text",
+              text: summaryText,
+              imageUrl: "",
+              imageAlign: "center",
+              imagePrompt: "A wide-angle photo of a Heart Walk fundraising event — volunteers and corporate leaders gathered outdoors with AHA banners and team flags",
+              quoteText: "",
+              quoteAttribution: ""
+            }
+          },
+          ...finalNarrativeSlides
+        ]
+      };
+
+      // Build readable narrative report text
+      const narrativeReport = [
+        "# Heart Walk Interview Research",
+        "",
+        "**Summary of Findings and Recommendations**",
+        "",
+        "---",
+        "",
+        "## Executive Summary",
+        "",
+        ...summaryContent.map(b => `• ${b}`),
+        "",
+        "---",
+        "",
+        ...finalNarrativeSlides.flatMap(s => [
+          `## ${s.title}`,
+          "",
+          narrativeSlideText(s),
+          "",
+          "---",
+          ""
+        ])
+      ].join("\n");
+
+      // Store intermediates for debugging/inspection
+      state.out.intermediates = {
+        claimBundle,
+        slideGroups,
+        qualityResults,
+        narrative_mode: m.narrativeSlideMode,
+        narrative_slide_drafts: narrativeSlides,
+        final_slide_count: finalNarrativeSlides.length,
+        interviewees: [...new Set(claimBundle.flatMap(c => c.quotes.map(q => q.speaker)))].filter(Boolean),
+        generated_at_utc: new Date().toISOString()
+      };
+
+      state.out.narrative = narrativeReport;
+      state.out.narrativeDeck = narrativeDeck;
+
+      $("narrativeText").textContent = narrativeReport;
+      $("jsonText").value = JSON.stringify(narrativeDeck, null, 2);
+      set("bNarrative", finalNarrativeSlides.length);
+      set("bJson", narrativeDeck.slides.length);
+
+      const prog = $("narrativeProgress");
+      if (prog) { prog.textContent = `✓ Narrative complete: ${finalNarrativeSlides.length} output slides (${narrativeSlides.length} substantive), ${summaryContent.length} summary bullets`; prog.style.borderColor = "var(--ok)"; prog.style.background = "rgba(46,160,67,.15)"; prog.style.color = "var(--ok)"; }
+
+      trackApiTraffic({ stage: "narrative_done", slides: finalNarrativeSlides.length, substantive_slides: narrativeSlides.length, summary_bullets: summaryContent.length, narrative_mode: m.narrativeSlideMode });
+      saveOutputCache("narrative");
+      log("ok", `Narrative complete: ${finalNarrativeSlides.length} output slides generated (${m.narrativeSlideMode}).`, "NARRATIVE");
+      switchTab("narrative");
+    }
+
+    function test() {
+      const out = state.out;
+      const res = [];
+      const add = (name, ok, detail) => res.push({ name, ok, detail });
+      if (!out.report || !out.deck) {
+        add("Output Presence", false, "Generate outputs first.");
+        renderTests(res);
+        set("bTests", "1");
+        state.smoke = { ran_at_utc: new Date().toISOString(), results: res };
+        renderDebugHealth();
+        switchTab("tests");
+        return;
+      }
+
+      const withCites = out.claims.filter(c => c.sentenceIds.length > 0).length;
+      if (out.claims.length === 0) {
+        add("Citation Audit", true, "N/A - no evidence-backed claims to evaluate (all insights lacked evidence links)");
+      } else {
+        add("Citation Audit", withCites === out.claims.length, `${withCites}/${out.claims.length} claims include sentence citations`);
+      }
+
+      const unresolved = [];
+      for (const c of out.claims) for (const sid of c.sentenceIds) if (!state.db.sentenceIds.has(sid)) unresolved.push(`${c.insight.insight_id}:${sid}`);
+      add("Evidence Link Audit", unresolved.length === 0, unresolved.length ? `${unresolved.length} unresolved sentence IDs` : "All sentence IDs resolved");
+
+      const hasSlides = Array.isArray(out.deck.slides);
+      const badTypes = hasSlides ? out.deck.slides.filter(s => !VALID_TYPES.has(String(s.type || ""))).length : 1;
+      add("Designer JSON Shape", hasSlides && out.deck.slides.length > 0 && badTypes === 0, hasSlides ? `slides=${out.deck.slides.length}, invalid_types=${badTypes}` : "Missing slides array");
+
+      // Field schema validation — check that standard/two-column slides have proper field structure
+      if (hasSlides) {
+        const std = out.deck.slides.filter(s => s.type === 'standard');
+        const tc  = out.deck.slides.filter(s => s.type === 'two-column');
+        const stdOk = std.filter(s => s.bodyField && ['text','image','quote'].includes(s.bodyField.mode)).length;
+        const tcOk  = tc.filter(s => s.columns?.leftField?.mode && s.columns?.rightField?.mode).length;
+        add("Field Schema", stdOk === std.length && tcOk === tc.length,
+            `standard: ${stdOk}/${std.length} have bodyField, two-column: ${tcOk}/${tc.length} have columns`);
+
+        // Image prompt coverage — check how many slides have AI image suggestions
+        const allFields = [
+          ...std.map(s => s.bodyField),
+          ...tc.flatMap(s => [s.columns?.leftField, s.columns?.rightField])
+        ].filter(Boolean);
+        const withPrompt = allFields.filter(f => f.imagePrompt && f.imagePrompt.length > 5).length;
+        add("Image Prompt Coverage", withPrompt > 0, `${withPrompt}/${allFields.length} fields have image prompts`);
+      }
+
+      const body = hasSlides ? out.deck.slides.filter(s => s.type === "standard").map(s => String(s.content || "")).join("\n") : "";
+      const missing = out.claims.filter(c => !body.includes(`Insight I${c.insight.insight_id}`)).length;
+      add("Cross-Output Parity", missing === 0, missing ? `${missing} claims missing from slide content` : "All claims represented in deck content");
+
+      renderTests(res);
+      const failed = res.filter(x => !x.ok).length;
+      state.smoke = { ran_at_utc: new Date().toISOString(), results: res };
+      trackApiTraffic({ stage: "smoke_tests", failed_count: failed, test_count: res.length });
+      saveOutputCache("smoke");
+      set("bTests", failed);
+      renderDebugHealth();
+      log(failed ? "warn" : "ok", `Smoke tests: ${res.length - failed} passed, ${failed} failed.`);
+      switchTab("tests");
+    }
+
+    function renderTests(results) {
+      const area = $("testsArea");
+      if (!results.length) { area.className = "empty"; area.textContent = "No test results."; return; }
+      area.className = "";
+      area.innerHTML = "";
+      for (const r of results) {
+        const d = document.createElement("div");
+        d.className = `test ${r.ok ? "pass" : "fail"}`;
+        d.innerHTML = `<div><strong>${r.ok ? "PASS" : "FAIL"} - ${escHtml(r.name)}</strong></div><div style="margin-top:4px;color:var(--muted);font-family:var(--mono);font-size:11px">${escHtml(r.detail)}</div>`;
+        area.appendChild(d);
+      }
+    }
+
+    function renderRunCard(r) {
+      const inputIds = parseInputIds(r.input_ids);
+      const status = String(r.status || "");
+      const pillClass = status === "completed" ? "pill-green" : status === "error" ? "pill-red" : "pill-yellow";
+      const inbound = [
+        `run_id: ${r.run_id}`,
+        `purpose: ${r.purpose || ""}`,
+        `model: ${r.model_name || ""}`,
+        `batch_size: ${r.batch_size || 0}`,
+        `status: ${status}`,
+        `created_at: ${r.created_at || ""}`,
+        `input_ids_count: ${inputIds.length}`,
+        "",
+        "input_ids:",
+        clipText(inputIds.join(", "), 1500) || "(none)"
+      ].join("\n");
+      const output = clipText(toPrettyJsonOrRaw(r.output_json) || "(output_json empty)", 2800);
+      return `
+        <div class="api-card">
+          <div class="api-meta">
+            <span class="pill ${pillClass}">${escHtml(status || "unknown")}</span>
+            <span class="pill pill-blue">RUN ${escHtml(r.run_id)}</span>
+            <span style="color:var(--muted);font-size:11px">${escHtml(r.created_at || "")}</span>
+          </div>
+          <div class="api-subhead">Inbound Request</div>
+          <pre class="api-block">${escHtml(inbound)}</pre>
+          <div class="api-subhead" style="margin-top:8px">Outbound Response</div>
+          <pre class="api-block">${escHtml(output)}</pre>
+        </div>
+      `;
+    }
+
+    function renderTrafficCard(t) {
+      const stage = String(t.stage || "");
+      const pillClass = stage.includes("error") ? "pill-red" : stage.includes("response") || stage.includes("done") ? "pill-green" : "pill-blue";
+      const meta = [
+        `at_utc: ${t.at_utc || ""}`,
+        t.query_name ? `query_name: ${t.query_name}` : "",
+        t.request_id ? `request_id: ${t.request_id}` : "",
+        Number.isFinite(t.elapsed_ms) ? `elapsed_ms: ${t.elapsed_ms}` : "",
+        Number.isFinite(t.row_count) ? `row_count: ${t.row_count}` : "",
+        t.error ? `error: ${t.error}` : ""
+      ].filter(Boolean).join("\n");
+
+      const blockParts = [];
+      if (t.sql_head) {
+        const sql = t.sql_head === t.sql_tail ? t.sql_head : `${t.sql_head}\n\n...\n\n${t.sql_tail || ""}`;
+        blockParts.push("SQL:", clipText(sql, 2600));
+      }
+      if (t.settings) blockParts.push("SETTINGS:", clipText(JSON.stringify(t.settings, null, 2), 1800));
+      if (Number.isFinite(t.claims)) blockParts.push("RESULT:", `claims=${t.claims}, slides=${t.slides}, dropped_no_evidence=${t.dropped_no_evidence}`);
+      if (Number.isFinite(t.failed_count)) blockParts.push("SMOKE:", `tests=${t.test_count}, failed=${t.failed_count}`);
+      const block = blockParts.length ? blockParts.join("\n\n") : "(no payload captured)";
+
+      return `
+        <div class="api-card">
+          <div class="api-meta">
+            <span class="pill ${pillClass}">${escHtml(stage || "event")}</span>
+          </div>
+          <pre class="api-block">${escHtml(meta)}</pre>
+          <pre class="api-block" style="margin-top:8px">${escHtml(block)}</pre>
+        </div>
+      `;
+    }
+
+    async function loadApiTraffic() {
+      const area = $("apiArea");
+      if (!area) return;
+      area.className = "";
+      area.innerHTML = `<div class="empty">Loading API traffic...</div>`;
+
+      let runs = [];
+      try {
+        const runsRes = await dbQuery(`
+          SELECT run_id, purpose, model_name, batch_size, input_ids, output_json, status, created_at
+          FROM ai_runs
+          ORDER BY run_id DESC
+          LIMIT ${DEBUG_LIMITS.maxRunsExport}
+        `, "load_ai_runs_for_reporter_debug");
+        runs = runsRes?.rows || [];
+      } catch (e) {
+        log("warn", `Could not read ai_runs for API view: ${e.message}`);
+      }
+
+      const runsHtml = runs.length
+        ? runs.map((r) => renderRunCard(r)).join("")
+        : `<div class="empty">No ai_runs rows found.</div>`;
+      const memHtml = state.debug.apiTraffic.length
+        ? state.debug.apiTraffic.map((t) => renderTrafficCard(t)).join("")
+        : `<div class="empty">No Reporter API/DB traffic captured in this session.</div>`;
+
+      area.innerHTML = `
+        <div class="api-grid">
+          <div>
+            <div class="api-subhead">Upstream AI Runs (Analyst + Synthesizer)</div>
+            ${runsHtml}
+          </div>
+          <div>
+            <div class="api-subhead">Reporter API/DB Traffic (This Session)</div>
+            ${memHtml}
+          </div>
+        </div>
+      `;
+      set("bApi", runs.length + state.debug.apiTraffic.length);
+    }
+
+    async function getSmokeSummaryRows() {
+      const [orphan, rank, role, bounds, trace] = await Promise.all([
+        dbQuery(`
+          SELECT COUNT(*) AS cnt
+          FROM insights i
+          WHERE NOT EXISTS (SELECT 1 FROM insight_sentences isx WHERE isx.insight_id = i.insight_id)
+        `, "smoke_orphan_insights"),
+        dbQuery(`
+          SELECT COUNT(*) AS cnt
+          FROM insights i
+          WHERE NOT EXISTS (
+            SELECT 1 FROM insight_sentences isx
+            WHERE isx.insight_id = i.insight_id
+              AND IFNULL(isx.quote_rank, 0) >= 2
+          )
+        `, "smoke_missing_good_quote"),
+        dbQuery(`
+          SELECT COUNT(*) AS cnt
+          FROM insight_sentences
+          WHERE support_role NOT IN ('direct_quote','evidence','context','counterpoint')
+             OR support_role IS NULL
+        `, "smoke_invalid_support_role"),
+        dbQuery(`
+          SELECT COUNT(*) AS cnt
+          FROM insight_sentences
+          WHERE IFNULL(quote_rank, -1) < 0 OR IFNULL(quote_rank, -1) > 3
+        `, "smoke_invalid_quote_rank"),
+        dbQuery(`
+          SELECT COUNT(*) AS cnt
+          FROM insight_sentences isx
+          WHERE NOT EXISTS (SELECT 1 FROM sentences s WHERE s.sentence_id = isx.sentence_id)
+        `, "smoke_dangling_links")
+      ]);
+
+      return {
+        orphan_insights: parseInt(orphan?.rows?.[0]?.cnt || 0, 10) || 0,
+        missing_good_quote: parseInt(rank?.rows?.[0]?.cnt || 0, 10) || 0,
+        invalid_support_role: parseInt(role?.rows?.[0]?.cnt || 0, 10) || 0,
+        invalid_quote_rank: parseInt(bounds?.rows?.[0]?.cnt || 0, 10) || 0,
+        dangling_links: parseInt(trace?.rows?.[0]?.cnt || 0, 10) || 0
+      };
+    }
+
+    async function downloadDebugBundle() {
+      if (!state.ok) return;
+      try {
+        const [countsRes, smokeSummary, insightsRes, linksRes, runsRes] = await Promise.all([
+          dbQuery(`
+            SELECT
+              (SELECT COUNT(*) FROM insights) AS insights_total,
+              (SELECT COUNT(*) FROM insight_sentences) AS links_total,
+              (SELECT COUNT(*) FROM sentences) AS sentences_total,
+              (SELECT COUNT(*) FROM insights i WHERE NOT EXISTS (SELECT 1 FROM insight_sentences x WHERE x.insight_id=i.insight_id)) AS insights_without_links
+          `, "debug_counts"),
+          getSmokeSummaryRows(),
+          dbQuery(`
+            SELECT insight_id, summary_plain, summary_long, dominant_sentiment_score,
+                   is_problem, is_solution, is_explanation, is_workaround, created_by_run_id, created_at
+            FROM insights
+            ORDER BY insight_id DESC
+            LIMIT ${DEBUG_LIMITS.maxInsightsExport}
+          `, "debug_insights_export"),
+          dbQuery(`
+            SELECT insight_id, sentence_id, quote_rank, support_role, notes
+            FROM insight_sentences
+            ORDER BY insight_id DESC, quote_rank DESC, sentence_id ASC
+            LIMIT ${DEBUG_LIMITS.maxLinksExport}
+          `, "debug_links_export"),
+          dbQuery(`
+            SELECT run_id, purpose, model_name, batch_size, input_ids, output_json, status, created_at
+            FROM ai_runs
+            ORDER BY run_id DESC
+            LIMIT ${DEBUG_LIMITS.maxRunsExport}
+          `, "debug_ai_runs_export")
+        ]);
+
+        const counts = countsRes?.rows?.[0] || {};
+        const payload = {
+          generated_at_utc: new Date().toISOString(),
+          app_name: APP_NAME,
+          version: APP_VERSION,
+          limits: DEBUG_LIMITS,
+          reporter_settings: settings(),
+          dataset_counts: {
+            insights_total: parseInt(counts.insights_total || 0, 10) || 0,
+            links_total: parseInt(counts.links_total || 0, 10) || 0,
+            sentences_total: parseInt(counts.sentences_total || 0, 10) || 0,
+            insights_without_links: parseInt(counts.insights_without_links || 0, 10) || 0
+          },
+          smoke_summary_db: smokeSummary,
+          smoke_last_run_ui: state.smoke,
+          output_summary: {
+            claims_generated: state.out.claims.length,
+            slides_generated: state.out.deck?.slides?.length || 0,
+            dropped_no_evidence: state.out.noEvidenceDropped || 0,
+            md_tool_slides: state.out.mdToolDeck?.slides?.length || 0
+          },
+          plain_text_report: state.out.report || "",
+          designer_json: state.out.deck || null,
+          md_tool_input_preview: String($("mdToolInput")?.value || "").slice(0, 60000),
+          md_tool_designer_json: state.out.mdToolDeck || null,
+          loaded_insights_preview: state.db.loaded,
+          insights_exported: insightsRes?.rows || [],
+          links_exported: linksRes?.rows || [],
+          ai_runs_recent: runsRes?.rows || [],
+          api_traffic_recent: state.debug.apiTraffic,
+          log_feed_recent: state.debug.logHistory
+        };
+
+        const fileName = `reporter-debug-${compactIsoForFilename(payload.generated_at_utc)}-latest.json`;
+        download(fileName, JSON.stringify(payload, null, 2), "application/json;charset=utf-8");
+        log("ok", `Downloaded debug bundle: ${fileName}`);
+      } catch (e) {
+        log("err", `Debug export failed: ${e.message}`);
+      }
+    }
+
+    async function copyText(value) {
+      if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(value);
+      const ta = document.createElement("textarea"); ta.value = value; ta.style.position = "fixed"; ta.style.left = "-9999px"; document.body.appendChild(ta); ta.select();
+      const ok = document.execCommand("copy"); ta.remove(); if (!ok) throw new Error("Clipboard copy failed");
+    }
+
+    function getPreferredDesignerDeck() {
+      const activeTab = document.querySelector(".tab.active")?.dataset.tab || "";
+      if (activeTab === "mdtool" && state.out.mdToolDeck) return state.out.mdToolDeck;
+      return state.out.narrativeDeck || state.out.deck || state.out.mdToolDeck || null;
+    }
+
+    function download(name, text, type) {
+      const blob = new Blob([text], { type: type || "text/plain;charset=utf-8" });
+      const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    }
+
+    async function init() {
+      const dt = new Date(APP_LAST_UPDATED_UTC).toLocaleString(undefined, { year:"numeric", month:"short", day:"2-digit", hour:"2-digit", minute:"2-digit", timeZoneName:"short" });
+      $("appMeta").textContent = `Version ${APP_VERSION} | Last updated ${dt}`;
+      document.querySelectorAll(".tab").forEach(t => t.addEventListener("click", () => switchTab(t.dataset.tab)));
+
+      try {
+        await DBHelper.init(APP_NAME);
+        state.ok = true; dot("dotDb", "green");
+        trackApiTraffic({ stage: "db_init", status: "ok" });
+        log("ok", `Connected to ${APP_NAME}.`, "DB");
+      } catch (e) {
+        dot("dotDb", "red");
+        trackApiTraffic({ stage: "db_init", status: "error", error: String(e?.message || e) });
+        log("err", `DB init failed: ${e.message}`, "DB");
+        return;
+      }
+
+      $("btnRefresh").addEventListener("click", refreshData);
+      $("btnGenerate").addEventListener("click", async () => { await generate(); await generateNarrative(); });
+      $("btnTest").addEventListener("click", test);
+      $("btnMdToolConvert").addEventListener("click", convertMdToDesignerJson);
+      $("btnLoadNarrativeMd").addEventListener("click", loadNarrativeIntoMdTool);
+      $("btnOpenMdTool").addEventListener("click", () => switchTab("mdtool"));
+      $("btnCopyMdToolJson").addEventListener("click", async () => {
+        if (!state.out.mdToolDeck) return log("warn", "No MD tool JSON yet.", "MD_TOOL");
+        try { await copyText(JSON.stringify(state.out.mdToolDeck, null, 2)); log("ok", "Copied MD tool JSON.", "MD_TOOL"); } catch (e) { log("err", e.message, "MD_TOOL"); }
+      });
+      $("btnSaveMdToolJson").addEventListener("click", () => {
+        if (!state.out.mdToolDeck) return log("warn", "No MD tool JSON yet.", "MD_TOOL");
+        download(`heart-walk-mdtool-${dateStamp()}.json`, JSON.stringify(state.out.mdToolDeck, null, 2), "application/json;charset=utf-8");
+        log("ok", "Downloaded MD tool JSON.", "MD_TOOL");
+      });
+      $("btnUseMdToolJson").addEventListener("click", useMdToolJsonAsActive);
+      $("btnOpenApi").addEventListener("click", () => switchTab("api"));
+      $("btnDebugBundle").addEventListener("click", downloadDebugBundle);
+      $("btnApiRefresh").addEventListener("click", loadApiTraffic);
+      $("btnApiDownload").addEventListener("click", downloadDebugBundle);
+      $("btnCopyNarrative").addEventListener("click", async () => {
+        if (!state.out.narrative) return log("warn", "No narrative output yet.", "EXPORT");
+        try { await copyText(state.out.narrative); log("ok", "Copied narrative report.", "EXPORT"); } catch (e) { log("err", e.message, "EXPORT"); }
+      });
+      $("btnSaveNarrative").addEventListener("click", () => {
+        if (!state.out.narrative) return log("warn", "No narrative output yet.", "EXPORT");
+        download(`heart-walk-narrative-${dateStamp()}.md`, state.out.narrative, "text/markdown;charset=utf-8");
+        log("ok", "Downloaded narrative report.", "EXPORT");
+      });
+      $("btnCopyReport").addEventListener("click", async () => {
+        if (!state.out.report) return log("warn", "No report output yet.", "EXPORT");
+        try { await copyText(state.out.report); log("ok", "Copied plain-text report.", "EXPORT"); } catch (e) { log("err", e.message, "EXPORT"); }
+      });
+      $("btnSaveReport").addEventListener("click", () => {
+        if (!state.out.report) return log("warn", "No report output yet.", "EXPORT");
+        download(`heart-walk-report-${dateStamp()}.txt`, state.out.report, "text/plain;charset=utf-8");
+        log("ok", "Downloaded plain-text report.", "EXPORT");
+      });
+      $("btnCopyJson").addEventListener("click", async () => {
+        const d = getPreferredDesignerDeck();
+        if (!d) return log("warn", "No Designer JSON yet.", "EXPORT");
+        try { await copyText(JSON.stringify(d, null, 2)); log("ok", "Copied Designer JSON.", "EXPORT"); } catch (e) { log("err", e.message, "EXPORT"); }
+      });
+      $("btnSaveJson").addEventListener("click", () => {
+        const d = getPreferredDesignerDeck();
+        if (!d) return log("warn", "No Designer JSON yet.", "EXPORT");
+        download(`heart-walk-designer-${dateStamp()}.json`, JSON.stringify(d, null, 2), "application/json;charset=utf-8");
+        log("ok", "Downloaded Designer JSON.", "EXPORT");
+      });
+      $("btnClearSaved").addEventListener("click", clearSavedOutput);
+
+      restoreOutputCache();
+
+      await refreshData();
+      log("ok", "Reporter ready.");
+
+      // ── Auto-run from URL parameters ──
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("autorun") === "1") {
+        log("ok", "Auto-run triggered via URL parameter.", "AUTORUN");
+        try {
+          await sleep(500);
+          log("ok", "Generating cited outputs...", "AUTORUN");
+          await generate();
+          log("ok", "Cited generation complete. Building narrative...", "AUTORUN");
+          await generateNarrative();
+          log("ok", "Narrative complete. Running tests...", "AUTORUN");
+          test();
+          log("ok", "Depositing results...", "AUTORUN");
+          await autoDepositResults();
+        } catch (e) {
+          log("err", "Auto-run failed: " + (e?.message || e), "AUTORUN");
+          // Still try to deposit even on failure
+          try { await autoDepositResults(); } catch(_) {}
+        }
+      }
+    }
+
+    async function autoDepositResults() {
+      try {
+        await DBHelper.query(APP_NAME, `
+          CREATE TABLE IF NOT EXISTS app_output (
+              output_id   INT PRIMARY KEY AUTO_INCREMENT,
+              app_stage   VARCHAR(50) NOT NULL,
+              status      VARCHAR(20) DEFAULT 'ok',
+              payload     LONGTEXT,
+              created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          )
+        `);
+        const payload = {
+          completed_at_utc: new Date().toISOString(),
+          claims_count: state.out.claims?.length || 0,
+          slides_count: state.out.narrativeDeck?.slides?.length || state.out.deck?.slides?.length || 0,
+          report_length: state.out.narrative?.length || state.out.report?.length || 0,
+          test_results: state.smoke || {},
+          report_preview: (state.out.narrative || state.out.report || "").slice(0, 60000),
+          narrative_slides_count: state.out.narrativeDeck?.slides?.length || 0,
+          cited_claims_count: state.out.claims?.length || 0,
+          intermediates: state.out.intermediates || null,
+          quality_check: state.out.intermediates?.qualityResults || null
+        };
+        const payloadJson = JSON.stringify(payload);
+        const escaped = payloadJson.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        await DBHelper.query(APP_NAME, `INSERT INTO app_output (app_stage, status, payload) VALUES ('reporter', 'completed', '${escaped}')`);
+        log("ok", "Results deposited to app_output.", "AUTORUN");
+      } catch (e) {
+        log("err", "Auto-deposit failed: " + (e?.message || e), "AUTORUN");
+      }
+    }
+
+    init();

@@ -20,6 +20,10 @@
 .PARAMETER Model
   Override AI model. Default: gpt-4o
 
+.PARAMETER AutoConfirm
+  When true, include &autoConfirm=1 so browser reset confirmations are auto-approved during autorun.
+  Default: true
+
 .PARAMETER PollInterval
   Seconds between DB polls to check for completion. Default: 15
 
@@ -37,6 +41,7 @@ param(
   [switch]$Reset,
   [int]$BatchSize = 20,
   [string]$Model = "gpt-4o",
+  [bool]$AutoConfirm = $true,
   [int]$PollInterval = 15,
   [int]$Timeout = 30,
   [string]$AppName = "HWIE_v2"
@@ -108,6 +113,7 @@ function Open-Stage {
 
   $qs = "autorun=1&_cb=$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())"
   if ($Reset) { $qs += "&reset=1" }
+  if ($AutoConfirm) { $qs += "&autoConfirm=1" }
   foreach ($k in $extraParams.Keys) { $qs += "&$k=$($extraParams[$k])" }
 
   $url = "$BASE_URL/$urlPath`?$qs"
@@ -125,7 +131,7 @@ function Open-Stage {
 # ── Header ──
 Write-Host "═══════════════════════════════════════════" -ForegroundColor Cyan
 Write-Host " Heart Walk Pipeline Orchestrator" -ForegroundColor Cyan
-Write-Host " Stage=$Stage  Reset=$Reset  Batch=$BatchSize  Model=$Model" -ForegroundColor DarkGray
+Write-Host " Stage=$Stage  Reset=$Reset  AutoConfirm=$AutoConfirm  Batch=$BatchSize  Model=$Model" -ForegroundColor DarkGray
 Write-Host "═══════════════════════════════════════════" -ForegroundColor Cyan
 
 # Ensure app_output table exists

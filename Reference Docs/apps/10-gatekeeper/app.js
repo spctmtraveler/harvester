@@ -1,187 +1,3 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Gatekeeper: Ingest & Semantic Blocks</title>
-  <style>
-    :root{
-      --bg:#0b0f14;
-      --panel:#121824;
-      --panel2:#0f1520;
-      --border:#263244;
-      --text:#e6edf3;
-      --muted:#9fb0c2;
-      --accent:#28c26b;
-      --warn:#f2b84b;
-      --danger:#ff5c73;
-      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-      --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
-    }
-
-    body{margin:0;background:radial-gradient(1100px 700px at 20% 0%, #102235 0%, transparent 55%), var(--bg);color:var(--text);font-family:var(--sans);}
-    header{padding:18px 18px 10px;border-bottom:1px solid var(--border);background:linear-gradient(180deg, rgba(18,24,36,0.92), rgba(18,24,36,0.65));position:sticky;top:0;z-index:5;backdrop-filter: blur(8px);}
-    .title{display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap;}
-    .title h1{font-size:18px;margin:0;letter-spacing:0.3px;}
-    .title .sub{color:var(--muted);font-size:12px;}
-    .title .meta{color:var(--muted);font-size:11px;font-family:var(--mono);width:100%;margin-top:2px;}
-    .bar{display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap;}
-    button{border:1px solid var(--border);background:#162133;color:var(--text);padding:9px 12px;border-radius:10px;cursor:pointer;font-weight:650;}
-    button.primary{background:linear-gradient(180deg,#1fe16f,#12b45a);border-color:rgba(0,0,0,0);color:#05110a;}
-    button.primary:disabled{opacity:.5;cursor:not-allowed;}
-    button.ghost{background:transparent;}
-    button.danger{background:transparent;border-color:rgba(255,92,115,0.45);color:#ffb7c1;}
-    input, select, textarea{border:1px solid var(--border);background:#0f1520;color:var(--text);padding:8px 10px;border-radius:10px;}
-    input[type="text"]{min-width:220px;}
-    textarea{width:100%;min-height:160px;resize:vertical;line-height:1.4;font-family:var(--mono);}
-    .wrap{display:grid;grid-template-columns: 440px 1fr;gap:14px;padding:14px;}
-    @media (max-width: 980px){.wrap{grid-template-columns:1fr;}}
-    .panel{background:rgba(18,24,36,0.9);border:1px solid var(--border);border-radius:16px;overflow:hidden;}
-    .panel h2{margin:0;padding:12px 14px;border-bottom:1px solid var(--border);font-size:13px;letter-spacing:0.3px;text-transform:uppercase;color:var(--muted);display:flex;justify-content:space-between;align-items:center;}
-    .panel .body{padding:14px;}
-    .hint{color:var(--muted);font-size:12px;line-height:1.35;}
-    .kvs{display:grid;grid-template-columns: 1fr;gap:10px;margin-top:12px;}
-    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
-    .row label{font-size:12px;color:var(--muted);}
-    .row .pill{font-family:var(--mono);font-size:12px;padding:5px 8px;border-radius:999px;background:#0f1520;border:1px solid var(--border);color:#cfe1f7;}
-    .files{display:flex;flex-direction:column;gap:10px;margin-top:12px;}
-    .file{border:1px solid var(--border);background:rgba(15,21,32,0.9);border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:10px;}
-    .file .meta{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;}
-    .file .name{font-family:var(--mono);font-size:12px;color:#cfe1f7;word-break:break-all;}
-    .file .stats{color:var(--muted);font-size:12px;}
-    .file .grid{display:grid;grid-template-columns: 1fr 1fr;gap:10px;}
-    @media (max-width: 980px){.file .grid{grid-template-columns:1fr;}}
-    .field{display:flex;flex-direction:column;gap:6px;}
-    .field label{font-size:12px;color:var(--muted);}
-    .field input{width:100%;}
-    .log{font-family:var(--mono);font-size:12px;line-height:1.45;background:#0b1019;border-top:1px solid var(--border);padding:12px;max-height:380px;overflow:auto;}
-    .log .ok{color:#7be7a2;}
-    .log .warn{color:#ffd18a;}
-    .log .bad{color:#ff9aac;}
-    .tag{display:inline-block;font-family:var(--mono);font-size:11px;padding:2px 6px;border-radius:999px;border:1px solid var(--border);background:#0f1520;color:#cfe1f7;}
-    .gear-btn{margin-left:auto;border:none;background:transparent;padding:6px;border-radius:999px;cursor:pointer;opacity:.55;transition:opacity .15s, background .15s;}
-    .gear-btn:hover{opacity:1;background:rgba(255,255,255,0.06);}
-    .gear-btn svg{width:18px;height:18px;fill:var(--muted);}
-    .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.55);display:none;align-items:flex-start;justify-content:flex-end;padding:18px;z-index:50;}
-    .modal-backdrop.open{display:flex;}
-    .modal{width:min(520px, calc(100vw - 36px));background:rgba(18,24,36,0.98);border:1px solid var(--border);border-radius:16px;overflow:hidden;box-shadow:0 25px 70px rgba(0,0,0,0.5);}
-    .modal header{position:static;backdrop-filter:none;padding:14px 14px 10px;border-bottom:1px solid var(--border);background:linear-gradient(180deg, rgba(15,21,32,0.98), rgba(15,21,32,0.86));}
-    .modal h3{margin:0;font-size:13px;letter-spacing:0.3px;text-transform:uppercase;color:var(--muted);display:flex;align-items:center;justify-content:space-between;gap:10px;}
-    .modal .content{padding:14px;}
-    .modal .footer{display:flex;gap:10px;justify-content:flex-end;padding:12px 14px;border-top:1px solid var(--border);background:rgba(15,21,32,0.9);}
-    .modal .close{border:1px solid var(--border);background:transparent;color:var(--text);}
-    .qa-summary{font-family:var(--mono);font-size:12px;line-height:1.45;background:#0b1019;border:1px solid var(--border);padding:12px;border-radius:10px;min-height:60px;}
-    .qa-list{display:flex;flex-direction:column;gap:10px;margin-top:10px;}
-    .qa-item{border:1px solid var(--border);background:rgba(15,21,32,0.9);border-radius:10px;padding:10px;}
-    .qa-head{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;}
-    .qa-text{font-size:12px;line-height:1.45;color:#cfe1f7;white-space:pre-wrap;}
-  </style>
-</head>
-<body>
-  <header>
-    <div class="title">
-      <h1>Gatekeeper</h1>
-      <div class="sub">Ingest transcripts into durable semantic blocks (Auto-DB, deterministic IDs)</div>
-      <div class="meta" id="appMeta">Version v1.5 · Last updated —</div>
-    </div>
-    <div class="bar">
-      <button id="btnPick" class="primary">Load Transcript Files (0 loaded)</button>
-      <input id="fileInput" type="file" multiple accept=".txt,.md" style="display:none" />
-      <button id="btnIngest" class="primary" disabled>Ingest To DB</button>
-      <button id="btnStopIngest" class="danger" disabled>Stop Ingest</button>
-      <button id="btnDryRun" class="ghost" disabled>Dry Run (No DB Writes)</button>
-      <span class="tag" id="dbTag">DB: (not initialized)</span>
-      <span class="tag" id="appTag">App: (not initialized)</span>
-      <button id="btnSettings" class="gear-btn" title="Settings">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M19.14,12.94c0.04-0.31,0.06-0.63,0.06-0.94s-0.02-0.63-0.06-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.62l-1.92-3.32c-0.11-0.21-0.36-0.3-0.58-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.5,2.81C14.47,2.59,14.27,2.43,14.04,2.43h-3.84c-0.23,0-0.43,0.16-0.46,0.38L9.24,5.34C8.65,5.58,8.12,5.9,7.62,6.28L5.23,5.32C5.01,5.24,4.76,5.33,4.65,5.54L2.73,8.86C2.62,9.07,2.67,9.34,2.85,9.48l2.03,1.58C4.84,11.37,4.82,11.69,4.82,12s0.02,0.63,0.06,0.94L2.85,14.52c-0.18,0.14-0.23,0.41-0.12,0.62l1.92,3.32c0.11,0.21,0.36,0.3,0.58,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.5,2.53c0.03,0.22,0.23,0.38,0.46,0.38h3.84c0.23,0,0.43-0.16,0.46-0.38l0.5-2.53c0.59-0.24,1.12-0.56,1.62-0.94l2.39,0.96c0.22,0.08,0.47-0.01,0.58-0.22l1.92-3.32c0.11-0.21,0.06-0.48-0.12-0.62L19.14,12.94z M12.12,15.5c-1.93,0-3.5-1.57-3.5-3.5s1.57-3.5,3.5-3.5s3.5,1.57,3.5,3.5S14.05,15.5,12.12,15.5z" />
-        </svg>
-      </button>
-    </div>
-  </header>
-
-  <div class="wrap" style="grid-template-columns:1fr;">
-    <div class="panel">
-      <h2>Files <span class="tag" id="fileCount">0</span></h2>
-      <div class="body">
-        <div id="files" class="files"></div>
-        <div class="hint" id="emptyHint">No files loaded yet.</div>
-      </div>
-      <div class="log" id="log"></div>
-    </div>
-
-    <div class="panel">
-      <h2>QA <span class="tag" id="qaTag">Ready</span></h2>
-      <div class="body">
-        <div class="row">
-          <button id="btnValidate" class="ghost" disabled>Run Post-Ingest Checks</button>
-          <label for="spotFile">Spot-check file</label>
-          <select id="spotFile" disabled style="min-width:280px"></select>
-          <button id="btnSpotCheck" class="ghost" disabled>Show Spot Check</button>
-          <button id="btnCopySpotAll" class="ghost" disabled>Copy All Spot Checks</button>
-        </div>
-        <div class="hint" style="margin-top:8px;">
-          Checks compare fresh segmentation against rows in DB by deterministic `sentence_uid`, and flag missing/extra blocks.
-        </div>
-        <div id="qaSummary" class="qa-summary" style="margin-top:10px;">No QA run yet.</div>
-        <div id="qaList" class="qa-list"></div>
-      </div>
-    </div>
-  </div>
-
-  <div id="settingsBackdrop" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
-    <div class="modal">
-      <header>
-        <h3 id="settingsTitle">
-          Settings
-          <button id="btnCloseSettings" class="close">Close</button>
-        </h3>
-      </header>
-      <div class="content">
-        <div class="hint">
-          Advanced settings. Changing `Stable appName` switches which Auto-DB database this app uses.
-        </div>
-        <div class="kvs">
-          <div class="row">
-            <label>Stable appName</label>
-            <input id="appName" type="text" value="HWIE_v2" />
-          </div>
-          <div class="row">
-            <label>Tokenizer locale</label>
-            <input id="locale" type="text" value="en" />
-          </div>
-          <div class="row">
-            <label>Segmentation model</label>
-            <select id="segmentationModel">
-              <option value="gpt-4o-mini" selected>gpt-4o-mini (fast)</option>
-              <option value="gpt-4o">gpt-4o (accurate)</option>
-            </select>
-          </div>
-          <div class="row">
-            <label>Default source_type</label>
-            <select id="sourceType">
-              <option value="transcript">transcript</option>
-              <option value="summary_only">summary_only</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="segmentationPrompt">Segmentation Prompt (editable)</label>
-            <textarea id="segmentationPrompt" spellcheck="false"></textarea>
-            <div class="hint">This is the live AI prompt template used for semantic block boundaries. Keep `{{CHUNK_TURNS}}`, `{{SPEAKER_CONTEXT}}`, and `{{LOCALE}}` placeholders. Optional: `{{CHUNK_START_INDEX}}`, `{{CHUNK_END_INDEX}}`.</div>
-          </div>
-          <div class="row">
-            <label>Danger zone</label>
-            <button id="btnReset" class="danger" title="Deletes and recreates interviews + sentences tables in the current app DB. This permanently removes ingested transcript blocks for this app and cannot be undone.">Reset App Tables</button>
-          </div>
-        </div>
-      </div>
-      <div class="footer">
-        <button id="btnCloseSettings2" class="close">Close</button>
-      </div>
-    </div>
-  </div>
-
-  <script type="module">
     import { DBHelper } from "https://happydo.xyz/api_auto_db/db_helper.js";
     import { askAI } from "https://happydo.xyz/api/ailnl.js";
 
@@ -594,19 +410,6 @@
       const btn = $("btnPick");
       if (!btn) return;
       btn.textContent = `Load Transcript Files (${state.files.length} loaded)`;
-    }
-
-    function isAutoConfirmEnabled() {
-      const params = new URLSearchParams(window.location.search);
-      return params.get("autoConfirm") === "1";
-    }
-
-    function requireResetConfirmation(message) {
-      if (isAutoConfirmEnabled()) {
-        log("autoConfirm=1 detected; reset confirmation auto-approved.", "warn");
-        return true;
-      }
-      return confirm(message);
     }
 
     function setIngestStopEnabled(enabled) {
@@ -1983,7 +1786,7 @@
     async function resetTables() {
       const appName = $("appName").value.trim();
       if (!state.initialized) await initDB();
-      if (!requireResetConfirmation("This will delete Interview and Sentence tables for this app DB. Continue?")) return;
+      if (!confirm("This will delete Interview and Sentence tables for this app DB. Continue?")) return;
 
       console.info("[Gatekeeper] Reset start", { appName });
       log("Reset started: dropping and recreating app tables...", "warn");
@@ -3093,6 +2896,3 @@
         log("Auto-deposit failed: " + (e?.message || e), "bad");
       }
     })();
-  </script>
-</body>
-</html>
