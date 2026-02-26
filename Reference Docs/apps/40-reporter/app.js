@@ -474,12 +474,43 @@
       return lines.join("\n");
     }
 
+    function makeStandardSlide(title, content, imagePrompt = "") {
+      const text = String(content || "").trim();
+      const prompt = String(imagePrompt || "").trim();
+      return {
+        type: "standard",
+        title,
+        content: text,
+        bodyField: {
+          mode: "text",
+          text,
+          imageUrl: "",
+          imageAlign: "center",
+          imagePrompt: prompt,
+          quoteText: "",
+          quoteAttribution: ""
+        }
+      };
+    }
+
     function addSectionSlides(slides, title, claims, includeQuotes) {
       slides.push({ type: "section", title });
-      if (!claims.length) { slides.push({ type: "standard", title, content: "* No evidence-backed insights are available for this section." }); return; }
+      if (!claims.length) {
+        slides.push(makeStandardSlide(
+          title,
+          "* No evidence-backed insights are available for this section.",
+          `A professional meeting room with an empty whiteboard titled '${title}' to represent an evidence gap.`
+        ));
+        return;
+      }
       const cc = chunks(claims, 3);
       for (let i=0;i<cc.length;i++) {
-        slides.push({ type: "standard", title: cc.length > 1 ? `${title} (${i+1}/${cc.length})` : title, content: cc[i].map(c => claimMd(c, includeQuotes)).join("\n\n") });
+        const slideTitle = cc.length > 1 ? `${title} (${i+1}/${cc.length})` : title;
+        slides.push(makeStandardSlide(
+          slideTitle,
+          cc[i].map(c => claimMd(c, includeQuotes)).join("\n\n"),
+          `A documentary-style photo of Heart Walk staff collaborating on '${title}' planning with notes, timelines, and sponsor outreach materials visible.`
+        ));
       }
     }
 
@@ -487,7 +518,11 @@
       const slides = [
         { type: "cover", title: "Heart Walk Evidence Report", subtitle: `Generated ${nowLocal()} | ${claims.length} cited claims` },
         { type: "section", title: "Executive Summary" },
-        { type: "standard", title: "Executive Summary", content: summary.map(x => `* ${x}`).join("\n") }
+        makeStandardSlide(
+          "Executive Summary",
+          summary.map(x => `* ${x}`).join("\n"),
+          "A polished photo of Heart Walk leaders reviewing campaign dashboards and sponsorship plans in a modern conference room."
+        )
       ];
       addSectionSlides(slides, "Problems", groups.problems, includeQuotes);
       addSectionSlides(slides, "Solutions", groups.solutions, includeQuotes);
@@ -514,6 +549,51 @@
 
       for (let i = 0; i < s.length; i++) {
         const ch = s[i];
+
+    function extractFirstJsonArray(text) {
+      const s = String(text || "");
+      let inString = false;
+      let escaped = false;
+      let depth = 0;
+      let start = -1;
+
+      for (let i = 0; i < s.length; i++) {
+        const ch = s[i];
+
+        if (inString) {
+          if (escaped) {
+            escaped = false;
+            continue;
+          }
+          if (ch === "\\") {
+            escaped = true;
+            continue;
+          }
+          if (ch === '"') inString = false;
+          continue;
+        }
+
+        if (ch === '"') {
+          inString = true;
+          continue;
+        }
+
+        if (ch === "[") {
+          if (depth === 0) start = i;
+          depth += 1;
+          continue;
+        }
+
+        if (ch === "]") {
+          if (depth > 0) depth -= 1;
+          if (depth === 0 && start >= 0) {
+            return s.slice(start, i + 1);
+          }
+        }
+      }
+
+      return null;
+    }
 
         if (inString) {
           if (escaped) {
@@ -1271,7 +1351,7 @@ ${JSON.stringify(claimBundle, null, 1)}`;
       for (const c of claimBundle) claimMap.set(c.id, c);
 
       const narrativeSlides = [];
-      const BATCH_SIZE = 4; // Process 4 slide groups per AI call to reduce round-trips
+      const BATCH_SIZE = 2; // Smaller batches improve JSON reliability and reduce fallback placeholders
       const slideBatches = chunks(slideGroups.slides, BATCH_SIZE);
 
       for (let bi = 0; bi < slideBatches.length; bi++) {
@@ -1377,23 +1457,67 @@ ${JSON.stringify(slidesForPrompt, null, 1)}`;
 
         try {
           const cleaned = contentStr.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
-          const batchSlides = JSON.parse(cleaned);
+          let batchSlides = null;
+
+          try {
+            batchSlides = JSON.parse(cleaned);
+          } catch (_) {
+            const extracted = extractFirstJsonArray(cleaned) || extractFirstJsonArray(contentStr);
+            if (!extracted) throw _;
+            batchSlides = JSON.parse(extracted);
+          }
+
           if (Array.isArray(batchSlides)) {
             for (const s of batchSlides) {
               narrativeSlides.push(normalizeNarrativeDraftSlide(s));
             }
+          } else {
+            throw new Error("Narrative batch response was not a JSON array.");
           }
         } catch (e) {
           log("warn", `Failed to parse narrative batch ${bi + 1}: ${e.message}`, "NARRATIVE");
-          // Try to salvage: use raw content
-          for (const sg of batch) {
-            narrativeSlides.push(normalizeNarrativeDraftSlide({
-              title: sg.title,
-              layout: "text",
-              content: "• Content generation failed for this slide.",
-              elaboration: "• Re-run narrative generation for this section.",
-              supporting_quotes: []
-            }));
+          // Recovery path: generate each slide individually before falling back to placeholders.
+          for (let si = 0; si < batch.length; si++) {
+            const sg = batch[si];
+            const source = slidesForPrompt[si] || { title: sg.title, section_type: sg.section_type, research_context: [], direct_quotes: [] };
+            const recoveryPrompt = `You are writing ONE client-facing qualitative research slide.
+
+Return ONLY valid JSON object (no markdown):
+{
+  "title": "${String(source.title || sg.title).replace(/"/g, '\\"')}",
+  "layout": "text",
+  "content": "• ...\\n• ...",
+  "supporting_quotes": [{"text":"...","speaker":"..."}],
+  "elaboration": "• ...\\n• ...",
+  "image_prompt": "..."
+}
+
+Rules:
+- Use only the evidence below.
+- No invented statistics.
+- Keep bullets concrete and concise.
+- supporting_quotes max 2 items.
+
+EVIDENCE:
+${JSON.stringify(source, null, 1)}`;
+
+            try {
+              trackApiTraffic({ stage: "narrative_content_recovery_request", batch: bi + 1, slide_index: si + 1 });
+              const recoveryRaw = await askAI(recoveryPrompt, model, { temperature: 0.2 });
+              const recoveryStr = String(recoveryRaw || "").trim();
+              trackApiTraffic({ stage: "narrative_content_recovery_response", batch: bi + 1, slide_index: si + 1, response_length: recoveryStr.length });
+              const extracted = extractFirstJsonObject(recoveryStr) || recoveryStr.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
+              const recovered = JSON.parse(extracted);
+              narrativeSlides.push(normalizeNarrativeDraftSlide(recovered));
+            } catch (_) {
+              narrativeSlides.push(normalizeNarrativeDraftSlide({
+                title: sg.title,
+                layout: "text",
+                content: "• Content generation failed for this slide.",
+                elaboration: "• Re-run narrative generation for this section.",
+                supporting_quotes: []
+              }));
+            }
           }
         }
       }
