@@ -11,6 +11,7 @@
             --c-social: #F36C21;
             --c-material: #22D460;
             --c-temporal: #08C4BE;
+            --menu-accent: #22D460;
 
             /* Global Offsets */
             --global-x: 0px;
@@ -32,7 +33,7 @@
             z-index: 5000;
             background: rgba(255,255,255,0.92);
             color: #1e1d21;
-            border: 1px solid rgba(22,191,236,0.45);
+            border: 1px solid color-mix(in srgb, var(--menu-accent) 62%, #ffffff 38%);
             border-radius: 999px;
             padding: 6px 10px;
             font-size: 11px;

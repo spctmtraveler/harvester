@@ -52,7 +52,7 @@
       margin:18px auto 40px;
       padding:0 28px 40px;
       display:grid;
-      grid-template-columns:repeat(auto-fit, minmax(230px, 1fr));
+      grid-template-columns:repeat(3, minmax(0, 1fr));
       gap:18px;
     }
 
@@ -86,14 +86,15 @@
     }
 
     .icon{
-      width:64px;
-      height:64px;
-      border-radius:18px;
+      width:56px;
+      height:56px;
+      border-radius:14px;
       display:grid;
       place-items:center;
       background:color-mix(in srgb, var(--accent) 18%, #ffffff 82%);
       color:var(--accent);
-      font-size:30px;
+      border:1px solid color-mix(in srgb, var(--accent) 28%, #d1d5db 72%);
+      font-size:24px;
     }
 
     .title{
@@ -107,9 +108,14 @@
       color:var(--muted);
     }
 
+    @media (max-width: 980px){
+      .grid{grid-template-columns:repeat(2, minmax(0, 1fr));}
+    }
+
     @media (max-width: 640px){
       header{padding:28px 20px 6px;}
       .grid{padding:0 20px 32px;}
+      .grid{grid-template-columns:1fr;}
       h1{font-size:28px;}
     }
   </style>
@@ -128,25 +134,25 @@
     </a>
 
     <a class="card" href="20-analyst/index.html" style="--accent:#FF5C5C;">
-      <div class="icon"><i class="fa-solid fa-chart-line" aria-hidden="true"></i></div>
+      <div class="icon"><i class="fa-solid fa-magnifying-glass-chart" aria-hidden="true"></i></div>
       <div class="title">Analyst</div>
       <div class="cmd">Surface key insights</div>
     </a>
 
     <a class="card" href="30-synthesizer/index.html" style="--accent:#965ADB;">
-      <div class="icon"><i class="fa-solid fa-layer-group" aria-hidden="true"></i></div>
+      <div class="icon"><i class="fa-solid fa-cubes" aria-hidden="true"></i></div>
       <div class="title">Synthesizer</div>
       <div class="cmd">Synthesize narrative themes</div>
     </a>
 
-    <a class="card" href="40-reporter/40-reporter.md" style="--accent:#F36C21;">
-      <div class="icon"><i class="fa-solid fa-file-lines" aria-hidden="true"></i></div>
+    <a class="card" href="40-reporter/index.html" style="--accent:#F36C21;">
+      <div class="icon"><i class="fa-solid fa-file-waveform" aria-hidden="true"></i></div>
       <div class="title">Reporter</div>
       <div class="cmd">Generate shareable reports</div>
     </a>
 
     <a class="card" href="50-designer/index.html" style="--accent:#22D46E;">
-      <div class="icon"><i class="fa-solid fa-pen-nib" aria-hidden="true"></i></div>
+      <div class="icon"><i class="fa-solid fa-pen-ruler" aria-hidden="true"></i></div>
       <div class="title">Designer</div>
       <div class="cmd">Design experience flows</div>
     </a>

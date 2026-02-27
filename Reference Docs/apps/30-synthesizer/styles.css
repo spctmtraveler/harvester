@@ -5,8 +5,8 @@
             --border: #30363d;
             --text: #c9d1d9;
             --muted: #8b949e;
-            --accent: #238636;
-            --accent-dim: rgba(35,134,54,0.15);
+            --accent: #965ADB;
+            --accent-dim: rgba(150,90,219,0.18);
             --blue: #1f6feb;
             --blue-dim: rgba(31,111,235,0.15);
             --danger: #da3633;
@@ -35,6 +35,7 @@
             min-width: 300px;
             background: #010409;
             border-right: 1px solid var(--border);
+            box-shadow: inset 3px 0 0 0 color-mix(in srgb, var(--accent) 70%, #ffffff 30%);
             display: flex;
             flex-direction: column;
             padding: 16px;

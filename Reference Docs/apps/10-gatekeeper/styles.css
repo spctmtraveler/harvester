@@ -5,7 +5,7 @@
       --border:#263244;
       --text:#e6edf3;
       --muted:#9fb0c2;
-      --accent:#28c26b;
+      --accent:#FCB526;
       --warn:#f2b84b;
       --danger:#ff5c73;
       --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
@@ -13,7 +13,7 @@
     }
 
     body{margin:0;background:radial-gradient(1100px 700px at 20% 0%, #102235 0%, transparent 55%), var(--bg);color:var(--text);font-family:var(--sans);}
-    header{padding:18px 18px 10px;border-bottom:1px solid var(--border);background:linear-gradient(180deg, rgba(18,24,36,0.92), rgba(18,24,36,0.65));position:sticky;top:0;z-index:5;backdrop-filter: blur(8px);}
+    header{padding:18px 18px 10px;border-bottom:1px solid var(--border);border-top:3px solid color-mix(in srgb, var(--accent) 75%, #ffffff 25%);background:linear-gradient(180deg, rgba(18,24,36,0.92), rgba(18,24,36,0.65));position:sticky;top:0;z-index:5;backdrop-filter: blur(8px);}
     .title{display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap;}
     .title h1{font-size:18px;margin:0;letter-spacing:0.3px;}
     .title .sub{color:var(--muted);font-size:12px;}
