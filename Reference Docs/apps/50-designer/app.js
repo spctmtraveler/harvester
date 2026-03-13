@@ -84,6 +84,7 @@
             imageUrl: base.imageUrl || '',
             imageAlign,
             imagePrompt: base.imagePrompt || '',   // AI-suggested image idea (preserved across mode switches)
+            imageNotes: base.imageNotes || '',         // alt-text / image description for accessibility & AI generation
             imageHistory: Array.isArray(base.imageHistory) ? base.imageHistory : [],
             quoteText: base.quoteText ?? fallbackText,
             quoteAttribution: base.quoteAttribution || '',
@@ -265,42 +266,61 @@
     }
 
     function renderFieldBody(fieldPath, field) {
+        // ── Shared helper: image notes row (shown below loaded image) ──
+        function imageNotesHtml(fieldPath, field) {
+            const notes = field.imageNotes || '';
+            return `<div class="image-tools-row">
+                <textarea class="image-notes-field" data-role="image-notes" data-field-path="${fieldPath}" rows="2" placeholder="Image description / alt-text (also used as AI prompt)">${escapeHtml(notes)}</textarea>
+                <div class="image-tools-btns">
+                    <button class="ai-gen-btn" data-role="ai-gen-btn" data-field-path="${fieldPath}" title="Generate new image from description">🎨 AI</button>
+                    <label class="btn-browse-file" title="Browse for image file">📂 Browse<input type="file" accept="image/*" data-role="field-image-file" data-field-path="${fieldPath}" style="display:none"></label>
+                </div>
+            </div>`;
+        }
+
         if (field.mode === 'image') {
             if (field.imageUrl) {
                 // ── Image loaded: show it with alignment & edge-click ──
-                const regenBtn = field.imagePrompt
+                const regenBtn = (field.imagePrompt || field.imageNotes)
                     ? `<button class="image-regen-btn" data-role="ai-regen-btn" data-field-path="${fieldPath}" title="Regenerate image with AI">🔄</button>`
                     : '';
                 const historyLen = (field.imageHistory || []).length;
                 const historyBtn = historyLen > 0
                     ? `<button class="image-history-btn" data-role="image-history-btn" data-field-path="${fieldPath}" title="Undo to previous image (${historyLen} in history)">↩ <span class="history-count">${historyLen}</span></button>`
                     : '';
+                const altText = escapeHtml(field.imageNotes || 'Slide image');
                 return `<div class="field-body" data-mode="image">
                     <div class="image-field" data-role="image-field" data-field-path="${fieldPath}" data-image-align="${field.imageAlign}" style="${imageAlignStyle(field.imageAlign)}">
                         ${regenBtn}
                         ${historyBtn}
-                        <img src="${escapeHtml(field.imageUrl)}" alt="Slide image">
+                        <img src="${escapeHtml(field.imageUrl)}" alt="${altText}">
                     </div>
+                    ${imageNotesHtml(fieldPath, field)}
                 </div>`;
             }
-            // ── No image: show drop-zone + AI prompt + generate ──
-            const promptText = field.imagePrompt || '';
-            const aiGenHtml = promptText ? `
-                    <div class="drop-hint">💡 AI Image Prompt:</div>
-                    <textarea class="ai-gen-prompt" data-role="ai-prompt-edit" data-field-path="${fieldPath}" rows="2">${escapeHtml(promptText)}</textarea>
-                    <button class="ai-gen-btn" data-role="ai-gen-btn" data-field-path="${fieldPath}">🎨 Generate with AI</button>
-            ` : '';
+            // ── No image: unified drop-zone with all 4 options ──
+            const notes = field.imageNotes || '';
             return `<div class="field-body" data-mode="image">
                 <div class="image-drop-zone" data-role="image-drop-zone" data-field-path="${fieldPath}">
-                    <svg class="drop-icon" viewBox="0 0 24 24"><path d="M19 7v2.99s-1.99.01-2 0V7h-3s.01-1.99 0-2h3V2h2v3h3v2h-3zm-3 4V8h-3V5H5a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2v-8h-3zM5 19l3-4 2 3 3-4 4 5H5z"/></svg>
-                    <div class="drop-label">Drop image here, or click to browse</div>
-                    <div class="drop-or">— or paste a URL —</div>
-                    <div class="url-row">
-                        <input type="text" placeholder="https://..." data-role="field-image-url" data-field-path="${fieldPath}">
-                        <button data-role="url-load-btn" data-field-path="${fieldPath}">Load</button>
+                    <input type="file" accept="image/*" data-role="field-image-file" data-field-path="${fieldPath}" style="display:none">
+                    <div class="drop-zone-grid">
+                        <div class="drop-zone-cell drop-cell-browse">
+                            <svg class="drop-icon" viewBox="0 0 24 24"><path d="M19 7v2.99s-1.99.01-2 0V7h-3s.01-1.99 0-2h3V2h2v3h3v2h-3zm-3 4V8h-3V5H5a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2v-8h-3zM5 19l3-4 2 3 3-4 4 5H5z"/></svg>
+                            <div class="drop-label">Drop image here or click to browse</div>
+                        </div>
+                        <div class="drop-zone-cell drop-cell-url" onclick="event.stopPropagation()">
+                            <div class="drop-cell-title">Paste URL</div>
+                            <div class="url-row">
+                                <input type="text" placeholder="https://..." data-role="field-image-url" data-field-path="${fieldPath}">
+                                <button data-role="url-load-btn" data-field-path="${fieldPath}">Load</button>
+                            </div>
+                        </div>
+                        <div class="drop-zone-cell drop-cell-ai" onclick="event.stopPropagation()">
+                            <div class="drop-cell-title">AI Generate</div>
+                            <textarea class="image-notes-field" data-role="image-notes" data-field-path="${fieldPath}" rows="2" placeholder="Describe the image you want…">${escapeHtml(notes)}</textarea>
+                            <button class="ai-gen-btn" data-role="ai-gen-btn" data-field-path="${fieldPath}">🎨 Generate</button>
+                        </div>
                     </div>
-                    ${aiGenHtml}
-                    <input type="file" accept="image/*" data-role="field-image-file" data-field-path="${fieldPath}">
                 </div>
             </div>`;
         }
@@ -522,7 +542,7 @@
         const saved = JSON.parse(localStorage.getItem('heart_walk_deck_pro_v3'));
         if (saved) { appConfig = saved.config; slidesData = saved.slides; } 
         else {
-            appConfig = { 'font-title': "'Source Sans 3', sans-serif", 'size-title': '32pt', 'color-title': '#16bfec', 'font-subtitle': "'Source Sans 3', sans-serif", 'size-subtitle': '20pt', 'color-subtitle': '#1e1d21', 'font-h1': "'Source Sans 3', sans-serif", 'size-h1': '32pt', 'color-h1': '#16bfec', 'font-h2': "'Source Sans 3', sans-serif", 'size-h2': '28pt', 'color-h2': '#16bfec', 'font-h3': "'Source Sans 3', sans-serif", 'size-h3': '18pt', 'color-h3': '#1e1d21', 'font-normal': "'Source Sans 3', sans-serif", 'size-normal': '16pt', 'color-normal': '#1e1d21', 'font-p-large': "'Source Sans 3', sans-serif", 'size-p-large': '20pt', 'color-p-large': '#1e1d21', 'font-p-normal': "'Source Sans 3', sans-serif", 'size-p-normal': '16pt', 'color-p-normal': '#1e1d21', 'font-p-small': "'Source Sans 3', sans-serif", 'size-p-small': '13pt', 'color-p-small': '#1e1d21', 'globalX': 0, 'globalY': 0, 'showShapes': true, 'shapePath': defaultShapePath, 'shapeViewBox': defaultViewBox };
+            appConfig = { 'font-title': "'Source Sans 3', sans-serif", 'size-title': '45pt', 'color-title': '#16bfec', 'font-subtitle': "'Source Sans 3', sans-serif", 'size-subtitle': '25pt', 'color-subtitle': '#1e1d21', 'font-h1': "'Source Sans 3', sans-serif", 'size-h1': '32pt', 'color-h1': '#16bfec', 'font-h2': "'Source Sans 3', sans-serif", 'size-h2': '28pt', 'color-h2': '#16bfec', 'font-h3': "'Source Sans 3', sans-serif", 'size-h3': '18pt', 'color-h3': '#1e1d21', 'font-normal': "'Source Sans 3', sans-serif", 'size-normal': '16pt', 'color-normal': '#1e1d21', 'font-p-large': "'Source Sans 3', sans-serif", 'size-p-large': '20pt', 'color-p-large': '#1e1d21', 'font-p-normal': "'Source Sans 3', sans-serif", 'size-p-normal': '16pt', 'color-p-normal': '#1e1d21', 'font-p-small': "'Source Sans 3', sans-serif", 'size-p-small': '13pt', 'color-p-small': '#1e1d21', 'globalX': 0, 'globalY': 0, 'showShapes': true, 'shapePath': defaultShapePath, 'shapeViewBox': defaultViewBox };
             slidesData = [{ type: 'cover', title: 'Start', subtitle: 'Import JSON to begin' }];
         }
 
@@ -946,8 +966,9 @@
             if (!slideEl) return;
             const index = parseInt(slideEl.dataset.index, 10);
             if (Number.isNaN(index)) return;
-            const promptEl = aiGenBtn.parentElement.querySelector('[data-role="ai-prompt-edit"]');
-            const customPrompt = promptEl ? promptEl.value.trim() : null;
+            const notesEl = (aiGenBtn.closest('.image-tools-row') || aiGenBtn.closest('.drop-cell-ai'))?.querySelector('[data-role="image-notes"]');
+            const customPrompt = notesEl ? notesEl.value.trim() : null;
+            if (!customPrompt) { alert('Enter an image description first.'); return; }
             generateAIImage(aiGenBtn.dataset.fieldPath, index, customPrompt);
             return;
         }
@@ -1002,6 +1023,25 @@
         saveState();
         render();
         showSlide(currentSlideIndex);
+    });
+
+    // ── Image notes change → save ──
+    container.addEventListener('change', (e) => {
+        const notesEl = e.target.closest('[data-role="image-notes"]');
+        if (notesEl) {
+            const slideEl = notesEl.closest('.slide');
+            if (!slideEl) return;
+            const index = parseInt(slideEl.dataset.index, 10);
+            if (Number.isNaN(index)) return;
+            const slide = slidesData[index];
+            ensureSlideSchema(slide);
+            const field = getByPath(slide, notesEl.dataset.fieldPath);
+            if (field) {
+                field.imageNotes = notesEl.value;
+                field.imagePrompt = notesEl.value;
+                saveState();
+            }
+        }
     });
 
     // ── Drag-and-drop image handling ──
@@ -1145,6 +1185,60 @@
     function deleteSlide() { if (slidesData.length <= 1) return; if (confirm("Delete slide?")) { slidesData.splice(currentSlideIndex, 1); if (currentSlideIndex >= slidesData.length) currentSlideIndex--; render(); saveState(); showSlide(currentSlideIndex); } }
     function showSlide(idx) { if (idx < 0 || idx >= slidesData.length) return; currentSlideIndex = idx; document.querySelectorAll('.slide').forEach((s, i) => s.classList.toggle('active', i === idx)); updateSelectionMenu(); }
     function exportDeck() { navigator.clipboard.writeText(JSON.stringify({ config: appConfig, slides: slidesData }, null, 2)).then(() => alert("JSON Copied!")); }
+    async function copyJsonHowTo() {
+        const guide = [
+            'Designer JSON authoring guide',
+            '',
+            'Use this format:',
+            '{',
+            '  "config": {',
+            '    "globalX": 0,',
+            '    "globalY": 0',
+            '  },',
+            '  "slides": [',
+            '    { "type": "cover", "title": "Deck Title", "subtitle": "Optional subtitle" },',
+            '    { "type": "section", "title": "Section Header", "subtitle": "Optional subtitle" },',
+            '    {',
+            '      "type": "standard",',
+            '      "title": "Slide title",',
+            '      "bodyField": { "mode": "text", "text": "Bullet or paragraph text" }',
+            '    },',
+            '    {',
+            '      "type": "two-column",',
+            '      "title": "Two-column title",',
+            '      "columns": {',
+            '        "splitPct": 55,',
+            '        "leftField": { "mode": "text", "text": "Left content" },',
+            '        "rightField": { "mode": "quote", "quoteText": "Quoted text", "quoteAttribution": "Person" }',
+            '      }',
+            '    }',
+            '  ]',
+            '}',
+            '',
+            'Rules and tips:',
+            '- Required top-level key: "slides" (array).',
+            '- Optional top-level key: "config" (object). If missing, Designer uses defaults.',
+            '- Supported slide types: "cover", "section", "standard", "two-column".',
+            '- Unknown slide types are auto-converted to "standard".',
+            '- If you only have one slide object, wrap it in "slides".',
+            '- A plain array is accepted and treated as slides.',
+            '- AI prose around JSON is okay, but the JSON object must still be valid.',
+            '- For image fields use mode "image" with "imageUrl".',
+            '- Use "imageNotes" for alt-text and AI image generation prompts.',
+            '',
+            'How to use:',
+            '1) Paste this guide into an AI prompt and ask for valid JSON only.',
+            '2) In Designer, open Settings > Import JSON.',
+            '3) Paste the JSON or use Upload/Clipboard import.'
+        ].join('\n');
+
+        try {
+            await navigator.clipboard.writeText(guide);
+            alert('JSON how-to copied to clipboard.');
+        } catch (err) {
+            showError('Could not copy JSON how-to. Clipboard permissions may be blocked.');
+        }
+    }
     function toggleSettings() { document.getElementById('settings-panel').classList.toggle('open'); }
     function openImport() { document.getElementById('import-modal').classList.add('open'); }
     function closeImport() { document.getElementById('import-modal').classList.remove('open'); }
@@ -1200,7 +1294,7 @@
     // --- PPT GENERATOR LOGIC ---
     function generatePPTX() {
         let pres = new PptxGenJS();
-        pres.layout = 'LAYOUT_16x9';
+        pres.layout = 'LAYOUT_WIDE';
 
         const hideAllImages = !!appConfig.hideAllImages;
 
@@ -1277,46 +1371,62 @@
             }
 
             if (safeField.mode === 'quote') {
-                if (hideAllImages) return;
-
                 const quoteText = String(safeField.quoteText || '').trim();
                 if (!quoteText) return;
 
                 const h3Pt = Math.max(10, getPt('size-h3', '18pt') + ((safeField.fontDelta || 0) * 0.75));
-                const quoteMarkPt = Math.round(h3Pt * 1.5);
                 const color = getHex('color-h3', '1e1d21');
-
-                // Oversized quote marks (simple typography; no vector bubble shapes)
-                pptSlide.addText('“', { x: x + 0.05, y: y + 0.02, w: 0.6, h: 0.6, color, fontSize: quoteMarkPt, fontFace: 'Arial' });
-                pptSlide.addText('”', { x: x + w - 0.65, y: y + h - 0.62, w: 0.6, h: 0.6, color, fontSize: quoteMarkPt, align: 'right', fontFace: 'Arial' });
-
                 const quoteAttrib = String(safeField.quoteAttribution || '').trim();
-                const attribH = (quoteAttrib && !appConfig.hideAttrib) ? 0.35 : 0;
+                const attribH = (quoteAttrib && !appConfig.hideAttrib) ? 0.4 : 0;
 
-                pptSlide.addText(quoteText, {
-                    x: x + 0.55,
-                    y: y + 0.25,
-                    w: w - 1.1,
-                    h: Math.max(0.2, h - 0.35 - attribH),
-                    color,
-                    fontSize: h3Pt,
-                    align: 'center',
-                    valign: 'mid',
-                    fontFace: 'Arial'
-                });
-
-                if (quoteAttrib && !appConfig.hideAttrib) {
-                    pptSlide.addText(quoteAttrib, {
-                        x: x + 0.2,
-                        y: y + h - attribH,
-                        w: w - 0.4,
-                        h: attribH,
-                        color,
-                        bold: true,
-                        fontSize: Math.max(8, h3Pt - 2),
-                        align: 'right',
-                        fontFace: 'Arial'
+                // ── Speech bubble SVG background ──
+                if (!hideAllImages) {
+                    const bw = 400, bh = 300;
+                    const bubbleSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + bw + ' ' + bh + '">'
+                        + '<rect x="10" y="10" width="380" height="240" rx="26" ry="26" fill="#f5e5b3"/>'
+                        + '<polygon points="80,250 140,250 110,290" fill="#f5e5b3"/>'
+                        + '</svg>';
+                    pptSlide.addImage({
+                        data: 'data:image/svg+xml;base64,' + btoa(bubbleSvg),
+                        x, y, w, h
                     });
+
+                    // Quote text inside the bubble
+                    pptSlide.addText(quoteText, {
+                        x: x + 0.3, y: y + 0.2,
+                        w: w - 0.6,
+                        h: Math.max(0.2, h * 0.75 - attribH),
+                        color, fontSize: h3Pt,
+                        align: 'center', valign: 'mid', fontFace: 'Arial'
+                    });
+
+                    if (quoteAttrib && !appConfig.hideAttrib) {
+                        pptSlide.addText(quoteAttrib, {
+                            x: x + 0.3, y: y + h * 0.72 - attribH,
+                            w: w - 0.6, h: attribH,
+                            color, bold: true,
+                            fontSize: Math.max(8, h3Pt - 2),
+                            align: 'right', fontFace: 'Arial'
+                        });
+                    }
+                } else {
+                    // Plain-text fallback when images hidden
+                    pptSlide.addText(quoteText, {
+                        x: x + 0.2, y: y + 0.1,
+                        w: w - 0.4,
+                        h: Math.max(0.2, h - 0.3 - attribH),
+                        color, fontSize: h3Pt,
+                        align: 'center', valign: 'mid', fontFace: 'Arial'
+                    });
+                    if (quoteAttrib && !appConfig.hideAttrib) {
+                        pptSlide.addText(quoteAttrib, {
+                            x: x + 0.2, y: y + h - attribH,
+                            w: w - 0.4, h: attribH,
+                            color, bold: true,
+                            fontSize: Math.max(8, h3Pt - 2),
+                            align: 'right', fontFace: 'Arial'
+                        });
+                    }
                 }
                 return;
             }
@@ -1340,24 +1450,28 @@
                 let shapeHex = cssVarMap[shapeColorVar] || 'FF5C5C';
                 shapeHex = shapeHex.replace('#','');
 
-                slide.addShape(pres.ShapeType.ellipse, { 
-                    x: '60%', y: '50%', w: '60%', h: '80%', 
-                    fill: { color: shapeHex, transparency: 10 },
-                    line: { color: 'FFFFFF', width: 0 }
+                const shapeSvgPath = appConfig.shapePath || defaultShapePath;
+                const shapeSvgVB  = appConfig.shapeViewBox || defaultViewBox;
+                const shapeSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="'
+                    + shapeSvgVB + '" preserveAspectRatio="none"><path d="'
+                    + shapeSvgPath + '" fill="#' + shapeHex + '" fill-opacity="0.9"/></svg>';
+                slide.addImage({
+                    data: 'data:image/svg+xml;base64,' + btoa(shapeSvg),
+                    x: '55%', y: '35%', w: '45%', h: '65%'
                 });
             }
 
             // Text Elements
             if (data.type === 'cover') {
                 slide.addText(data.title, { 
-                    x: 0.5, y: '35%', w: '90%', h: 1, 
-                    fontSize: getPt('size-title', '32pt'), 
+                    x: 0.5, y: '38%', w: '90%', h: 1, 
+                    fontSize: getPt('size-title', '45pt'), 
                     color: getHex('color-title', '16bfec'), 
                     bold: true, align: 'center', fontFace: 'Arial'
                 });
                 slide.addText(data.subtitle, { 
-                    x: 0.5, y: '50%', w: '90%', h: 1, 
-                    fontSize: getPt('size-subtitle', '20pt'), 
+                    x: 0.5, y: '47%', w: '90%', h: 1, 
+                    fontSize: getPt('size-subtitle', '25pt'), 
                     color: getHex('color-subtitle', '333333'), 
                     align: 'center', fontFace: 'Arial'
                 });
@@ -1372,7 +1486,7 @@
             } 
             else {
                 slide.addText(data.title, { 
-                    x: 0.5, y: 0.4, w: '90%', h: 1, 
+                    x: 0.83, y: 0.63, w: 11.67, h: 1, 
                     fontSize: getPt('size-h2', '28pt'), 
                     color: getHex('color-h2', '16bfec'), 
                     bold: true, fontFace: 'Arial'
@@ -1381,18 +1495,18 @@
                 if (data.type === 'two-column') {
                     ensureSlideSchema(data);
                     const split = Math.max(20, Math.min(80, Number(data.columns?.splitPct ?? 50)));
-                    const totalW = 12.3;
+                    const totalW = 11.67;
                     const gap = 0.18;
                     const leftW = (totalW - gap) * (split / 100);
                     const rightW = (totalW - gap) - leftW;
-                    const baseX = 0.5;
-                    const baseY = 1.8;
-                    const bodyH = 4.7;
+                    const baseX = 0.83;
+                    const baseY = 1.83;
+                    const bodyH = 5.0;
                     addFieldToPpt(slide, data.columns.leftField, baseX, baseY, leftW, bodyH);
                     addFieldToPpt(slide, data.columns.rightField, baseX + leftW + gap, baseY, rightW, bodyH);
                 } else {
                     const field = ensureFieldDefaults(data.bodyField, data.content || '');
-                    addFieldToPpt(slide, field, 0.5, 1.8, 12.3, 4.7);
+                    addFieldToPpt(slide, field, 0.83, 1.83, 11.67, 5.0);
                 }
             }
 
@@ -1412,11 +1526,11 @@
         const field = getByPath(slide, fieldPath);
         if (!field) { console.error('[Designer] generateAIImage: field not found at', fieldPath); return; }
 
-        const prompt = customPrompt || field.imagePrompt;
+        const prompt = customPrompt || field.imagePrompt || field.imageNotes;
         if (!prompt) { console.warn('[Designer] No image prompt available'); return; }
 
         // Persist edited prompt
-        if (customPrompt) field.imagePrompt = customPrompt;
+        if (customPrompt) { field.imagePrompt = customPrompt; field.imageNotes = customPrompt; }
 
         // Show loading state on the button
         const btn = document.querySelector(
