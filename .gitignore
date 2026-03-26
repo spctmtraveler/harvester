@@ -29,3 +29,10 @@ Reference Docs/Source transcript files for reference/
 # Images (often include sensitive content)
 Reference Docs/screenshots/
 
+# Local editor settings
+.vscode/
+
+# Generated presentation outputs
+transcripts/app output/**/*.pptx
+~$*.pptx
+
