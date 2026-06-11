@@ -1,7 +1,7 @@
 // Release hygiene: update BOTH APP_VERSION and APP_LAST_UPDATED_UTC before every live push.
-    const APP_VERSION = "v4.6";
+    const APP_VERSION = "v4.7";
     // Set to the push time in UTC (banner converts to viewer's local time).
-    const APP_LAST_UPDATED_UTC = "2026-03-27T00:00:00Z";
+    const APP_LAST_UPDATED_UTC = "2026-06-10T00:00:00Z";
     const DEFAULT_DECK_FILENAME_CHARS = 48;
 
     function formatLocalLastUpdated(utcIso) {
@@ -130,6 +130,16 @@ The system is relationship-based and supported by tools such as Salesforce, repo
     const DEFAULT_BATCH_IMAGE_PARALLELISM = 3;
     const IMAGE_MANAGE_STATE = new Map();
     const IMAGE_DIMENSION_CACHE = new Map();
+    const SLIDE_TYPE_OPTIONS = [
+        { type: 'cover', label: 'Cover' },
+        { type: 'section', label: 'Section' },
+        { type: 'standard', label: 'Standard' },
+        { type: 'image', label: 'Image' },
+        { type: 'statement', label: 'Statement' },
+        { type: 'statement-image', label: 'Statement+Image' },
+        { type: 'two-column', label: 'Two Col' }
+    ];
+    let slideTypePickerMode = null;
 
     // ── Style Presets System ──
     const PRESETS_STORAGE_KEY = 'heart_walk_style_presets';
@@ -145,6 +155,7 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         style: {
             'font-title': DEFAULT_FONT_STACK, 'size-title': '45pt', 'color-title': '#16bfec',
             'font-subtitle': DEFAULT_FONT_STACK, 'size-subtitle': '25pt', 'color-subtitle': '#1e1d21',
+            'font-kicker': DEFAULT_FONT_STACK, 'size-kicker': '20pt', 'color-kicker': '#1e1d21',
             'font-h1': DEFAULT_FONT_STACK, 'size-h1': '32pt', 'color-h1': '#16bfec',
             'font-h2': DEFAULT_FONT_STACK, 'size-h2': '28pt', 'color-h2': '#16bfec',
             'font-h3': DEFAULT_FONT_STACK, 'size-h3': '18pt', 'color-h3': '#1e1d21',
@@ -156,7 +167,7 @@ The system is relationship-based and supported by tools such as Salesforce, repo
             'font-quote-attrib': DEFAULT_FONT_STACK, 'size-quote-attrib': '16pt', 'color-quote-attrib': '#1e1d21',
             'globalX': 0, 'globalY': 0, 'showShapes': true,
             'shapePath': null, 'shapeViewBox': null,
-            'typeOffsets': { cover: {x:0,y:0}, section: {x:0,y:0}, standard: {x:0,y:0}, image: {x:0,y:0}, 'two-column': {x:0,y:0} }
+            'typeOffsets': { cover: {x:0,y:0}, section: {x:0,y:0}, standard: {x:0,y:0}, image: {x:0,y:0}, statement: {x:0,y:0}, 'statement-image': {x:0,y:0}, 'two-column': {x:0,y:0} }
         }
     };
 
@@ -164,6 +175,7 @@ The system is relationship-based and supported by tools such as Salesforce, repo
     const STYLE_KEYS = [
         'font-title','size-title','color-title',
         'font-subtitle','size-subtitle','color-subtitle',
+        'font-kicker','size-kicker','color-kicker',
         'font-h1','size-h1','color-h1',
         'font-h2','size-h2','color-h2',
         'font-h3','size-h3','color-h3',
@@ -219,7 +231,7 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         if (!appConfig.shapeViewBox) appConfig.shapeViewBox = defaultViewBox;
         // Ensure typeOffsets structure
         if (!appConfig.typeOffsets) appConfig.typeOffsets = {};
-        for (const t of ['cover','section','standard','image','two-column']) {
+        for (const t of ['cover','section','standard','image','statement','statement-image','two-column']) {
             if (!appConfig.typeOffsets[t]) appConfig.typeOffsets[t] = {x:0,y:0};
         }
     }
@@ -290,6 +302,7 @@ The system is relationship-based and supported by tools such as Salesforce, repo
     const types = [
         { id: 'title', label: 'Cover Title' },
         { id: 'subtitle', label: 'Subtitle' },
+        { id: 'kicker', label: 'Kicker' },
         { id: 'h1', label: 'H1 (Section)' },
         { id: 'h2', label: 'H2 (Header)' },
         { id: 'h3', label: 'H3 (Sub)' },
@@ -488,6 +501,7 @@ The system is relationship-based and supported by tools such as Salesforce, repo
             });
         };
         if (slide.type === 'standard' || slide.type === 'image') addIds(collectReferenceIdsFromField(slide.bodyField));
+        if (slide.type === 'statement' || slide.type === 'statement-image') addIds(collectReferenceIdsFromField(slide.bodyField));
         if (slide.type === 'two-column') {
             addIds(collectReferenceIdsFromField(slide.columns?.leftField));
             addIds(collectReferenceIdsFromField(slide.columns?.bottomField));
@@ -518,6 +532,11 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         if (!slide || !(idMap instanceof Map) || !idMap.size) return slide;
         ensureSlideSchema(slide);
         if (slide.type === 'standard' || slide.type === 'image') {
+            remapReferenceIdsInField(slide.bodyField, idMap);
+            if (slide.bodyField?.mode === 'text') slide.content = slide.bodyField.text || '';
+            return slide;
+        }
+        if (slide.type === 'statement' || slide.type === 'statement-image') {
             remapReferenceIdsInField(slide.bodyField, idMap);
             if (slide.bodyField?.mode === 'text') slide.content = slide.bodyField.text || '';
             return slide;
@@ -755,6 +774,7 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         const parts = [];
         const title = String(slide.title || '').trim();
         const speakerNotes = stripCitationMarkers(slide.speakerNotes || '');
+        const kicker = stripCitationMarkers(slide.kicker || '');
         if (title) parts.push(`Slide title: ${title}`);
         if (slide.type === 'cover') {
             const subtitle = stripCitationMarkers(slide.subtitle || '');
@@ -762,6 +782,16 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         } else if (slide.type === 'standard') {
             const bodySummary = collectFieldContextText(slide.bodyField, 'Main content');
             if (bodySummary) parts.push(bodySummary);
+        } else if (slide.type === 'statement') {
+            if (kicker) parts.push(`Kicker: ${kicker}`);
+            const bodySummary = collectFieldContextText(slide.bodyField, 'Statement');
+            if (bodySummary) parts.push(bodySummary);
+        } else if (slide.type === 'statement-image') {
+            if (kicker) parts.push(`Kicker: ${kicker}`);
+            const statementSummary = collectFieldContextText(slide.bodyField, 'Statement');
+            const imageSummary = collectFieldContextText(slide.imageField, 'Supporting image');
+            if (statementSummary) parts.push(statementSummary);
+            if (imageSummary) parts.push(imageSummary);
         } else if (slide.type === 'two-column') {
             const leftSummary = collectFieldContextText(slide.columns?.leftField, 'Left column');
             const bottomSummary = collectFieldContextText(slide.columns?.bottomField, 'Bottom-left support');
@@ -771,7 +801,7 @@ The system is relationship-based and supported by tools such as Salesforce, repo
             if (rightSummary) parts.push(rightSummary);
         }
         if (speakerNotes) parts.push(`Speaker notes: ${speakerNotes}`);
-        parts.push(`Target field: ${fieldPath === 'bodyField' ? 'main panel image' : fieldPath === 'columns.leftField' ? 'left column image' : fieldPath === 'columns.bottomField' ? 'bottom-left image' : 'right column image'}`);
+        parts.push(`Target field: ${fieldPath === 'bodyField' ? 'main panel image' : fieldPath === 'imageField' ? 'statement slide image' : fieldPath === 'columns.leftField' ? 'left column image' : fieldPath === 'columns.bottomField' ? 'bottom-left image' : 'right column image'}`);
         return parts.filter(Boolean).join('\n');
     }
 
@@ -1026,6 +1056,8 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         if (!appConfig.typeOffsets.section) appConfig.typeOffsets.section = { x: 0, y: 0 };
         if (!appConfig.typeOffsets.standard) appConfig.typeOffsets.standard = { x: 0, y: 0 };
         if (!appConfig.typeOffsets.image) appConfig.typeOffsets.image = { x: 0, y: 0 };
+        if (!appConfig.typeOffsets.statement) appConfig.typeOffsets.statement = { x: 0, y: 0 };
+        if (!appConfig.typeOffsets['statement-image']) appConfig.typeOffsets['statement-image'] = { x: 0, y: 0 };
         if (!appConfig.typeOffsets['two-column']) appConfig.typeOffsets['two-column'] = { x: 0, y: 0 };
         slidesData = (slidesData || []).map(ensureSlideSchema);
 
@@ -1450,6 +1482,62 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         if (removeBtn) removeBtn.disabled = type !== 'two-column';
         if (stackedBtn) stackedBtn.disabled = type !== 'two-column' || getTwoColumnLayoutMode(slide) === 'stacked-left';
         if (sideBySideBtn) sideBySideBtn.disabled = type !== 'two-column' || getTwoColumnLayoutMode(slide) !== 'stacked-left';
+        syncSlideTypePickerButtons();
+    }
+
+    function syncSlideTypePickerButtons() {
+        const controlsMenu = document.getElementById('controls-menu');
+        const pickerRow = document.getElementById('slide-type-picker');
+        const pickerLabel = document.getElementById('slide-type-picker-label');
+        const addModeBtn = document.getElementById('slide-picker-add-btn');
+        const convertModeBtn = document.getElementById('slide-picker-convert-btn');
+        const activeSlide = slidesData[currentSlideIndex];
+        const isOpen = !!slideTypePickerMode;
+        if (controlsMenu) {
+            controlsMenu.classList.toggle('menu-pinned', isOpen);
+            controlsMenu.classList.toggle('type-picker-open', isOpen);
+        }
+        if (pickerRow) pickerRow.hidden = !isOpen;
+        if (pickerLabel) {
+            pickerLabel.textContent = slideTypePickerMode === 'convert'
+                ? 'Convert current slide to:'
+                : 'Add a new slide of type:';
+        }
+        if (addModeBtn) addModeBtn.classList.toggle('is-active-mode', slideTypePickerMode === 'add');
+        if (convertModeBtn) convertModeBtn.classList.toggle('is-active-mode', slideTypePickerMode === 'convert');
+        document.querySelectorAll('[data-slide-type-choice]').forEach(button => {
+            const targetType = button.dataset.slideTypeChoice;
+            const isCurrentType = activeSlide?.type === targetType;
+            button.disabled = slideTypePickerMode === 'convert' && isCurrentType;
+            if (slideTypePickerMode === 'convert') {
+                button.title = isCurrentType
+                    ? `${getSlideTypeLabel(targetType)} is already selected.`
+                    : `Convert the current slide to ${getSlideTypeLabel(targetType)}.`;
+            } else {
+                button.title = `Add a new ${getSlideTypeLabel(targetType)} slide after the current slide.`;
+            }
+        });
+    }
+
+    function closeSlideTypePicker() {
+        if (!slideTypePickerMode) return;
+        slideTypePickerMode = null;
+        syncSlideTypePickerButtons();
+    }
+
+    function toggleSlideTypePicker(mode) {
+        slideTypePickerMode = slideTypePickerMode === mode ? null : mode;
+        syncSlideTypePickerButtons();
+    }
+
+    function handleSlideTypePickerAction(targetType) {
+        if (slideTypePickerMode === 'convert') {
+            const changed = convertCurrentSlideToType(targetType);
+            if (changed) closeSlideTypePicker();
+            return;
+        }
+        addNewSlide(targetType);
+        closeSlideTypePicker();
     }
 
     async function getAiTools() {
@@ -1745,10 +1833,11 @@ The system is relationship-based and supported by tools such as Salesforce, repo
     }
 
     /** Recognized slide types → rendering pipelines */
-    const KNOWN_SLIDE_TYPES = new Set(['cover', 'section', 'standard', 'image', 'two-column']);
+    const KNOWN_SLIDE_TYPES = new Set(['cover', 'section', 'standard', 'image', 'statement', 'statement-image', 'two-column']);
 
     function ensureSlideSchema(slide) {
         if (!slide || typeof slide !== 'object') return { type: 'standard', title: '(empty)', content: '', speakerNotes: '', bodyField: ensureFieldDefaults({}, '') };
+        if (!slide.typeState || typeof slide.typeState !== 'object' || Array.isArray(slide.typeState)) slide.typeState = {};
 
         // Coerce unknown types → standard so they still render
         if (!KNOWN_SLIDE_TYPES.has(slide.type)) {
@@ -1789,6 +1878,17 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         if (slide.type === 'image') {
             slide.bodyField = ensureFieldDefaults({ ...(slide.bodyField || {}), mode: 'image' }, slide.content || '');
             slide.bodyField.mode = 'image';
+        }
+
+        if (slide.type === 'statement' || slide.type === 'statement-image') {
+            slide.kicker = slide.kicker ?? '';
+            slide.bodyField = ensureFieldDefaults({ ...(slide.bodyField || {}), mode: 'text' }, slide.content || '');
+            slide.bodyField.mode = 'text';
+            if (!slide.content) slide.content = slide.bodyField.text || '';
+            if (slide.type === 'statement-image') {
+                slide.imageField = ensureFieldDefaults({ ...(slide.imageField || {}), mode: 'image', imageAlign: slide.imageField?.imageAlign || 'center' }, '');
+                slide.imageField.mode = 'image';
+            }
         }
 
         // Two-column: ensure columns + sub-fields exist
@@ -1859,8 +1959,13 @@ The system is relationship-based and supported by tools such as Salesforce, repo
 
     function getTypographyTargetIdFromEditable(el) {
         if (!el || !el.closest) return null;
+        const slideType = el.closest('.slide')?.dataset.type || '';
         const field = getFieldFromEditable(el);
-        if (field) return getTypographyTargetIdFromField(field, el.dataset.role || '');
+        if (field) {
+            if (slideType === 'statement' || slideType === 'statement-image') return 'h1';
+            return getTypographyTargetIdFromField(field, el.dataset.role || '');
+        }
+        if (el.classList?.contains('statement-kicker')) return 'kicker';
         if (el.classList?.contains('title-text')) return 'title';
         if (el.classList?.contains('subtitle-text')) return 'subtitle';
         if (el.matches?.('h1[data-key="title"]')) return 'h1';
@@ -1874,6 +1979,13 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         if (role === 'field-quote-attrib') return 'Quote source';
         if (role === 'field-quote-text' || field.mode === 'quote') return 'Quote text';
         return `P: ${String(field.textScale || 'normal')}`;
+    }
+
+    function renderFieldFontStepControls(fieldPath) {
+        return `<div class="field-mode-icons"><div class="field-font-stepper" title="Adjust local font size.">
+            <button class="field-font-step-btn" data-role="field-font-step" data-field-path="${fieldPath}" data-step="1" title="Adjust local font size.">▲</button>
+            <button class="field-font-step-btn" data-role="field-font-step" data-field-path="${fieldPath}" data-step="-1" title="Adjust local font size.">▼</button>
+        </div></div>`;
     }
 
     function showFieldTypoIndicator(field, role = '') {
@@ -2050,6 +2162,12 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         return `<div class="field-shell">${renderFieldControls(fieldPath, field)}${renderFieldBody(fieldPath, field, slideIndex)}</div>`;
     }
 
+    function renderStatementTextField(fieldPath, field) {
+        const safeField = ensureFieldDefaults({ ...(field || {}), mode: 'text' }, field?.text || '');
+        safeField.mode = 'text';
+        return `<div class="field-shell statement-field-shell">${renderFieldFontStepControls(fieldPath)}<div class="field-body statement-field-body" data-mode="text"><div class="statement-text-editor" style="--field-font-delta:${safeField.fontDelta || 0}px;" contenteditable="true" data-role="field-text" data-field-path="${fieldPath}">${mdToHtml(safeField.text || '')}</div></div></div>`;
+    }
+
     function positionSlideHoverMenu() {
         const menu = document.getElementById('slide-hover-menu');
         if (!menu || !stage) return;
@@ -2193,6 +2311,21 @@ The system is relationship-based and supported by tools such as Salesforce, repo
                              <div class="body-wrapper" style="${bodyStyle}"><div class="subtitle-text" contenteditable="true" data-key="subtitle">${slide.subtitle || 'Subtitle'}</div></div>`;
             } else if (slide.type === 'section') {
                 innerHTML = `<div class="title-wrapper" style="${titleStyle}"><h1 contenteditable="true" data-key="title">${slide.title || 'Section'}</h1></div>`;
+            } else if (slide.type === 'statement') {
+                innerHTML = `<div class="title-wrapper statement-copy-wrapper" style="${titleStyle}">
+                                <div class="statement-copy-region">
+                                    <div class="statement-kicker" contenteditable="true" data-key="kicker">${slide.kicker || 'Context line'}</div>
+                                    ${renderStatementTextField('bodyField', slide.bodyField)}
+                                </div>
+                             </div>`;
+            } else if (slide.type === 'statement-image') {
+                innerHTML = `<div class="title-wrapper statement-copy-wrapper statement-copy-wrapper-image" style="${titleStyle}">
+                                <div class="statement-copy-region statement-copy-region-image">
+                                    <div class="statement-kicker" contenteditable="true" data-key="kicker">${slide.kicker || 'Context line'}</div>
+                                    ${renderStatementTextField('bodyField', slide.bodyField)}
+                                </div>
+                             </div>
+                             <div class="body-wrapper statement-image-body" style="${bodyStyle}">${renderFieldShell('imageField', slide.imageField, index)}</div>`;
             } else if (slide.type === 'two-column') {
                 const splitPct = slide.columns?.splitPct ?? 50;
                 const layoutMode = getTwoColumnLayoutMode(slide);
@@ -2315,6 +2448,10 @@ The system is relationship-based and supported by tools such as Salesforce, repo
     }
 
     document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && slideTypePickerMode) {
+            closeSlideTypePicker();
+            return;
+        }
         if (e.altKey && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key) && !e.target.closest('input, textarea, select')) {
             e.preventDefault();
             const dx = (e.key === 'ArrowRight' ? 5 : (e.key === 'ArrowLeft' ? -5 : 0));
@@ -2356,7 +2493,10 @@ The system is relationship-based and supported by tools such as Salesforce, repo
     function openColorPicker(e, typeId) { e.stopPropagation(); activeColorTarget = typeId; const pop = document.getElementById('color-picker-popover'); const rect = e.target.getBoundingClientRect(); pop.style.top = rect.bottom + 5 + 'px'; pop.style.left = rect.left - 100 + 'px'; pop.classList.add('visible'); }
     function pickColor(hex) { if(!activeColorTarget) return; appConfig[`color-${activeColorTarget}`] = hex; applyConfig(); saveState(); document.getElementById('color-picker-popover').classList.remove('visible'); updateSettingsUI(); }
     function triggerCustomColor() { const input = document.getElementById('hidden-color-input'); input.click(); input.oninput = (e) => pickColor(e.target.value); }
-    document.addEventListener('click', (e) => { if(!e.target.closest('#color-picker-popover') && !e.target.closest('.color-trigger')) document.getElementById('color-picker-popover').classList.remove('visible'); });
+    document.addEventListener('click', (e) => {
+        if(!e.target.closest('#color-picker-popover') && !e.target.closest('.color-trigger')) document.getElementById('color-picker-popover').classList.remove('visible');
+        if (slideTypePickerMode && !e.target.closest('#controls-menu') && !e.target.closest('#top-hotspot')) closeSlideTypePicker();
+    });
     
     function mdToHtml(md) {
         if (!md) return '';
@@ -2788,6 +2928,18 @@ The system is relationship-based and supported by tools such as Salesforce, repo
             if (effectiveType === 'image') normalized.bodyField.mode = 'image';
         }
 
+        if (effectiveType === 'statement' || effectiveType === 'statement-image') {
+            if (!normalized.bodyField && typeof normalized.content === 'string' && normalized.content.trim()) {
+                warnings.push(`${slideLabel} was missing statement bodyField — built it from content.`);
+            }
+            normalized.bodyField = normalizeImportField(normalized.bodyField, warnings, `${slideLabel} statement bodyField`, normalized.content || '');
+            normalized.bodyField.mode = 'text';
+            if (effectiveType === 'statement-image') {
+                normalized.imageField = normalizeImportField(normalized.imageField, warnings, `${slideLabel} imageField`, '');
+                normalized.imageField.mode = 'image';
+            }
+        }
+
         if (effectiveType === 'two-column') {
             if (!normalized.columns || typeof normalized.columns !== 'object' || Array.isArray(normalized.columns)) {
                 warnings.push(`${slideLabel} had invalid columns and they were rebuilt.`);
@@ -2907,7 +3059,7 @@ The system is relationship-based and supported by tools such as Salesforce, repo
 
         const slides = data.slides.map((slide, index) => {
             if (slide.type && !KNOWN_SLIDE_TYPES.has(slide.type)) coercedTypes++;
-            if ((slide.type === 'standard' || slide.type === 'image') && !slide.bodyField) missingBodyFields++;
+            if ((slide.type === 'standard' || slide.type === 'image' || slide.type === 'statement' || slide.type === 'statement-image') && !slide.bodyField) missingBodyFields++;
             if (slide.type === 'two-column' && !slide.columns) missingColumns++;
             const normalized = normalizeImportedSlide(slide, index, warnings);
             if (!normalized) skippedSlides++;
@@ -2919,7 +3071,7 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         }
 
         if (coercedTypes > 0) warnings.push(`${coercedTypes} slide(s) had unknown types -> converted to "standard".`);
-        if (missingBodyFields > 0) warnings.push(`${missingBodyFields} standard/image slide(s) were missing bodyField -> auto-created.`);
+        if (missingBodyFields > 0) warnings.push(`${missingBodyFields} standard/image/statement/statement-image slide(s) were missing bodyField -> auto-created.`);
         if (missingColumns > 0) warnings.push(`${missingColumns} two-column slide(s) were missing columns -> auto-created.`);
         if (skippedSlides > 0) warnings.push(`${skippedSlides} slide(s) could not be repaired and were skipped.`);
 
@@ -3017,7 +3169,7 @@ The system is relationship-based and supported by tools such as Salesforce, repo
 
             // ── Ensure template offsets ──
             if (!appConfig.typeOffsets) appConfig.typeOffsets = {};
-            for (const t of ['cover', 'section', 'standard', 'image', 'two-column']) {
+            for (const t of ['cover', 'section', 'standard', 'image', 'statement', 'statement-image', 'two-column']) {
                 if (!appConfig.typeOffsets[t]) appConfig.typeOffsets[t] = { x: 0, y: 0 };
             }
 
@@ -3721,6 +3873,9 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         if ((slide.type === 'standard' || slide.type === 'image') && slide.bodyField?.mode === 'image') {
             targets.push({ fieldPath: 'bodyField', field: slide.bodyField });
         }
+        if (slide.type === 'statement-image' && slide.imageField?.mode === 'image') {
+            targets.push({ fieldPath: 'imageField', field: slide.imageField });
+        }
         if (slide.type === 'two-column') {
             if (slide.columns?.leftField?.mode === 'image') targets.push({ fieldPath: 'columns.leftField', field: slide.columns.leftField });
             if (slide.columns?.bottomField?.mode === 'image') targets.push({ fieldPath: 'columns.bottomField', field: slide.columns.bottomField });
@@ -3744,31 +3899,338 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         return !!String(field.text || field.quoteText || field.quoteAttribution || field.imageUrl || field.imagePrompt || field.imageNotes || '').trim();
     }
 
-    function convertStandardToTwoColumn(slide) {
+    function getSlideTypeOption(type) {
+        return SLIDE_TYPE_OPTIONS.find(option => option.type === type) || { type, label: type };
+    }
+
+    function getSlideTypeLabel(type) {
+        return getSlideTypeOption(type).label;
+    }
+
+    function ensureSlideTypeStateStore(slide) {
         ensureSlideSchema(slide);
-        const leftField = ensureFieldDefaults(slide.bodyField, slide.content || '');
-        slide.type = 'two-column';
-        slide.columns = {
-            layoutMode: 'side-by-side',
-            splitPct: 50,
-            stackSplitPct: 50,
-            leftField,
-            bottomField: ensureFieldDefaults({ mode: 'quote', quoteText: '', quoteAttribution: '' }, ''),
-            rightField: ensureFieldDefaults({ mode: 'image', imageUrl: '', imageAlign: 'center', imagePrompt: '', imageNotes: '' }, '')
+        if (!slide.typeState || typeof slide.typeState !== 'object' || Array.isArray(slide.typeState)) slide.typeState = {};
+        return slide.typeState;
+    }
+
+    function cloneFieldWithMode(field, fallbackText = '', forcedMode = '') {
+        const cloned = cloneJsonData(ensureFieldDefaults(field, fallbackText));
+        if (forcedMode) cloned.mode = forcedMode;
+        return cloned;
+    }
+
+    function getFieldReadableText(field) {
+        if (!field) return '';
+        if (field.mode === 'text') return String(field.text || '').trim();
+        if (field.mode === 'quote') {
+            const quoteText = String(field.quoteText || '').trim();
+            const attribution = String(field.quoteAttribution || '').trim();
+            return [quoteText, attribution].filter(Boolean).join(' - ').trim();
+        }
+        return String(field.imageNotes || field.imagePrompt || '').trim();
+    }
+
+    function getFirstMeaningfulLine(text) {
+        return String(text || '')
+            .split(/\r?\n/)
+            .map(line => stripCitationMarkers(line))
+            .find(Boolean) || '';
+    }
+
+    function getRemainingMeaningfulText(text) {
+        const lines = String(text || '')
+            .split(/\r?\n/)
+            .map(line => stripCitationMarkers(line))
+            .filter(Boolean);
+        return lines.slice(1).join(' ').trim();
+    }
+
+    function chooseFirstMeaningfulString(...values) {
+        for (const value of values) {
+            const text = String(value || '').trim();
+            if (text) return text;
+        }
+        return '';
+    }
+
+    function createBlankImageField() {
+        return cloneFieldWithMode({ mode: 'image', imageUrl: '', imageAlign: 'center', imagePrompt: '', imageNotes: '' }, '', 'image');
+    }
+
+    function createBlankQuoteField() {
+        return cloneFieldWithMode({ mode: 'quote', quoteText: '', quoteAttribution: '' }, '', 'quote');
+    }
+
+    function createBlankTextField(text = '') {
+        return cloneFieldWithMode({ mode: 'text', text }, text, 'text');
+    }
+
+    function captureSlideTypeSnapshot(slide, slideType = slide?.type) {
+        ensureSlideSchema(slide);
+        if (slideType === 'cover') {
+            return { title: slide.title || '', subtitle: slide.subtitle || '' };
+        }
+        if (slideType === 'section') {
+            return { title: slide.title || '' };
+        }
+        if (slideType === 'standard') {
+            return { title: slide.title || '', content: slide.content || '', bodyField: cloneFieldWithMode(slide.bodyField, slide.content || '') };
+        }
+        if (slideType === 'image') {
+            return { title: slide.title || '', content: slide.content || '', bodyField: cloneFieldWithMode(slide.bodyField, '', 'image') };
+        }
+        if (slideType === 'statement') {
+            return { kicker: slide.kicker || '', content: slide.content || '', bodyField: cloneFieldWithMode(slide.bodyField, slide.content || '', 'text') };
+        }
+        if (slideType === 'statement-image') {
+            return {
+                kicker: slide.kicker || '',
+                content: slide.content || '',
+                bodyField: cloneFieldWithMode(slide.bodyField, slide.content || '', 'text'),
+                imageField: cloneFieldWithMode(slide.imageField, '', 'image')
+            };
+        }
+        if (slideType === 'two-column') {
+            return {
+                title: slide.title || '',
+                content: slide.content || '',
+                columns: {
+                    layoutMode: getTwoColumnLayoutMode(slide),
+                    splitPct: Number(slide.columns?.splitPct ?? 50) || 50,
+                    stackSplitPct: getStackedLeftSplitPct(slide),
+                    leftField: cloneFieldWithMode(slide.columns?.leftField, slide.content || ''),
+                    bottomField: cloneFieldWithMode(slide.columns?.bottomField, ''),
+                    rightField: cloneFieldWithMode(slide.columns?.rightField, '')
+                }
+            };
+        }
+        return {};
+    }
+
+    function extractSlideConversionContext(slide) {
+        ensureSlideSchema(slide);
+        const context = {
+            title: String(slide.title || '').trim(),
+            subtitle: String(slide.subtitle || '').trim(),
+            kicker: String(slide.kicker || '').trim(),
+            primaryTextField: null,
+            primaryImageField: null,
+            primaryQuoteField: null
         };
-        slide.content = leftField.text || slide.content || '';
-        delete slide.bodyField;
-        return slide;
+
+        const considerField = (field, forcedMode = '') => {
+            if (!field) return;
+            const safeField = cloneFieldWithMode(field, getFieldReadableText(field), forcedMode);
+            if (!slideHasMeaningfulFieldContent(safeField)) return;
+            if (safeField.mode === 'text' && !context.primaryTextField) context.primaryTextField = safeField;
+            if (safeField.mode === 'image' && !context.primaryImageField) context.primaryImageField = safeField;
+            if (safeField.mode === 'quote' && !context.primaryQuoteField) context.primaryQuoteField = safeField;
+        };
+
+        if (slide.type === 'cover') {
+            if (!context.primaryTextField && (context.title || context.subtitle)) {
+                context.primaryTextField = createBlankTextField([context.title, context.subtitle].filter(Boolean).join('\n\n'));
+            }
+        } else if (slide.type === 'section') {
+            if (!context.primaryTextField && context.title) context.primaryTextField = createBlankTextField(context.title);
+        } else if (slide.type === 'standard') {
+            considerField(slide.bodyField);
+        } else if (slide.type === 'image') {
+            considerField(slide.bodyField, 'image');
+        } else if (slide.type === 'statement') {
+            considerField(slide.bodyField, 'text');
+        } else if (slide.type === 'statement-image') {
+            considerField(slide.bodyField, 'text');
+            considerField(slide.imageField, 'image');
+        } else if (slide.type === 'two-column') {
+            considerField(slide.columns?.leftField);
+            considerField(slide.columns?.rightField);
+            considerField(slide.columns?.bottomField);
+        }
+
+        if (!context.title) {
+            context.title = chooseFirstMeaningfulString(
+                getFirstMeaningfulLine(getFieldReadableText(context.primaryTextField)),
+                getFirstMeaningfulLine(getFieldReadableText(context.primaryQuoteField))
+            );
+        }
+
+        return context;
+    }
+
+    function buildSnapshotFromConversionContext(targetType, context) {
+        const quoteField = context.primaryQuoteField ? cloneFieldWithMode(context.primaryQuoteField, '', 'quote') : createBlankQuoteField();
+        const imageField = context.primaryImageField ? cloneFieldWithMode(context.primaryImageField, '', 'image') : createBlankImageField();
+        const defaultText = chooseFirstMeaningfulString(context.title, context.kicker, context.subtitle);
+        const textField = context.primaryTextField
+            ? cloneFieldWithMode(context.primaryTextField, defaultText, 'text')
+            : createBlankTextField(defaultText);
+        const textBody = String(textField.text || '').trim();
+        const visibleText = chooseFirstMeaningfulString(textBody, getFieldReadableText(quoteField));
+
+        if (targetType === 'cover') {
+            return {
+                title: chooseFirstMeaningfulString(context.title, getFirstMeaningfulLine(visibleText), context.kicker, 'Untitled Deck'),
+                subtitle: chooseFirstMeaningfulString(context.subtitle, context.kicker, getRemainingMeaningfulText(visibleText))
+            };
+        }
+
+        if (targetType === 'section') {
+            return {
+                title: chooseFirstMeaningfulString(context.title, getFirstMeaningfulLine(visibleText), context.kicker, 'Section')
+            };
+        }
+
+        if (targetType === 'standard') {
+            const bodyField = context.primaryTextField
+                ? cloneFieldWithMode(context.primaryTextField, defaultText, 'text')
+                : context.primaryQuoteField
+                    ? quoteField
+                    : context.primaryImageField
+                        ? imageField
+                        : createBlankTextField(defaultText || '* Point 1');
+            return {
+                title: chooseFirstMeaningfulString(context.title),
+                content: bodyField.mode === 'text' ? bodyField.text || '' : bodyField.mode === 'quote' ? bodyField.quoteText || '' : '',
+                bodyField
+            };
+        }
+
+        if (targetType === 'image') {
+            return {
+                title: chooseFirstMeaningfulString(context.title, context.kicker),
+                content: '',
+                bodyField: imageField
+            };
+        }
+
+        if (targetType === 'statement') {
+            const statementField = context.primaryTextField
+                ? cloneFieldWithMode(context.primaryTextField, defaultText, 'text')
+                : createBlankTextField(chooseFirstMeaningfulString(getFieldReadableText(quoteField), context.title, 'Headline statement goes here.'));
+            return {
+                kicker: chooseFirstMeaningfulString(context.kicker, context.title, 'Context line'),
+                content: statementField.text || '',
+                bodyField: statementField
+            };
+        }
+
+        if (targetType === 'statement-image') {
+            const statementField = context.primaryTextField
+                ? cloneFieldWithMode(context.primaryTextField, defaultText, 'text')
+                : createBlankTextField(chooseFirstMeaningfulString(getFieldReadableText(quoteField), context.title, 'Headline statement goes here.'));
+            return {
+                kicker: chooseFirstMeaningfulString(context.kicker, context.title, 'Context line'),
+                content: statementField.text || '',
+                bodyField: statementField,
+                imageField
+            };
+        }
+
+        const hasQuote = slideHasMeaningfulFieldContent(quoteField);
+        const hasImage = slideHasMeaningfulFieldContent(imageField);
+        return {
+            title: chooseFirstMeaningfulString(context.title),
+            content: textField.text || '',
+            columns: {
+                layoutMode: hasQuote && hasImage ? 'stacked-left' : 'side-by-side',
+                splitPct: 50,
+                stackSplitPct: 50,
+                leftField: textField,
+                bottomField: hasQuote && hasImage ? quoteField : createBlankQuoteField(),
+                rightField: hasImage ? imageField : hasQuote ? quoteField : createBlankImageField()
+            }
+        };
+    }
+
+    function applySlideTypeSnapshot(slide, targetType, snapshot) {
+        const safeSnapshot = snapshot && typeof snapshot === 'object' ? cloneJsonData(snapshot) : {};
+        if (safeSnapshot.title !== undefined) slide.title = safeSnapshot.title;
+        if (safeSnapshot.subtitle !== undefined) slide.subtitle = safeSnapshot.subtitle;
+        if (safeSnapshot.kicker !== undefined) slide.kicker = safeSnapshot.kicker;
+
+        if (targetType === 'cover') {
+            slide.title = String(safeSnapshot.title || slide.title || 'Untitled Deck');
+            slide.subtitle = String(safeSnapshot.subtitle || '');
+        } else if (targetType === 'section') {
+            slide.title = String(safeSnapshot.title || slide.title || 'Section');
+        } else if (targetType === 'standard') {
+            slide.bodyField = cloneFieldWithMode(safeSnapshot.bodyField, safeSnapshot.content || slide.content || '');
+            slide.content = slide.bodyField.mode === 'text' ? slide.bodyField.text || '' : slide.bodyField.mode === 'quote' ? slide.bodyField.quoteText || '' : '';
+            slide.title = String(safeSnapshot.title || slide.title || '');
+        } else if (targetType === 'image') {
+            slide.bodyField = cloneFieldWithMode(safeSnapshot.bodyField, '', 'image');
+            slide.content = '';
+            slide.title = String(safeSnapshot.title || slide.title || '');
+        } else if (targetType === 'statement') {
+            slide.kicker = String(safeSnapshot.kicker || '');
+            slide.bodyField = cloneFieldWithMode(safeSnapshot.bodyField, safeSnapshot.content || slide.content || '', 'text');
+            slide.content = slide.bodyField.text || '';
+        } else if (targetType === 'statement-image') {
+            slide.kicker = String(safeSnapshot.kicker || '');
+            slide.bodyField = cloneFieldWithMode(safeSnapshot.bodyField, safeSnapshot.content || slide.content || '', 'text');
+            slide.imageField = cloneFieldWithMode(safeSnapshot.imageField, '', 'image');
+            slide.content = slide.bodyField.text || '';
+        } else if (targetType === 'two-column') {
+            const columns = safeSnapshot.columns || {};
+            slide.columns = {
+                layoutMode: columns.layoutMode === 'stacked-left' ? 'stacked-left' : 'side-by-side',
+                splitPct: Number.isFinite(Number(columns.splitPct)) ? Number(columns.splitPct) : 50,
+                stackSplitPct: Number.isFinite(Number(columns.stackSplitPct)) ? Number(columns.stackSplitPct) : 50,
+                leftField: cloneFieldWithMode(columns.leftField, safeSnapshot.content || slide.content || ''),
+                bottomField: cloneFieldWithMode(columns.bottomField, ''),
+                rightField: cloneFieldWithMode(columns.rightField, '')
+            };
+            slide.content = slide.columns.leftField.text || '';
+            slide.title = String(safeSnapshot.title || slide.title || '');
+        }
+
+        slide.type = targetType;
+        return ensureSlideSchema(slide);
+    }
+
+    function convertSlideToType(slide, targetType) {
+        if (!slide || !KNOWN_SLIDE_TYPES.has(targetType)) return slide;
+        ensureSlideSchema(slide);
+        if (slide.type === targetType) return slide;
+
+        const sourceType = slide.type;
+        const typeState = ensureSlideTypeStateStore(slide);
+        const conversionContext = extractSlideConversionContext(slide);
+        typeState[sourceType] = captureSlideTypeSnapshot(slide, sourceType);
+
+        const nextSnapshot = typeState[targetType]
+            ? cloneJsonData(typeState[targetType])
+            : buildSnapshotFromConversionContext(targetType, conversionContext);
+
+        return applySlideTypeSnapshot(slide, targetType, nextSnapshot);
+    }
+
+    function convertStandardToTwoColumn(slide) {
+        return convertSlideToType(slide, 'two-column');
     }
 
     function convertTwoColumnToStandard(slide) {
-        ensureSlideSchema(slide);
-        const leftField = ensureFieldDefaults(slide.columns?.leftField, slide.content || '');
-        slide.type = 'standard';
-        slide.bodyField = leftField;
-        slide.content = leftField.text || slide.content || '';
-        delete slide.columns;
-        return slide;
+        return convertSlideToType(slide, 'standard');
+    }
+
+    function convertCurrentSlideToType(targetType) {
+        const slide = slidesData[currentSlideIndex];
+        if (!slide) return false;
+        if (!KNOWN_SLIDE_TYPES.has(targetType)) {
+            showToast('That slide type is not supported.', 'error', 2600);
+            return false;
+        }
+        if (slide.type === targetType) {
+            showToast(`This slide is already ${getSlideTypeLabel(targetType)}.`, 'info', 2200);
+            return false;
+        }
+        convertSlideToType(slide, targetType);
+        render();
+        saveState();
+        showSlide(currentSlideIndex);
+        showToast(`Converted this slide to ${getSlideTypeLabel(targetType)}.`);
+        return true;
     }
 
     function addSecondColumnToCurrentSlide() {
@@ -3779,7 +4241,7 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         }
         convertStandardToTwoColumn(slide);
         render(); saveState(); showSlide(currentSlideIndex);
-        showToast('Added a second column with a default image panel.');
+        showToast('Converted this slide to the two-column layout and preserved its prior standard content.');
     }
 
     function removeSecondColumnFromCurrentSlide() {
@@ -3788,12 +4250,9 @@ The system is relationship-based and supported by tools such as Salesforce, repo
             showToast('Select a two-column slide to remove the second column.', 'error', 2500);
             return;
         }
-        if ((slideHasMeaningfulFieldContent(slide.columns?.rightField) || slideHasMeaningfulFieldContent(slide.columns?.bottomField)) && !confirm('Remove the second column? Content outside the left text field will be discarded.')) {
-            return;
-        }
         convertTwoColumnToStandard(slide);
         render(); saveState(); showSlide(currentSlideIndex);
-        showToast('Removed the second column.');
+        showToast('Converted this slide to the standard layout. Hidden two-column content was preserved for later reuse.');
     }
 
     function enableCurrentSlideStackedLayout() {
@@ -4070,6 +4529,10 @@ The system is relationship-based and supported by tools such as Salesforce, repo
             template = { type: 'standard', title: 'New Slide', content: '* Point 1', speakerNotes: '', bodyField: ensureFieldDefaults({ mode: 'text', text: '* Point 1' }, '* Point 1') };
         } else if (type === 'image') {
             template = { type: 'image', title: 'Image Slide', speakerNotes: '', bodyField: ensureFieldDefaults({ mode: 'image', imageUrl: '', imageAlign: 'center', imagePrompt: '', imageNotes: '' }, '') };
+        } else if (type === 'statement') {
+            template = { type: 'statement', kicker: 'Context line', content: 'Headline statement goes here.', speakerNotes: '', bodyField: ensureFieldDefaults({ mode: 'text', text: 'Headline statement goes here.' }, 'Headline statement goes here.') };
+        } else if (type === 'statement-image') {
+            template = { type: 'statement-image', kicker: 'Context line', content: 'Headline statement goes here.', speakerNotes: '', bodyField: ensureFieldDefaults({ mode: 'text', text: 'Headline statement goes here.' }, 'Headline statement goes here.'), imageField: ensureFieldDefaults({ mode: 'image', imageUrl: '', imageAlign: 'center', imagePrompt: '', imageNotes: '' }, '') };
         } else if (type === 'two-column') {
             template = {
                 type: 'two-column',
@@ -4200,8 +4663,36 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         } catch (_err) {
             showToast('Clipboard was blocked. Allow clipboard access and try again.', 'error', 3600);
         }
-    }
 
+        //  TEST 3: Reversible conversion smoke test 
+        try {
+            const sampleSlide = ensureSlideSchema({
+                type: 'standard',
+                title: 'Original Title',
+                content: 'Original body copy',
+                bodyField: { mode: 'text', text: 'Original body copy' }
+            });
+            convertSlideToType(sampleSlide, 'statement-image');
+            sampleSlide.imageField.imageUrl = 'https://example.com/test-image.png';
+            sampleSlide.kicker = 'Context line';
+            convertSlideToType(sampleSlide, 'standard');
+            const preservedState = sampleSlide.typeState?.['statement-image'];
+            const restoredStandard = sampleSlide.type === 'standard' && sampleSlide.bodyField?.text === 'Original body copy';
+            const preservedHiddenImage = preservedState?.imageField?.imageUrl === 'https://example.com/test-image.png';
+            convertSlideToType(sampleSlide, 'statement-image');
+            const restoredStatementImage = sampleSlide.type === 'statement-image'
+                && sampleSlide.imageField?.imageUrl === 'https://example.com/test-image.png'
+                && sampleSlide.kicker === 'Context line';
+            if (restoredStandard && preservedHiddenImage && restoredStatementImage) {
+                pass('Type Conversion', 'Slide type conversions preserve hidden layout data and restore prior target-specific content.');
+            } else {
+                fail('Type Conversion', `restoredStandard=${restoredStandard}, preservedHiddenImage=${preservedHiddenImage}, restoredStatementImage=${restoredStatementImage}`);
+            }
+        } catch (e) {
+            fail('Type Conversion', `Exception: ${e.message}`);
+        }
+    }
+        //  TEST 4: PPTX smoke test 
     function formatPasteClipboardError(rawText, errorMessage) {
         const message = String(errorMessage || 'Clipboard JSON could not be pasted.');
         if (!String(rawText || '').trim()) return 'Clipboard does not contain any text JSON to paste.';
@@ -4244,7 +4735,7 @@ The system is relationship-based and supported by tools such as Salesforce, repo
             showError(formatPasteClipboardError(clipboardText, err.message));
         }
     }
-
+        //  TEST 5: Import sanitizer smoke test 
     function buildReferenceSpeakerNoteLine(source) {
         const quote = String(source?.text || '').trim();
         if (!quote) return '';
@@ -4399,6 +4890,17 @@ The system is relationship-based and supported by tools such as Salesforce, repo
             '      "bodyField": { "mode": "image", "imageUrl": "" }',
             '    },',
             '    {',
+            '      "type": "statement",',
+            '      "kicker": "Context line",',
+            '      "bodyField": { "mode": "text", "text": "Headline statement" }',
+            '    },',
+            '    {',
+            '      "type": "statement-image",',
+            '      "kicker": "Context line",',
+            '      "bodyField": { "mode": "text", "text": "Headline statement" },',
+            '      "imageField": { "mode": "image", "imageUrl": "" }',
+            '    },',
+            '    {',
             '      "type": "two-column",',
             '      "title": "Two-column title",',
             '      "columns": {',
@@ -4422,8 +4924,11 @@ The system is relationship-based and supported by tools such as Salesforce, repo
             '- Optional top-level key: "references" (array). Each item should have an integer `id` and a `sources` array.',
             '- One sentence or quote should usually use one marker number, and that reference should contain all supporting quotes in its `sources` list.',
             '- `config.imagePromptStyle` stores the universal image style used for AI image generation.',
-            '- Supported slide types: "cover", "section", "standard", "image", "two-column".',
+            '- Supported slide types: "cover", "section", "standard", "image", "statement", "statement-image", "two-column".',
+            '- `statement` slides use a small `kicker` line above a large centered statement text field.',
+            '- `statement-image` slides use the same `kicker` + statement copy block with a dedicated `imageField` underneath.',
             '- `image` slides render one large image field. If `title` is blank, Designer omits the title row and shows only the image area.',
+            '- `typeState` preserves hidden per-slide layout data so slide type conversions can round-trip without dropping non-visible fields.',
             '- Inline reference markers use plain parentheses: `(12)` means "link this sentence to deck reference #12".',
             '- `columns.layoutMode: "stacked-left"` uses top-left text, bottom-left quote, and a full-height right graphic field.',
             '- `columns.stackSplitPct` controls the vertical split between the top-left and bottom-left panels on stacked-left slides.',
@@ -4774,6 +5279,55 @@ The system is relationship-based and supported by tools such as Salesforce, repo
                     bold: true, align: 'center', fontFace: getFontFace('font-h1')
                 });
             } 
+            else if (data.type === 'statement') {
+                slide.addText(data.kicker || '', {
+                    x: 1.35, y: 1.48, w: 10.63, h: 0.55,
+                    fontSize: getPt('size-kicker', '20pt'),
+                    color: getHex('color-kicker', '1e1d21'),
+                    align: 'center', fontFace: getFontFace('font-kicker')
+                });
+                const statementField = ensureFieldDefaults({ ...(data.bodyField || {}), mode: 'text' }, data.content || '');
+                statementField.mode = 'text';
+                const statementPt = Math.max(10, getPt('size-h1', '32pt') + ((statementField.fontDelta || 0) * 0.75));
+                const statementRuns = buildPptInlineMarkdownRuns(statementField.text || '', {
+                    color: getHex('color-h1', '16bfec'),
+                    fontSize: statementPt,
+                    fontFace: getFontFace('font-h1'),
+                    bold: true
+                }, {}, false);
+                slide.addText(statementRuns, {
+                    x: 1.05, y: 2.05, w: 11.23, h: 3.8,
+                    color: getHex('color-h1', '16bfec'),
+                    fontSize: statementPt,
+                    fontFace: getFontFace('font-h1'),
+                    bold: true, align: 'center', valign: 'top', margin: 0
+                });
+            }
+            else if (data.type === 'statement-image') {
+                slide.addText(data.kicker || '', {
+                    x: 1.35, y: 0.95, w: 10.63, h: 0.45,
+                    fontSize: getPt('size-kicker', '20pt'),
+                    color: getHex('color-kicker', '1e1d21'),
+                    align: 'center', fontFace: getFontFace('font-kicker')
+                });
+                const statementField = ensureFieldDefaults({ ...(data.bodyField || {}), mode: 'text' }, data.content || '');
+                statementField.mode = 'text';
+                const statementPt = Math.max(10, getPt('size-h1', '32pt') + ((statementField.fontDelta || 0) * 0.75));
+                const statementRuns = buildPptInlineMarkdownRuns(statementField.text || '', {
+                    color: getHex('color-h1', '16bfec'),
+                    fontSize: statementPt,
+                    fontFace: getFontFace('font-h1'),
+                    bold: true
+                }, {}, false);
+                slide.addText(statementRuns, {
+                    x: 1.05, y: 1.45, w: 11.23, h: 1.55,
+                    color: getHex('color-h1', '16bfec'),
+                    fontSize: statementPt,
+                    fontFace: getFontFace('font-h1'),
+                    bold: true, align: 'center', valign: 'top', margin: 0
+                });
+                await addFieldToPpt(slide, ensureFieldDefaults({ ...(data.imageField || {}), mode: 'image' }, ''), 2.17, 3.35, 8.46, 3.25);
+            }
             else {
                 const isImageSlide = data.type === 'image';
                 const hasTitle = !!String(data.title || '').trim();
@@ -4967,20 +5521,24 @@ The system is relationship-based and supported by tools such as Salesforce, repo
                     { type: 'section', title: 'Test Section' },
                     { type: 'standard', title: 'Test Standard', content: '* Bullet', bodyField: { mode: 'text', text: '* Bullet', imageUrl: '', imageAlign: 'center', imagePrompt: 'test prompt', quoteText: '', quoteAttribution: '' } },
                     { type: 'image', title: '', bodyField: { mode: 'image', imageUrl: '', imageAlign: 'center', imagePrompt: 'image prompt', imageNotes: 'image prompt' } },
+                    { type: 'statement', kicker: 'Lead-in', bodyField: { mode: 'text', text: 'Statement copy', imageUrl: '', imageAlign: 'center', imagePrompt: '', quoteText: '', quoteAttribution: '' } },
+                    { type: 'statement-image', kicker: 'Lead-in', bodyField: { mode: 'text', text: 'Statement copy', imageUrl: '', imageAlign: 'center', imagePrompt: '', quoteText: '', quoteAttribution: '' }, imageField: { mode: 'image', imageUrl: '', imageAlign: 'center', imagePrompt: 'visual prompt', imageNotes: 'visual prompt' } },
                     { type: 'two-column', title: 'Test TwoCol', columns: { splitPct: 55, leftField: { mode: 'text', text: 'Left' }, rightField: { mode: 'quote', quoteText: 'Quote', quoteAttribution: 'Author' } } }
                 ]
             };
             const parsed = smartParseInput(JSON.stringify(testPayload));
             const slides = parsed.data.slides.map(ensureSlideSchema);
             const types = slides.map(s => s.type);
-            const hasAllTypes = ['cover', 'section', 'standard', 'image', 'two-column'].every(t => types.includes(t));
+            const hasAllTypes = ['cover', 'section', 'standard', 'image', 'statement', 'statement-image', 'two-column'].every(t => types.includes(t));
             const stdHasBody = slides.find(s => s.type === 'standard')?.bodyField;
             const imageHasBody = slides.find(s => s.type === 'image')?.bodyField?.mode === 'image';
+            const statementHasBody = slides.find(s => s.type === 'statement')?.bodyField;
+            const statementImageHasImage = slides.find(s => s.type === 'statement-image')?.imageField?.mode === 'image';
             const tcHasCols = slides.find(s => s.type === 'two-column')?.columns;
-            if (hasAllTypes && stdHasBody && imageHasBody && tcHasCols) {
-                pass('JSON Contract', `All 5 slide types preserved, bodyField + image bodyField + columns intact.`);
+            if (hasAllTypes && stdHasBody && imageHasBody && statementHasBody && statementImageHasImage && tcHasCols) {
+                pass('JSON Contract', `All supported slide types preserved, including statement copy and statement-image fields.`);
             } else {
-                fail('JSON Contract', `Missing: types=${hasAllTypes}, bodyField=${!!stdHasBody}, imageBody=${!!imageHasBody}, columns=${!!tcHasCols}`);
+                fail('JSON Contract', `Missing: types=${hasAllTypes}, bodyField=${!!stdHasBody}, imageBody=${!!imageHasBody}, statementBody=${!!statementHasBody}, statementImageField=${!!statementImageHasImage}, columns=${!!tcHasCols}`);
             }
         } catch (e) {
             fail('JSON Contract', `Exception: ${e.message}`);
@@ -5013,6 +5571,33 @@ The system is relationship-based and supported by tools such as Salesforce, repo
             else fail('Field Modes', details.join('; '));
         } catch (e) {
             fail('Field Modes', `Exception: ${e.message}`);
+        }
+
+        try {
+            const sampleSlide = ensureSlideSchema({
+                type: 'standard',
+                title: 'Original Title',
+                content: 'Original body copy',
+                bodyField: { mode: 'text', text: 'Original body copy' }
+            });
+            convertSlideToType(sampleSlide, 'statement-image');
+            sampleSlide.imageField.imageUrl = 'https://example.com/test-image.png';
+            sampleSlide.kicker = 'Context line';
+            convertSlideToType(sampleSlide, 'standard');
+            const preservedState = sampleSlide.typeState?.['statement-image'];
+            const restoredStandard = sampleSlide.type === 'standard' && sampleSlide.bodyField?.text === 'Original body copy';
+            const preservedHiddenImage = preservedState?.imageField?.imageUrl === 'https://example.com/test-image.png';
+            convertSlideToType(sampleSlide, 'statement-image');
+            const restoredStatementImage = sampleSlide.type === 'statement-image'
+                && sampleSlide.imageField?.imageUrl === 'https://example.com/test-image.png'
+                && sampleSlide.kicker === 'Context line';
+            if (restoredStandard && preservedHiddenImage && restoredStatementImage) {
+                pass('Type Conversion', 'Slide type conversions preserve hidden layout data and restore prior target-specific content.');
+            } else {
+                fail('Type Conversion', `restoredStandard=${restoredStandard}, preservedHiddenImage=${preservedHiddenImage}, restoredStatementImage=${restoredStatementImage}`);
+            }
+        } catch (e) {
+            fail('Type Conversion', `Exception: ${e.message}`);
         }
 
         // \u2500\u2500 TEST 3: PPTX smoke test \u2500\u2500

@@ -1025,6 +1025,97 @@
             align-items: center;
             text-align: center;
         }
+        .slide[data-type="statement"] .slide-inner {
+            justify-content: center;
+            align-items: stretch;
+        }
+        .slide[data-type="statement-image"] .slide-inner {
+            justify-content: flex-start;
+            align-items: stretch;
+            gap: 18px;
+        }
+        .statement-copy-wrapper {
+            width: 100%;
+            height: 100%;
+            min-height: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+        }
+        .statement-copy-wrapper-image {
+            height: auto;
+            min-height: 0;
+            flex: 0 0 auto;
+            padding-top: 14px;
+        }
+        .statement-copy-region {
+            width: min(92%, 980px);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 18px;
+            margin: 0 auto;
+        }
+        .statement-copy-region-image {
+            width: min(92%, 900px);
+            gap: 10px;
+        }
+        .statement-kicker {
+            font-family: var(--font-kicker);
+            font-size: var(--size-kicker);
+            color: var(--color-kicker);
+            font-weight: 600;
+            line-height: 1.2;
+            letter-spacing: 0.01em;
+        }
+        .statement-field-shell {
+            width: 100%;
+            min-height: 0;
+        }
+        .statement-field-body {
+            background: transparent;
+            padding: 0;
+            border: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .statement-text-editor {
+            width: 100%;
+            font-family: var(--font-h1);
+            font-size: calc(var(--size-h1) + var(--field-font-delta, 0px));
+            color: var(--color-h1);
+            font-weight: 700;
+            line-height: 1.08;
+            text-align: center;
+        }
+        .statement-text-editor p,
+        .statement-text-editor h1,
+        .statement-text-editor h2,
+        .statement-text-editor h3 {
+            margin: 0;
+        }
+        .statement-text-editor p + p,
+        .statement-text-editor p + h3,
+        .statement-text-editor h3 + p {
+            margin-top: 0.35em;
+        }
+        .statement-image-body {
+            min-height: 0;
+            display: flex;
+            justify-content: center;
+            align-items: stretch;
+        }
+        .statement-image-body .field-shell {
+            width: min(76%, 860px);
+            margin: 0 auto;
+        }
+        .statement-image-body .field-body {
+            padding: 0;
+            background: transparent;
+        }
         #field-typo-indicator {
             position: fixed;
             left: 50%;
@@ -1064,8 +1155,54 @@
         body.show-shapes .slide[data-type="cover"] .decor-shape, body.show-shapes .slide[data-type="section"] .decor-shape { display: block; }
 
         #top-hotspot { position: fixed; top: 0; left: 0; width: 100%; height: 20px; z-index: 4000; }
-        #controls-menu { position: absolute; top: -100px; left: 50%; transform: translateX(-50%); background: white; box-shadow: 0 4px 15px rgba(0,0,0,0.1); border-radius: 0 0 10px 10px; padding: 10px 20px; display: flex; gap: 12px; transition: top 0.3s ease; align-items: center; }
-        #top-hotspot:hover #controls-menu, #controls-menu:hover { top: 0; }
+        #controls-menu {
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translate(-50%, -108%);
+            background: white;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            border-radius: 0 0 10px 10px;
+            padding: 10px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            align-items: stretch;
+            transition: transform 0.24s ease, box-shadow 0.18s ease;
+        }
+        #top-hotspot:hover #controls-menu,
+        #controls-menu:hover,
+        #controls-menu:focus-within,
+        #controls-menu.menu-pinned {
+            transform: translate(-50%, 0);
+        }
+        .controls-menu-row {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        #slide-type-picker {
+            padding-top: 8px;
+            border-top: 1px solid #eef2f4;
+        }
+        #slide-type-picker-label {
+            color: #5d7280;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+        #controls-menu .is-active-mode {
+            background: #e8f8fd;
+            border-color: var(--powder-blue);
+            color: #0f6b85;
+        }
+        #slide-type-picker button:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+        }
 
         .flash-success { animation: flashGreen 0.6s ease-out; }
         @keyframes flashGreen { 0% { opacity: 0.5; background-color: #d4edda; } 100% { opacity: 1; background-color: black; } }
@@ -1646,27 +1783,36 @@
 
 <div id="top-hotspot">
     <div id="controls-menu">
-        <button title="Add a cover slide" onclick="addNewSlide('cover')">+ Cover</button>
-        <button title="Add a section slide" onclick="addNewSlide('section')">+ Section</button>
-        <button title="Add a standard slide" onclick="addNewSlide('standard')">+ Standard</button>
-        <button title="Add an image slide" onclick="addNewSlide('image')">+ Image</button>
-        <button title="Add a two-column slide" onclick="addNewSlide('two-column')">+ Two Col</button>
-        <button id="add-second-column-btn" title="Add a second column to the current slide" onclick="addSecondColumnToCurrentSlide()">+ 2nd Col</button>
-        <button id="remove-second-column-btn" title="Remove the second column from the current slide" onclick="removeSecondColumnFromCurrentSlide()">- 2nd Col</button>
-        <button id="stacked-layout-btn" title="Switch the current slide to stacked text, quote, and graphic layout" onclick="enableCurrentSlideStackedLayout()">T+Q + Graphic</button>
-        <button id="side-by-side-layout-btn" title="Switch the current slide to a split two-column layout" onclick="disableCurrentSlideStackedLayout()">2-Col Split</button>
-        <button title="Open deck references" onclick="openReferenceManager()">Refs</button>
-        <span style="color:#ddd">|</span>
-        <button title="Bold selected text" aria-label="Bold selected text" onmousedown="exec('bold')"><b>B</b></button>
-        <button title="Italicize selected text" aria-label="Italicize selected text" onmousedown="exec('italic')"><i>I</i></button>
-        <button title="Turn the selected text into a bulleted list" onmousedown="exec('insertUnorderedList')">• List</button>
-        <button title="Format selected text as H3" onmousedown="exec('formatBlock', 'H3')">H3</button>
-        <button onmousedown="setActiveFieldTextScale('large')" title="Set the selected paragraph block to large">P-L</button>
-        <button onmousedown="setActiveFieldTextScale('normal')" title="Set the selected paragraph block to normal">P-M</button>
-        <button onmousedown="setActiveFieldTextScale('small')" title="Set the selected paragraph block to small">P-S</button>
-        <span style="color:#ddd">|</span>
-        <button title="Delete the current slide" onclick="deleteSlide()" style="color:red">Delete</button>
-        <button title="Reset this tab to a blank deck" onclick="resetAll()">Reset</button>
+        <div class="controls-menu-row">
+            <button id="slide-picker-add-btn" title="Open the slide type picker to add a new slide" onclick="toggleSlideTypePicker('add')">Add Slide</button>
+            <button id="slide-picker-convert-btn" title="Open the slide type picker to convert the current slide" onclick="toggleSlideTypePicker('convert')">Convert Slide</button>
+            <button id="add-second-column-btn" title="Convert the current standard slide into a two-column slide" onclick="addSecondColumnToCurrentSlide()">+ 2nd Col</button>
+            <button id="remove-second-column-btn" title="Convert the current two-column slide back to standard" onclick="removeSecondColumnFromCurrentSlide()">- 2nd Col</button>
+            <button id="stacked-layout-btn" title="Switch the current slide to stacked text, quote, and graphic layout" onclick="enableCurrentSlideStackedLayout()">T+Q + Graphic</button>
+            <button id="side-by-side-layout-btn" title="Switch the current slide to a split two-column layout" onclick="disableCurrentSlideStackedLayout()">2-Col Split</button>
+            <button title="Open deck references" onclick="openReferenceManager()">Refs</button>
+            <span style="color:#ddd">|</span>
+            <button title="Bold selected text" aria-label="Bold selected text" onmousedown="exec('bold')"><b>B</b></button>
+            <button title="Italicize selected text" aria-label="Italicize selected text" onmousedown="exec('italic')"><i>I</i></button>
+            <button title="Turn the selected text into a bulleted list" onmousedown="exec('insertUnorderedList')">• List</button>
+            <button title="Format selected text as H3" onmousedown="exec('formatBlock', 'H3')">H3</button>
+            <button onmousedown="setActiveFieldTextScale('large')" title="Set the selected paragraph block to large">P-L</button>
+            <button onmousedown="setActiveFieldTextScale('normal')" title="Set the selected paragraph block to normal">P-M</button>
+            <button onmousedown="setActiveFieldTextScale('small')" title="Set the selected paragraph block to small">P-S</button>
+            <span style="color:#ddd">|</span>
+            <button title="Delete the current slide" onclick="deleteSlide()" style="color:red">Delete</button>
+            <button title="Reset this tab to a blank deck" onclick="resetAll()">Reset</button>
+        </div>
+        <div id="slide-type-picker" class="controls-menu-row" hidden>
+            <span id="slide-type-picker-label">Add a new slide of type:</span>
+            <button data-slide-type-choice="cover" onclick="handleSlideTypePickerAction('cover')">Cover</button>
+            <button data-slide-type-choice="section" onclick="handleSlideTypePickerAction('section')">Section</button>
+            <button data-slide-type-choice="standard" onclick="handleSlideTypePickerAction('standard')">Standard</button>
+            <button data-slide-type-choice="image" onclick="handleSlideTypePickerAction('image')">Image</button>
+            <button data-slide-type-choice="statement" onclick="handleSlideTypePickerAction('statement')">Statement</button>
+            <button data-slide-type-choice="statement-image" onclick="handleSlideTypePickerAction('statement-image')">Statement+Image</button>
+            <button data-slide-type-choice="two-column" onclick="handleSlideTypePickerAction('two-column')">Two Col</button>
+        </div>
     </div>
 </div>
 
