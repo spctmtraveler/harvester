@@ -29,12 +29,15 @@ Designer also supports:
 - text, image, and quote field modes,
 - deck-level numbered references for transcript evidence,
 - single-image slides with optional titles,
+- statement slides for short, high-emphasis findings,
+- statement-plus-image slides for short, high-emphasis findings strengthened by a visual,
 - per-slide hover actions for delete, copy slide JSON, and paste slide JSON,
 - AI image prompt drafting,
 - AI image generation,
 - batch generation for missing images,
 - per-slide speaker notes,
-- in-place conversion between standard and two-column slides,
+- an on-demand top-bar slide type picker for both adding and converting slides,
+- reversible slide type conversion across all supported slide types,
 - a stacked two-column layout with top-left text, bottom-left quote, and full-height right graphic space.
 
 Important: Designer is intentionally forgiving. It will often fix malformed but recognizable JSON instead of rejecting it.
@@ -78,6 +81,7 @@ Designer supports:
 - Auto Prompt for drafting an image prompt from slide content,
 - Generate for creating an image from the current prompt,
 - queued generate behavior when Auto Prompt is still in flight,
+- Add Slide / Convert Slide actions that open a second-row slide type picker,
 - adding/removing the second column on the current slide,
 - draggable split divider for two-column slides,
 - speaker notes per slide.
@@ -118,6 +122,7 @@ These travel with the deck and export/import cleanly:
 - optional `meta` markers used to label slide clipboard payloads
 - `config.imagePromptStyle`
 - slide content and fields
+- slide-level `typeState` used to preserve hidden data during reversible slide conversion
 - slide speaker notes
 - slide and wrapper offsets
 - field-level image prompts and notes
@@ -335,6 +340,8 @@ Optional object keyed by slide type:
     "section": { "x": 0, "y": 0 },
     "standard": { "x": 0, "y": 0 },
     "image": { "x": 0, "y": 0 },
+    "statement": { "x": 0, "y": 0 },
+    "statement-image": { "x": 0, "y": 0 },
     "two-column": { "x": 0, "y": 0 }
   }
 }
@@ -355,6 +362,8 @@ Supported `type` values:
 - `section`
 - `standard`
 - `image`
+- `statement`
+- `statement-image`
 - `two-column`
 
 If `type` is missing or unknown:
@@ -370,8 +379,10 @@ If `type` is missing or unknown:
 | `subtitle` | No | string | cover, section input is tolerated | Cover subtitle; cover defaults to `""` |
 | `speakerNotes` | No | string | all slides | Slide-level speaker notes |
 | `shapeColor` | No | string | cover, section | Decorative shape color token or CSS var |
-| `content` | No | string | standard, image, two-column legacy support | Legacy text fallback |
-| `bodyField` | No, but recommended for `standard` and `image` | object | standard, image | Auto-created if missing |
+| `content` | No | string | standard, image, statement, statement-image, two-column legacy support | Legacy text fallback |
+| `kicker` | No | string | statement, statement-image | Optional black setup line above the statement |
+| `bodyField` | No, but recommended for `standard`, `image`, `statement`, and `statement-image` | object | standard, image, statement, statement-image | Auto-created if missing |
+| `imageField` | No, but recommended for `statement-image` | object | statement-image | Dedicated supporting image field |
 | `columns` | No, but recommended for `two-column` | object | two-column | Auto-created if missing |
 | `x` | No | number | all slides | Per-slide on-screen offset |
 | `y` | No | number | all slides | Per-slide on-screen offset |
@@ -477,7 +488,93 @@ Normalization behavior:
 - `bodyField.mode` is forced to `image`,
 - if `title` is blank, Designer omits the title row and renders only the large image area.
 
-### 6.7 `two-column` slide
+### 6.7 `statement` slide
+
+Purpose:
+- a single strong statement or finding, usually 1 to 1.5 lines,
+- bold, centered, high-emphasis text that is not a section header,
+- an optional black setup line above the statement to give just enough context for the statement to land.
+
+Use this when the deck needs the audience to stop on one important idea, takeaway, or finding. Do not use it as a section divider; use `section` for that.
+
+Minimum useful shape:
+
+```json
+{
+  "type": "statement",
+  "kicker": "Optional setup line",
+  "bodyField": {
+    "mode": "text",
+    "text": "A strong finding deserves the space to land."
+  }
+}
+```
+
+Optional but commonly used keys:
+- `kicker`
+- `speakerNotes`
+- `content`
+- `bodyField`
+- positioning keys
+
+Normalization behavior:
+- if `bodyField` is missing, Designer creates it from `content`,
+- `bodyField.mode` is forced to `text`,
+- if `content` is missing, Designer backfills it from `bodyField.text`,
+- `kicker` defaults to `""`.
+
+AI authoring guidance:
+- keep `bodyField.text` short enough to read as one forceful statement,
+- use the statement for a key finding, insight, or implication, not for a list of points,
+- use the `kicker` only when the statement benefits from a little setup.
+
+### 6.8 `statement-image` slide
+
+Purpose:
+- the same high-emphasis statement pattern as `statement`,
+- plus a dedicated image field to make the point more vivid or emotionally concrete.
+
+Use this when a short finding would become stronger with one visual, such as a photo, diagram, metaphor image, or simple generated scene.
+
+Minimum useful shape:
+
+```json
+{
+  "type": "statement-image",
+  "kicker": "Optional setup line",
+  "bodyField": {
+    "mode": "text",
+    "text": "A strong finding deserves the space to land."
+  },
+  "imageField": {
+    "mode": "image",
+    "imageUrl": ""
+  }
+}
+```
+
+Optional but commonly used keys:
+- `kicker`
+- `speakerNotes`
+- `content`
+- `bodyField`
+- `imageField`
+- positioning keys
+
+Normalization behavior:
+- if `bodyField` is missing, Designer creates it from `content`,
+- `bodyField.mode` is forced to `text`,
+- if `imageField` is missing, Designer creates it,
+- `imageField.mode` is forced to `image`,
+- if `content` is missing, Designer backfills it from `bodyField.text`,
+- `kicker` defaults to `""`.
+
+AI authoring guidance:
+- use `statement-image` when the visual helps the statement hit harder,
+- keep the statement short and let the image provide support rather than adding more text,
+- use `imagePrompt` and `imageNotes` on `imageField` when the image should be generated.
+
+### 6.9 `two-column` slide
 
 Minimum useful shape:
 
@@ -539,24 +636,38 @@ Meaning of `layoutMode` values:
 - percent of the stacked-left column height reserved for the top-left panel
 - remaining height goes to `bottomField`
 
-### 6.8 In-place layout conversion behavior
+### 6.10 In-place layout conversion behavior
 
-Designer UI supports converting layouts without adding a new slide:
+Designer UI supports converting slide types without adding a new slide. When possible, it preserves prior content for each type so switching away and back can restore that type's previous fields.
+
+The top bar exposes two related actions:
+- `Add Slide` opens a second-row picker and inserts a new slide of the chosen type after the current slide.
+- `Convert Slide` opens the same picker and converts the current slide to the chosen type.
+
+Designer stores hidden per-type content on the slide in `typeState` so non-visible fields can survive conversion and later be restored.
 
 - `standard` -> `two-column`
   - current `bodyField` becomes `columns.leftField`
   - new `columns.rightField` defaults to an image field
 
+- `standard` / `cover` / `section` -> `statement` or `statement-image`
+  - the strongest available title/body text is mapped into the statement text field
+  - `kicker` is seeded from the best available title/context line when needed
+
+- `statement-image` -> `standard`
+  - visible statement text becomes the standard slide body
+  - the image is hidden from the current layout but preserved in `typeState`
+
 - `two-column` -> `standard`
   - `columns.leftField` becomes `bodyField`
-  - right-column content is discarded after confirmation if meaningful content exists
+  - prior two-column content is preserved in editor state for later reuse
 
 - `two-column side-by-side` -> `two-column stacked-left`
   - `leftField` stays in the top-left area
   - a quote can move into `bottomField`
   - `rightField` becomes the full-height graphic space
 
-This is editor behavior, not a special JSON shape.
+This is editor behavior, but the hidden preserved state is serialized in deck JSON as slide-level `typeState` so the conversion can round-trip.
 
 ---
 
@@ -564,6 +675,7 @@ This is editor behavior, not a special JSON shape.
 
 Fields are used in:
 - `bodyField`
+- `imageField`
 - `columns.leftField`
 - `columns.bottomField`
 - `columns.rightField`
@@ -787,6 +899,8 @@ Designer still accepts it and may use it to seed `bodyField.text`.
 Preferred modern authoring:
 - use `bodyField` for standard slides,
 - use `type: "image"` with `bodyField.mode: "image"` for single-image slides,
+- use `type: "statement"` with a short text `bodyField` for one strong finding,
+- use `type: "statement-image"` with a short text `bodyField` plus image-mode `imageField` when a visual will make that finding stronger,
 - use `columns.leftField` / `columns.rightField` for ordinary two-column slides,
 - use `columns.layoutMode: "stacked-left"` plus `columns.bottomField` when the left column should stack text above a quote and reserve the right column for graphics.
 
@@ -835,6 +949,7 @@ Notes:
 
 Designer exports:
 - slide titles,
+- statement kickers and statement text,
 - text content,
 - quote bubbles,
 - images,
@@ -864,8 +979,9 @@ Current behavior highlights:
 - Required: no single key is strictly required if the object can be recognized and normalized as a slide
 - Strongly recommended:
   - `type`
-  - `title`
-  - `bodyField` for standard slides
+  - `title` for cover, section, standard, image, and two-column slides
+  - `bodyField` for standard, image, statement, and statement-image slides
+  - `imageField` for statement-image slides
   - `columns` for two-column slides
 
 ### Field
@@ -957,6 +1073,28 @@ Current behavior highlights:
       }
     },
     {
+      "type": "statement",
+      "kicker": "The key pattern",
+      "bodyField": {
+        "mode": "text",
+        "text": "The work is not blocked by motivation; it is blocked by coordination."
+      }
+    },
+    {
+      "type": "statement-image",
+      "kicker": "Why this matters",
+      "bodyField": {
+        "mode": "text",
+        "text": "A single vivid image can make the finding easier to remember."
+      },
+      "imageField": {
+        "mode": "image",
+        "imageUrl": "",
+        "imagePrompt": "A warm documentary-style image of people aligning sticky notes on a shared planning board",
+        "imageNotes": "A warm documentary-style image of people aligning sticky notes on a shared planning board"
+      }
+    },
+    {
       "type": "two-column",
       "title": "Visual + notes",
       "columns": {
@@ -992,6 +1130,9 @@ When asking an AI to produce Designer JSON:
 - request valid JSON only,
 - prefer explicit `bodyField` / `columns` over legacy `content`,
 - use `type: "image"` when the slide should be one large image with an optional title,
+- use `type: "statement"` for one bold 1 to 1.5-line finding that should not read as a section header,
+- use `type: "statement-image"` when that same kind of short finding would be more memorable with a supporting image,
+- put optional setup context in `kicker`; keep the main statement in `bodyField.text`,
 - use top-level `references` plus inline `(12)` markers when individual claims need transcript traceability,
 - make each numbered reference contain all supporting quotes for that sentence or quote inside `references[n].sources`,
 - include `config.imagePromptStyle` only if you want a deck-level universal style,
