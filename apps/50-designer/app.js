@@ -1,7 +1,8 @@
 // Release hygiene: update BOTH APP_VERSION and APP_LAST_UPDATED_UTC before every live push.
-    const APP_VERSION = "v4.5";
+    const APP_VERSION = "v4.6";
     // Set to the push time in UTC (banner converts to viewer's local time).
-    const APP_LAST_UPDATED_UTC = "2026-03-25T00:00:00Z";
+    const APP_LAST_UPDATED_UTC = "2026-03-27T00:00:00Z";
+    const DEFAULT_DECK_FILENAME_CHARS = 48;
 
     function formatLocalLastUpdated(utcIso) {
         const dt = new Date(utcIso);
@@ -21,6 +22,53 @@
         el.textContent = `Designer ${APP_VERSION} · Last updated ${formatLocalLastUpdated(APP_LAST_UPDATED_UTC)}`;
     }
 
+    function truncateDeckName(text, maxChars = DEFAULT_DECK_FILENAME_CHARS) {
+        const trimmed = String(text || '').trim().replace(/\s+/g, ' ');
+        if (!trimmed) return '';
+        if (trimmed.length <= maxChars) return trimmed;
+        return trimmed.slice(0, maxChars).trim();
+    }
+
+    function isStarterPlaceholderSlide(slide) {
+        if (!slide || typeof slide !== 'object') return false;
+        return slide.type === 'cover'
+            && String(slide.title || '').trim() === 'Start'
+            && String(slide.subtitle || '').trim() === 'Import JSON to begin';
+    }
+
+    function getDeckTitleCandidate(record = null) {
+        const slide = record?.deck?.slides?.[0] || slidesData?.[0] || null;
+        if (!slide || isStarterPlaceholderSlide(slide)) return '';
+        return truncateDeckName(String(slide.title || '').trim());
+    }
+
+    function getCurrentDeckFileLabel(record = null) {
+        const explicitName = truncateDeckName(String(record?.name ?? currentDeckName ?? '').trim());
+        if (explicitName) return explicitName;
+        const titleCandidate = getDeckTitleCandidate(record);
+        if (titleCandidate) return titleCandidate;
+        const createdAt = String(record?.createdAt ?? currentDeckCreatedAt ?? '').trim() || new Date().toISOString();
+        return `Unnamed - ${formatDeckTimestamp(createdAt)}`;
+    }
+
+    function getCurrentDeckDownloadBaseName(record = null) {
+        const label = getCurrentDeckFileLabel(record);
+        const safe = String(label || '')
+            .replace(/[<>:"/\\|?*]+/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .replace(/[\.\s]+$/g, '')
+            .replace(/ /g, '_');
+        return safe || 'HeartWalk_Deck';
+    }
+
+    function renderDeckFilenameBanner() {
+        const el = document.getElementById('deck-filename-banner');
+        const label = getCurrentDeckFileLabel();
+        if (el) el.textContent = label;
+        document.title = `${label} | Designer`;
+    }
+
     renderAppVersionBanner();
 
     const container = document.getElementById('presentation-container');
@@ -29,17 +77,24 @@
     const speakerNotesInput = document.getElementById('speaker-notes-input');
     let currentSlideIndex = 0;
     let slidesData = []; 
+    let deckReferences = [];
     let appConfig = {};
     let nudgeMode = 'global'; 
     let activeColorTarget = null;
     let selectedElements = [];
     let activeSettingsTab = 'typography';
+    let activeTypographyTargetId = null;
     const DESIGNER_DB_APP_NAME = 'heart_walk_designer';
     const DESIGNER_STYLE_NAMESPACE = 'designer_image_styles';
     const DESIGNER_OVERVIEW_NAMESPACE = 'designer_overview_texts';
     const DESIGNER_OVERVIEW_KEY = 'heart_walk_systems_overview';
     const DESIGNER_DECK_NAMESPACE = 'designer_decks';
-    const DESIGNER_DECK_AUTOSAVE_KEY = 'autosave_current';
+    const LEGACY_DESIGNER_DECK_AUTOSAVE_KEY = 'autosave_current';
+    const DESIGNER_DECK_RECORD_PREFIX = 'deck::';
+    const LEGACY_LOCAL_DECK_AUTOSAVE_KEY = 'heart_walk_deck_pro_v3';
+    const DESIGNER_DECK_LOCAL_PREFIX = 'heart_walk_designer_doc::';
+    const DESIGNER_ACTIVE_DECK_SESSION_KEY = 'heart_walk_designer_active_deck_id';
+    const DESIGNER_LAST_OPENED_DECK_KEY = 'heart_walk_designer_last_opened_deck_id';
     const DEFAULT_HEART_WALK_OVERVIEW = `# Heart Walk - System Overview
 
 Heart Walk is a market-based fundraising and engagement campaign operated by the American Heart Association. It generates corporate sponsorship revenue, activates employee participation, and builds long-term leadership pipelines in each market.
@@ -60,7 +115,15 @@ The system is relationship-based and supported by tools such as Salesforce, repo
     let deckAutosaveInFlight = false;
     let pendingDeckAutosave = false;
     let lastRemoteDeckSnapshot = '';
+    let lastRemoteDeckFingerprint = '';
     let lastDeckLoadedFromRemote = '';
+    let currentDeckId = '';
+    let currentDeckName = '';
+    let currentDeckCreatedAt = '';
+    let currentDeckUpdatedAt = '';
+    let cachedDeckLibrary = [];
+    let pendingDeletedSlide = null;
+    renderDeckFilenameBanner();
     const FIELD_ASYNC_STATE = new Map();
     const BATCH_IMAGE_STATE = { running: false, cancelRequested: false, total: 0, completed: 0, failed: 0, current: [], parallelism: 1 };
     const BATCH_IMAGE_PARALLELISM_STORAGE_KEY = 'heart_walk_batch_parallelism';
@@ -73,25 +136,27 @@ The system is relationship-based and supported by tools such as Salesforce, repo
     const ACTIVE_PRESET_KEY = 'heart_walk_active_preset_id';
 
     // The original factory default — always available, cannot be deleted.
+    const DEFAULT_FONT_STACK = "'Source Sans Pro', sans-serif";
+
     const DEFAULT_STYLE_PRESET = {
         id: '__factory_default__',
         name: 'Factory Default',
         created: '2026-01-01T00:00:00Z',
         style: {
-            'font-title': "'Source Sans 3', sans-serif", 'size-title': '45pt', 'color-title': '#16bfec',
-            'font-subtitle': "'Source Sans 3', sans-serif", 'size-subtitle': '25pt', 'color-subtitle': '#1e1d21',
-            'font-h1': "'Source Sans 3', sans-serif", 'size-h1': '32pt', 'color-h1': '#16bfec',
-            'font-h2': "'Source Sans 3', sans-serif", 'size-h2': '28pt', 'color-h2': '#16bfec',
-            'font-h3': "'Source Sans 3', sans-serif", 'size-h3': '18pt', 'color-h3': '#1e1d21',
-            'font-normal': "'Source Sans 3', sans-serif", 'size-normal': '16pt', 'color-normal': '#1e1d21',
-            'font-p-large': "'Source Sans 3', sans-serif", 'size-p-large': '20pt', 'color-p-large': '#1e1d21',
-            'font-p-normal': "'Source Sans 3', sans-serif", 'size-p-normal': '16pt', 'color-p-normal': '#1e1d21',
-            'font-p-small': "'Source Sans 3', sans-serif", 'size-p-small': '13pt', 'color-p-small': '#1e1d21',
-            'font-quote-body': "'Source Sans 3', sans-serif", 'size-quote-body': '18pt', 'color-quote-body': '#1e1d21',
-            'font-quote-attrib': "'Source Sans 3', sans-serif", 'size-quote-attrib': '16pt', 'color-quote-attrib': '#1e1d21',
+            'font-title': DEFAULT_FONT_STACK, 'size-title': '45pt', 'color-title': '#16bfec',
+            'font-subtitle': DEFAULT_FONT_STACK, 'size-subtitle': '25pt', 'color-subtitle': '#1e1d21',
+            'font-h1': DEFAULT_FONT_STACK, 'size-h1': '32pt', 'color-h1': '#16bfec',
+            'font-h2': DEFAULT_FONT_STACK, 'size-h2': '28pt', 'color-h2': '#16bfec',
+            'font-h3': DEFAULT_FONT_STACK, 'size-h3': '18pt', 'color-h3': '#1e1d21',
+            'font-normal': DEFAULT_FONT_STACK, 'size-normal': '16pt', 'color-normal': '#1e1d21',
+            'font-p-large': DEFAULT_FONT_STACK, 'size-p-large': '20pt', 'color-p-large': '#1e1d21',
+            'font-p-normal': DEFAULT_FONT_STACK, 'size-p-normal': '16pt', 'color-p-normal': '#1e1d21',
+            'font-p-small': DEFAULT_FONT_STACK, 'size-p-small': '13pt', 'color-p-small': '#1e1d21',
+            'font-quote-body': DEFAULT_FONT_STACK, 'size-quote-body': '18pt', 'color-quote-body': '#1e1d21',
+            'font-quote-attrib': DEFAULT_FONT_STACK, 'size-quote-attrib': '16pt', 'color-quote-attrib': '#1e1d21',
             'globalX': 0, 'globalY': 0, 'showShapes': true,
             'shapePath': null, 'shapeViewBox': null,
-            'typeOffsets': { cover: {x:0,y:0}, section: {x:0,y:0}, standard: {x:0,y:0}, 'two-column': {x:0,y:0} }
+            'typeOffsets': { cover: {x:0,y:0}, section: {x:0,y:0}, standard: {x:0,y:0}, image: {x:0,y:0}, 'two-column': {x:0,y:0} }
         }
     };
 
@@ -154,7 +219,7 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         if (!appConfig.shapeViewBox) appConfig.shapeViewBox = defaultViewBox;
         // Ensure typeOffsets structure
         if (!appConfig.typeOffsets) appConfig.typeOffsets = {};
-        for (const t of ['cover','section','standard','two-column']) {
+        for (const t of ['cover','section','standard','image','two-column']) {
             if (!appConfig.typeOffsets[t]) appConfig.typeOffsets[t] = {x:0,y:0};
         }
     }
@@ -235,7 +300,19 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         { id: 'quote-body', label: 'Quote Text' },
         { id: 'quote-attrib', label: 'Quote Source' }
     ];
-    const fontOptions = [ { name: 'Source Sans 3', value: "'Source Sans 3', sans-serif" }, { name: 'Lora', value: "'Lora', serif" }, { name: 'Roboto', value: "'Roboto', sans-serif" }, { name: 'Open Sans', value: "'Open Sans', sans-serif" }, { name: 'Lato', value: "'Lato', sans-serif" }, { name: 'Montserrat', value: "'Montserrat', sans-serif" }, { name: 'Poppins', value: "'Poppins', sans-serif" }, { name: 'Playfair Display', value: "'Playfair Display', serif" }, { name: 'Merriweather', value: "'Merriweather', serif" }, { name: 'Nunito', value: "'Nunito', sans-serif" }, { name: 'Raleway', value: "'Raleway', sans-serif" }, { name: 'Oswald', value: "'Oswald', sans-serif" } ];
+    const fontOptions = [ { name: 'Source Sans Pro', value: DEFAULT_FONT_STACK }, { name: 'Lora', value: "'Lora', serif" }, { name: 'Roboto', value: "'Roboto', sans-serif" }, { name: 'Open Sans', value: "'Open Sans', sans-serif" }, { name: 'Lato', value: "'Lato', sans-serif" }, { name: 'Montserrat', value: "'Montserrat', sans-serif" }, { name: 'Poppins', value: "'Poppins', sans-serif" }, { name: 'Playfair Display', value: "'Playfair Display', serif" }, { name: 'Merriweather', value: "'Merriweather', serif" }, { name: 'Nunito', value: "'Nunito', sans-serif" }, { name: 'Raleway', value: "'Raleway', sans-serif" }, { name: 'Oswald', value: "'Oswald', sans-serif" } ];
+
+    function normalizeDesignerFontValue(fontValue) {
+        const raw = String(fontValue || '').trim();
+        if (!raw) return DEFAULT_FONT_STACK;
+        return raw.replace(/Source Sans 3/gi, 'Source Sans Pro');
+    }
+
+    function extractPrimaryFontFamily(fontValue, fallback = 'Source Sans Pro') {
+        const normalized = normalizeDesignerFontValue(fontValue);
+        const primary = normalized.split(',')[0]?.trim().replace(/^['"]|['"]$/g, '');
+        return primary || fallback;
+    }
     const palette = [ '#16bfec', '#1e1d21', '#ffffff', '#FCB526', '#FF5C5C', '#965ADB', '#F36C21', '#22D460', '#08C4BE' ];
 
     const cssVarMap = {
@@ -257,6 +334,290 @@ The system is relationship-based and supported by tools such as Salesforce, repo
             .replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;')
             .replace(/'/g, '&#39;');
+    }
+
+    function createBlankDeckReferenceSource() {
+        return { text: '', interviewee: '', sourceLabel: '', timestamp: '' };
+    }
+
+    function cloneJsonData(value) {
+        return value == null ? value : JSON.parse(JSON.stringify(value));
+    }
+
+    function ensureDeckReferenceSourceDefaults(source) {
+        const base = source && typeof source === 'object' && !Array.isArray(source) ? source : {};
+        return {
+            text: String(base.text || '').trim(),
+            interviewee: String(base.interviewee || '').trim(),
+            sourceLabel: String(base.sourceLabel || '').trim(),
+            timestamp: String(base.timestamp || '').trim()
+        };
+    }
+
+    function normalizeDeckReferenceSources(list, fallbackSource = null) {
+        const rawList = Array.isArray(list) ? list : [];
+        const normalized = rawList
+            .map(item => ensureDeckReferenceSourceDefaults(item))
+            .filter(item => item.text || item.interviewee || item.sourceLabel || item.timestamp);
+        if (normalized.length) return normalized;
+        if (fallbackSource) {
+            const fallback = ensureDeckReferenceSourceDefaults(fallbackSource);
+            if (fallback.text || fallback.interviewee || fallback.sourceLabel || fallback.timestamp) return [fallback];
+        }
+        return [];
+    }
+
+    function ensureDeckReferenceDefaults(reference, fallbackId = null) {
+        const base = reference && typeof reference === 'object' && !Array.isArray(reference) ? reference : {};
+        const parsedId = Number(base.id ?? fallbackId);
+        const id = Number.isInteger(parsedId) && parsedId > 0 ? parsedId : null;
+        const legacySource = {
+            text: base.text,
+            interviewee: base.interviewee,
+            sourceLabel: base.sourceLabel,
+            timestamp: base.timestamp
+        };
+        return {
+            id,
+            sources: normalizeDeckReferenceSources(base.sources, legacySource)
+        };
+    }
+
+    function getDeckReferenceSources(reference, includeBlank = false) {
+        const normalized = normalizeDeckReferenceSources(reference?.sources);
+        if (normalized.length) return normalized;
+        return includeBlank ? [createBlankDeckReferenceSource()] : [];
+    }
+
+    function normalizeDeckReferences(list) {
+        if (!Array.isArray(list)) return [];
+        const seen = new Set();
+        return list
+            .map((item, index) => ensureDeckReferenceDefaults(item, index + 1))
+            .filter(item => item.id && !seen.has(item.id) && (seen.add(item.id), true))
+            .sort((a, b) => a.id - b.id);
+    }
+
+    function getDeckReferenceById(referenceId) {
+        const numericId = Number(referenceId);
+        if (!Number.isInteger(numericId) || numericId <= 0) return null;
+        return deckReferences.find(item => item.id === numericId) || null;
+    }
+
+    function getNextDeckReferenceId() {
+        return deckReferences.reduce((maxId, item) => Math.max(maxId, Number(item?.id) || 0), 0) + 1;
+    }
+
+    function ensureDeckReferenceById(referenceId, options = {}) {
+        const numericId = Number(referenceId);
+        if (!Number.isInteger(numericId) || numericId <= 0) return null;
+        const existing = getDeckReferenceById(numericId);
+        if (existing) return existing;
+        const created = ensureDeckReferenceDefaults({ id: numericId, sources: [createBlankDeckReferenceSource()] }, numericId);
+        deckReferences = normalizeDeckReferences([...deckReferences, created]);
+        if (options.save !== false) saveState();
+        return getDeckReferenceById(numericId);
+    }
+
+    function extractReferenceIdsFromText(text) {
+        const ids = [];
+        const seen = new Set();
+        const matches = String(text || '').matchAll(/\((\d+)\)/g);
+        for (const match of matches) {
+            const id = Number(match[1]);
+            if (!Number.isInteger(id) || id <= 0 || seen.has(id)) continue;
+            seen.add(id);
+            ids.push(id);
+        }
+        return ids;
+    }
+
+    function formatDeckSourceAttribution(source) {
+        if (appConfig.hideSourceAttribution) return '';
+        const bits = [];
+        const interviewee = String(source?.interviewee || '').trim();
+        const sourceLabel = String(source?.sourceLabel || '').trim();
+        const timestamp = String(source?.timestamp || '').trim();
+        if (interviewee) bits.push(interviewee);
+        else if (sourceLabel) bits.push(sourceLabel);
+        if (timestamp) bits.push(timestamp);
+        return bits.join(' · ');
+    }
+
+    function formatDeckReferenceSummary(referenceId) {
+        const reference = getDeckReferenceById(referenceId);
+        if (!reference) return `(${referenceId}) Missing reference`;
+        const sources = getDeckReferenceSources(reference);
+        if (!sources.length) return `(${referenceId}) Empty reference`;
+        if (appConfig.hideSourceAttribution) {
+            return `(${referenceId}) ${sources.length} source${sources.length === 1 ? '' : 's'}`;
+        }
+        const first = sources[0];
+        const label = first.interviewee || first.sourceLabel || 'Source';
+        return `(${referenceId}) ${label}${sources.length > 1 ? ` +${sources.length - 1}` : ''}`;
+    }
+
+    function renderInlineReferenceMarkers(text) {
+        return String(text || '').replace(/\((\d+)\)/g, (_, rawId) => {
+            const referenceId = Number(rawId);
+            const exists = !!getDeckReferenceById(referenceId);
+            return `<sup class="inline-reference-marker${exists ? '' : ' missing'}" data-role="inline-ref-marker" data-ref-id="${referenceId}" title="${escapeHtml(formatDeckReferenceSummary(referenceId))}">(${referenceId})</sup>`;
+        });
+    }
+
+    function renderPlainTextWithReferenceMarkers(text) {
+        return renderInlineReferenceMarkers(escapeHtml(text || ''));
+    }
+
+    function collectReferenceIdsFromField(field) {
+        if (!field) return [];
+        if (field.mode === 'text') return extractReferenceIdsFromText(field.text || '');
+        if (field.mode === 'quote') return extractReferenceIdsFromText(field.quoteText || '');
+        return [];
+    }
+
+    function collectReferenceIdsForSlide(slide) {
+        ensureSlideSchema(slide);
+        const ids = [];
+        const seen = new Set();
+        const addIds = (nextIds) => {
+            nextIds.forEach(id => {
+                if (seen.has(id)) return;
+                seen.add(id);
+                ids.push(id);
+            });
+        };
+        if (slide.type === 'standard' || slide.type === 'image') addIds(collectReferenceIdsFromField(slide.bodyField));
+        if (slide.type === 'two-column') {
+            addIds(collectReferenceIdsFromField(slide.columns?.leftField));
+            addIds(collectReferenceIdsFromField(slide.columns?.bottomField));
+            addIds(collectReferenceIdsFromField(slide.columns?.rightField));
+        }
+        return ids;
+    }
+
+    function remapReferenceIdsInText(text, idMap) {
+        return String(text || '').replace(/\((\d+)\)/g, (_, rawId) => {
+            const mappedId = idMap.get(Number(rawId));
+            return mappedId ? `(${mappedId})` : `(${rawId})`;
+        });
+    }
+
+    function remapReferenceIdsInField(field, idMap) {
+        if (!field) return;
+        if (field.mode === 'text') {
+            field.text = remapReferenceIdsInText(field.text || '', idMap);
+            return;
+        }
+        if (field.mode === 'quote') {
+            field.quoteText = remapReferenceIdsInText(field.quoteText || '', idMap);
+        }
+    }
+
+    function remapReferenceIdsForSlide(slide, idMap) {
+        if (!slide || !(idMap instanceof Map) || !idMap.size) return slide;
+        ensureSlideSchema(slide);
+        if (slide.type === 'standard' || slide.type === 'image') {
+            remapReferenceIdsInField(slide.bodyField, idMap);
+            if (slide.bodyField?.mode === 'text') slide.content = slide.bodyField.text || '';
+            return slide;
+        }
+        if (slide.type === 'two-column') {
+            remapReferenceIdsInField(slide.columns?.leftField, idMap);
+            remapReferenceIdsInField(slide.columns?.bottomField, idMap);
+            remapReferenceIdsInField(slide.columns?.rightField, idMap);
+            return slide;
+        }
+        return slide;
+    }
+
+    function buildSlideClipboardPayload(slideIndices = [currentSlideIndex]) {
+        const indices = Array.isArray(slideIndices) ? slideIndices : [slideIndices];
+        const copiedSlides = [];
+        const copiedReferenceIds = [];
+        const seenReferenceIds = new Set();
+
+        indices.forEach(index => {
+            const slide = slidesData[index];
+            if (!slide) return;
+            const copiedSlide = ensureSlideSchema(cloneJsonData(slide));
+            copiedSlides.push(copiedSlide);
+            collectReferenceIdsForSlide(copiedSlide).forEach(referenceId => {
+                if (seenReferenceIds.has(referenceId)) return;
+                seenReferenceIds.add(referenceId);
+                copiedReferenceIds.push(referenceId);
+            });
+        });
+
+        const payload = {
+            meta: {
+                designerPayloadType: 'slide-clipboard',
+                slideClipboard: true,
+                slideCount: copiedSlides.length,
+                copiedFromDeckId: currentDeckId || null,
+                copiedFromDeckName: getCurrentDeckDisplayName(),
+                copiedAt: new Date().toISOString()
+            },
+            slides: copiedSlides
+        };
+
+        const copiedReferences = copiedReferenceIds
+            .map(referenceId => getDeckReferenceById(referenceId))
+            .filter(Boolean)
+            .map(reference => cloneJsonData(reference));
+
+        if (copiedReferences.length) payload.references = copiedReferences;
+        return payload;
+    }
+
+    function renderDeckReferencePreview(referenceId) {
+        const modal = document.getElementById('reference-preview-modal');
+        const titleEl = document.getElementById('reference-preview-title');
+        const listEl = document.getElementById('reference-preview-list');
+        if (!modal || !titleEl || !listEl) return;
+        const reference = getDeckReferenceById(referenceId);
+        titleEl.textContent = `Source (${referenceId})`;
+        if (!reference) {
+                listEl.innerHTML = `<div class="reference-preview-empty">Reference (${referenceId}) is missing.</div>`;
+            return;
+        }
+        const sources = getDeckReferenceSources(reference);
+        listEl.innerHTML = sources.length
+            ? sources.map((source, index) => {
+                const attribution = formatDeckSourceAttribution(source);
+                return `<div class="reference-preview-item">
+                    <div class="reference-preview-number">${index === 0 ? `(${referenceId})` : '...'} </div>
+                    <div class="reference-preview-body">
+                        <div class="reference-preview-quote">${escapeHtml(source.text || 'Supporting quote')}</div>
+                        ${attribution ? `<div class="reference-preview-attrib">${escapeHtml(attribution)}</div>` : ''}
+                    </div>
+                </div>`;
+            }).join('')
+            : '<div class="reference-preview-empty">This reference does not have any supporting quotes yet.</div>';
+    }
+
+    function openReferencePreview(referenceId) {
+        const modal = document.getElementById('reference-preview-modal');
+        if (!modal) return;
+        modal.dataset.refId = String(referenceId);
+        renderDeckReferencePreview(referenceId);
+        modal.classList.add('open');
+    }
+
+    function closeReferencePreview() {
+        const modal = document.getElementById('reference-preview-modal');
+        if (!modal) return;
+        delete modal.dataset.refId;
+        modal.classList.remove('open');
+    }
+
+    function getTwoColumnLayoutMode(slide) {
+        return slide?.columns?.layoutMode === 'stacked-left' ? 'stacked-left' : 'side-by-side';
+    }
+
+    function getStackedLeftSplitPct(slide) {
+        const rawValue = Number(slide?.columns?.stackSplitPct ?? 50);
+        return Number.isFinite(rawValue) ? Math.max(25, Math.min(75, rawValue)) : 50;
     }
 
     function getTrimmedConfigValue(key) {
@@ -281,8 +642,19 @@ The system is relationship-based and supported by tools such as Salesforce, repo
 
     function getFieldAsyncState(slideIndex, fieldPath) {
         const key = getFieldRequestKey(slideIndex, fieldPath);
+        const slide = slidesData[slideIndex];
+        const field = slide ? getByPath(slide, fieldPath) : null;
         if (!FIELD_ASYNC_STATE.has(key)) {
-            FIELD_ASYNC_STATE.set(key, { promptPending: false, generateQueued: false, requestId: 0, promptPromise: null });
+            FIELD_ASYNC_STATE.set(key, {
+                promptPending: !!field?.imagePromptPending,
+                generateQueued: !!field?.imageGenerateQueued,
+                requestId: 0,
+                promptPromise: null
+            });
+        } else if (field && !FIELD_ASYNC_STATE.get(key).promptPromise) {
+            const state = FIELD_ASYNC_STATE.get(key);
+            state.promptPending = !!field.imagePromptPending;
+            state.generateQueued = !!field.imageGenerateQueued;
         }
         return FIELD_ASYNC_STATE.get(key);
     }
@@ -392,12 +764,14 @@ The system is relationship-based and supported by tools such as Salesforce, repo
             if (bodySummary) parts.push(bodySummary);
         } else if (slide.type === 'two-column') {
             const leftSummary = collectFieldContextText(slide.columns?.leftField, 'Left column');
+            const bottomSummary = collectFieldContextText(slide.columns?.bottomField, 'Bottom-left support');
             const rightSummary = collectFieldContextText(slide.columns?.rightField, 'Right column');
             if (leftSummary) parts.push(leftSummary);
+            if (bottomSummary) parts.push(bottomSummary);
             if (rightSummary) parts.push(rightSummary);
         }
         if (speakerNotes) parts.push(`Speaker notes: ${speakerNotes}`);
-        parts.push(`Target field: ${fieldPath === 'bodyField' ? 'main panel image' : fieldPath === 'columns.leftField' ? 'left column image' : 'right column image'}`);
+        parts.push(`Target field: ${fieldPath === 'bodyField' ? 'main panel image' : fieldPath === 'columns.leftField' ? 'left column image' : fieldPath === 'columns.bottomField' ? 'bottom-left image' : 'right column image'}`);
         return parts.filter(Boolean).join('\n');
     }
 
@@ -437,6 +811,127 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         if (notesEl && document.activeElement !== notesEl) notesEl.value = value;
     }
 
+    function updateFieldPromptFlags(field, promptPending, generateQueued) {
+        if (!field) return;
+        field.imagePromptPending = !!promptPending;
+        field.imageGenerateQueued = !!generateQueued;
+    }
+
+    function renderReferenceManager(focusId = null) {
+        const listEl = document.getElementById('reference-list');
+        if (!listEl) return;
+        deckReferences = normalizeDeckReferences(deckReferences);
+        if (!deckReferences.length) {
+            listEl.innerHTML = '<div class="reference-empty">No deck references yet. Add one, then cite it inline with markers like (1) or (12).</div>';
+            return;
+        }
+        listEl.innerHTML = deckReferences.map(reference => `
+            <div class="reference-item${focusId === reference.id ? ' active' : ''}" data-ref-id="${reference.id}">
+                <div class="reference-item-head">
+                    <div class="reference-item-number">(${reference.id})</div>
+                    <div class="reference-item-actions">
+                        <button type="button" class="reference-add-source-btn" data-role="add-reference-source" data-ref-id="${reference.id}">Add Quote</button>
+                        <button type="button" class="reference-delete-btn" data-role="delete-reference" data-ref-id="${reference.id}">Delete</button>
+                    </div>
+                </div>
+                <div class="reference-item-note">One marker number can point to multiple supporting quotes. List every quote that supports that sentence here.</div>
+                <div class="reference-sources-list">
+                    ${getDeckReferenceSources(reference, true).map((source, sourceIndex) => `
+                        <div class="reference-source-item" data-ref-id="${reference.id}" data-source-index="${sourceIndex}">
+                            <div class="reference-source-head">
+                                <div class="reference-source-label">Supporting Quote ${sourceIndex + 1}</div>
+                                ${getDeckReferenceSources(reference, true).length > 1 ? `<button type="button" class="reference-delete-source-btn" data-role="delete-reference-source" data-ref-id="${reference.id}" data-source-index="${sourceIndex}">Remove</button>` : ''}
+                            </div>
+                            <div class="reference-item-grid">
+                                <label>
+                                    Interviewee
+                                    <input type="text" data-role="reference-source-input" data-ref-id="${reference.id}" data-source-index="${sourceIndex}" data-ref-field="interviewee" value="${escapeHtml(source.interviewee)}" placeholder="Person name or role">
+                                </label>
+                                <label>
+                                    Source Label
+                                    <input type="text" data-role="reference-source-input" data-ref-id="${reference.id}" data-source-index="${sourceIndex}" data-ref-field="sourceLabel" value="${escapeHtml(source.sourceLabel)}" placeholder="Transcript or source label">
+                                </label>
+                                <label>
+                                    Timestamp
+                                    <input type="text" data-role="reference-source-input" data-ref-id="${reference.id}" data-source-index="${sourceIndex}" data-ref-field="timestamp" value="${escapeHtml(source.timestamp)}" placeholder="Optional time or block id">
+                                </label>
+                            </div>
+                            <label class="reference-text-label">
+                                Supporting Quote / Evidence
+                                <textarea data-role="reference-source-input" data-ref-id="${reference.id}" data-source-index="${sourceIndex}" data-ref-field="text" rows="4" placeholder="Paste one supporting quote or evidence text.">${escapeHtml(source.text)}</textarea>
+                            </label>
+                        </div>`).join('')}
+                </div>
+            </div>`).join('');
+    }
+
+    function openReferenceManager(focusId = null) {
+        const modal = document.getElementById('reference-modal');
+        if (!modal) return;
+        if (focusId != null) ensureDeckReferenceById(focusId);
+        renderReferenceManager(focusId);
+        modal.classList.add('open');
+        if (focusId != null) {
+            const target = modal.querySelector(`.reference-item[data-ref-id="${focusId}"] textarea, .reference-item[data-ref-id="${focusId}"] input`);
+            if (target) target.focus();
+        }
+    }
+
+    function closeReferenceManager() {
+        const modal = document.getElementById('reference-modal');
+        if (!modal) return;
+        modal.classList.remove('open');
+        render();
+        showSlide(currentSlideIndex);
+    }
+
+    function addDeckReference(prefilledId = null) {
+        const nextId = Number.isInteger(Number(prefilledId)) && Number(prefilledId) > 0 ? Number(prefilledId) : getNextDeckReferenceId();
+        ensureDeckReferenceById(nextId);
+        renderReferenceManager(nextId);
+    }
+
+    function updateDeckReferenceSourceField(referenceId, sourceIndex, fieldName, value) {
+        const reference = getDeckReferenceById(referenceId);
+        if (!reference || !['text', 'interviewee', 'sourceLabel', 'timestamp'].includes(fieldName)) return;
+        const sources = getDeckReferenceSources(reference, true);
+        const numericIndex = Number(sourceIndex);
+        if (!Number.isInteger(numericIndex) || numericIndex < 0 || numericIndex >= sources.length) return;
+        sources[numericIndex][fieldName] = String(value || '');
+        reference.sources = normalizeDeckReferenceSources(sources, createBlankDeckReferenceSource());
+        saveState();
+    }
+
+    function addDeckReferenceSource(referenceId) {
+        const reference = ensureDeckReferenceById(referenceId);
+        if (!reference) return;
+        const sources = getDeckReferenceSources(reference, true);
+        sources.push(createBlankDeckReferenceSource());
+        reference.sources = sources;
+        saveState();
+        renderReferenceManager(reference.id);
+    }
+
+    function deleteDeckReferenceSource(referenceId, sourceIndex) {
+        const reference = getDeckReferenceById(referenceId);
+        if (!reference) return;
+        const sources = getDeckReferenceSources(reference, true);
+        const numericIndex = Number(sourceIndex);
+        if (!Number.isInteger(numericIndex) || numericIndex < 0 || numericIndex >= sources.length) return;
+        sources.splice(numericIndex, 1);
+        reference.sources = sources.length ? sources : [createBlankDeckReferenceSource()];
+        saveState();
+        renderReferenceManager(reference.id);
+    }
+
+    function deleteDeckReference(referenceId) {
+        const numericId = Number(referenceId);
+        if (!Number.isInteger(numericId) || numericId <= 0) return;
+        deckReferences = deckReferences.filter(reference => reference.id !== numericId);
+        saveState();
+        renderReferenceManager();
+    }
+
     function setSettingsStatus(id, message, isError = false) {
         const el = document.getElementById(id);
         if (!el) return;
@@ -444,20 +939,266 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         el.classList.toggle('error', !!isError);
     }
 
+    function createStarterDeckPayload() {
+        const config = {};
+        fillConfigFromActivePreset(config);
+        config.shapePath = config.shapePath || defaultShapePath;
+        config.shapeViewBox = config.shapeViewBox || defaultViewBox;
+        return {
+            config,
+            references: [],
+            slides: [{ type: 'cover', title: 'Start', subtitle: 'Import JSON to begin' }]
+        };
+    }
+
+    function createDeckId() {
+        return `deck_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    }
+
+    function getDeckDbKey(deckId) {
+        return `${DESIGNER_DECK_RECORD_PREFIX}${deckId}`;
+    }
+
+    function getDeckLocalCacheKey(deckId) {
+        return `${DESIGNER_DECK_LOCAL_PREFIX}${deckId}`;
+    }
+
+    function formatDeckTimestamp(dateIso) {
+        const dt = new Date(dateIso || Date.now());
+        if (Number.isNaN(dt.getTime())) return 'unknown time';
+        return dt.toLocaleString(undefined, {
+            year: 'numeric',
+            month: 'short',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    }
+
+    function getCurrentDeckDisplayName(record = null) {
+        return getCurrentDeckFileLabel(record);
+    }
+
+    function rememberActiveDeckId(deckId) {
+        try {
+            if (deckId) {
+                sessionStorage.setItem(DESIGNER_ACTIVE_DECK_SESSION_KEY, deckId);
+                localStorage.setItem(DESIGNER_LAST_OPENED_DECK_KEY, deckId);
+            } else {
+                sessionStorage.removeItem(DESIGNER_ACTIVE_DECK_SESSION_KEY);
+            }
+        } catch (err) {
+            console.warn('[Designer] Could not update active deck identity:', err);
+        }
+    }
+
+    function getPreferredDeckId() {
+        try {
+            return sessionStorage.getItem(DESIGNER_ACTIVE_DECK_SESSION_KEY)
+                || localStorage.getItem(DESIGNER_LAST_OPENED_DECK_KEY)
+                || '';
+        } catch {
+            return '';
+        }
+    }
+
+    function ensureCurrentDeckIdentity(options = {}) {
+        if (currentDeckId) return currentDeckId;
+        currentDeckId = String(options.deckId || createDeckId()).trim();
+        currentDeckName = String(options.name || '').trim();
+        currentDeckCreatedAt = String(options.createdAt || new Date().toISOString()).trim();
+        currentDeckUpdatedAt = String(options.updatedAt || '').trim();
+        rememberActiveDeckId(currentDeckId);
+        return currentDeckId;
+    }
+
+    function normalizeRuntimeDeckState() {
+        if (typeof appConfig.showShapes !== 'boolean') appConfig.showShapes = true;
+        if (typeof appConfig.hideAttrib !== 'boolean') appConfig.hideAttrib = false;
+        if (typeof appConfig.hideSourceAttribution !== 'boolean') appConfig.hideSourceAttribution = false;
+        if (typeof appConfig.hideAllImages !== 'boolean') appConfig.hideAllImages = false;
+        if (typeof appConfig.imagePromptStyle !== 'string') appConfig.imagePromptStyle = '';
+        if (typeof appConfig.universalQuoteAttribution !== 'string') appConfig.universalQuoteAttribution = '';
+        if (typeof appConfig.showSpeakerNotes !== 'boolean') appConfig.showSpeakerNotes = false;
+
+        if (!appConfig.typeOffsets) appConfig.typeOffsets = {};
+        if (!appConfig.typeOffsets.cover) appConfig.typeOffsets.cover = { x: 0, y: 0 };
+        if (!appConfig.typeOffsets.section) appConfig.typeOffsets.section = { x: 0, y: 0 };
+        if (!appConfig.typeOffsets.standard) appConfig.typeOffsets.standard = { x: 0, y: 0 };
+        if (!appConfig.typeOffsets.image) appConfig.typeOffsets.image = { x: 0, y: 0 };
+        if (!appConfig.typeOffsets['two-column']) appConfig.typeOffsets['two-column'] = { x: 0, y: 0 };
+        slidesData = (slidesData || []).map(ensureSlideSchema);
+
+        fillConfigFromActivePreset(appConfig);
+    }
+
+    function applyDeckPayload(payload, options = {}) {
+        appConfig = payload?.config || {};
+        deckReferences = normalizeDeckReferences(payload?.references);
+        slidesData = Array.isArray(payload?.slides) && payload.slides.length
+            ? payload.slides.map(ensureSlideSchema)
+            : createStarterDeckPayload().slides.map(ensureSlideSchema);
+        normalizeRuntimeDeckState();
+        applyConfig();
+        render();
+        if (options.resize !== false) resizeStage();
+        updateSettingsUI();
+        showSlide(Number.isInteger(options.slideIndex) ? options.slideIndex : 0);
+        resumePendingImagePrompts();
+    }
+
+    function parseStoredDeckRecord(rawRecord) {
+        if (!rawRecord) return null;
+        let parsed = rawRecord;
+        try {
+            if (typeof rawRecord === 'string') parsed = JSON.parse(rawRecord);
+        } catch {
+            return null;
+        }
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+        if (!parsed.deck || !Array.isArray(parsed.deck.slides)) return null;
+        const id = String(parsed.id || '').trim();
+        if (!id) return null;
+        return {
+            id,
+            name: String(parsed.name || '').trim(),
+            createdAt: String(parsed.createdAt || '').trim() || new Date().toISOString(),
+            updatedAt: String(parsed.updatedAt || '').trim(),
+            lastOpenedAt: String(parsed.lastOpenedAt || '').trim(),
+            slideCount: Number(parsed.slideCount || parsed.deck?.slides?.length || 0),
+            firstTitle: String(parsed.firstTitle || parsed.deck?.slides?.[0]?.title || '').trim(),
+            deck: parsed.deck
+        };
+    }
+
+    function applyDeckRecord(record, options = {}) {
+        if (!record) return false;
+        currentDeckId = record.id;
+        currentDeckName = record.name;
+        currentDeckCreatedAt = record.createdAt;
+        currentDeckUpdatedAt = record.updatedAt;
+        rememberActiveDeckId(currentDeckId);
+        const serializedDeck = JSON.stringify(record.deck || {});
+        lastRemoteDeckSnapshot = serializedDeck;
+        lastRemoteDeckFingerprint = buildDeckFingerprint(serializedDeck, record.id, record.name);
+        lastDeckLoadedFromRemote = serializedDeck;
+        applyDeckPayload(record.deck, options);
+        if (options.persistLocal !== false) {
+            try {
+                localStorage.setItem(getDeckLocalCacheKey(record.id), JSON.stringify(record));
+            } catch (err) {
+                console.warn('[Designer] Could not cache deck locally:', err);
+            }
+        }
+        upsertDeckLibraryEntry(record);
+        updateDeckManagementUI();
+        return true;
+    }
+
+    function buildCurrentDeckRecord(serializedDeck = serializeDeckState()) {
+        ensureCurrentDeckIdentity();
+        const nowIso = new Date().toISOString();
+        const createdAt = currentDeckCreatedAt || nowIso;
+        currentDeckCreatedAt = createdAt;
+        currentDeckUpdatedAt = nowIso;
+        return {
+            id: currentDeckId,
+            name: currentDeckName || '',
+            createdAt,
+            updatedAt: nowIso,
+            lastOpenedAt: nowIso,
+            slideCount: Array.isArray(slidesData) ? slidesData.length : 0,
+            firstTitle: String(slidesData?.[0]?.title || '').trim(),
+            deck: JSON.parse(serializedDeck)
+        };
+    }
+
+    function buildDeckFingerprint(serializedDeck, deckId = currentDeckId, deckName = currentDeckName) {
+        return JSON.stringify({ deckId: deckId || '', deckName: deckName || '', serializedDeck: serializedDeck || '' });
+    }
+
+    function upsertDeckLibraryEntry(record) {
+        if (!record?.id) return;
+        const normalized = {
+            id: record.id,
+            name: String(record.name || '').trim(),
+            createdAt: String(record.createdAt || '').trim() || new Date().toISOString(),
+            updatedAt: String(record.updatedAt || '').trim() || new Date().toISOString(),
+            lastOpenedAt: String(record.lastOpenedAt || '').trim(),
+            slideCount: Number(record.slideCount || record.deck?.slides?.length || 0),
+            firstTitle: String(record.firstTitle || record.deck?.slides?.[0]?.title || '').trim(),
+            deck: record.deck
+        };
+        cachedDeckLibrary = cachedDeckLibrary.filter(item => item.id !== normalized.id);
+        cachedDeckLibrary.unshift(normalized);
+        cachedDeckLibrary.sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+        renderDeckLibrary();
+    }
+
+    function renderDeckLibrary() {
+        const listEl = document.getElementById('deck-library-list');
+        if (!listEl) return;
+        if (!cachedDeckLibrary.length) {
+            listEl.innerHTML = '<div class="reference-empty">No saved decks found in DB yet.</div>';
+            return;
+        }
+        listEl.innerHTML = cachedDeckLibrary.map(record => {
+            const slideCount = Number(record.slideCount || 0);
+            const summary = [
+                `Updated ${formatDeckTimestamp(record.updatedAt || record.createdAt)}`,
+                `${slideCount} slide${slideCount === 1 ? '' : 's'}`
+            ];
+            if (record.firstTitle) summary.push(record.firstTitle);
+            return `<div class="deck-library-item ${record.id === currentDeckId ? 'active' : ''}" onclick="openDeckById('${escapeHtml(record.id)}')">
+                <div class="deck-library-item-main">
+                    <span class="deck-library-item-title">${escapeHtml(getCurrentDeckDisplayName(record))}</span>
+                    <span class="deck-library-item-meta">${escapeHtml(summary.join(' | '))}</span>
+                </div>
+                <button class="btn-outline deck-library-open-btn" onclick="event.stopPropagation(); openDeckById('${escapeHtml(record.id)}')">Open</button>
+            </div>`;
+        }).join('');
+    }
+
+    function updateDeckManagementUI() {
+        const nameInput = document.getElementById('deck-name-input');
+        const metaEl = document.getElementById('current-deck-meta');
+        if (nameInput) {
+            if (document.activeElement !== nameInput) nameInput.value = currentDeckName || '';
+            nameInput.placeholder = getCurrentDeckDisplayName();
+        }
+        if (metaEl) {
+            if (!currentDeckId) {
+                metaEl.textContent = 'No saved deck is active in this tab yet. Import JSON or start editing to create one.';
+            } else {
+                const bits = [`ID: ${currentDeckId}`, `Created ${formatDeckTimestamp(currentDeckCreatedAt)}`];
+                if (currentDeckUpdatedAt) bits.push(`Last saved ${formatDeckTimestamp(currentDeckUpdatedAt)}`);
+                metaEl.textContent = bits.join(' | ');
+            }
+        }
+        renderDeckFilenameBanner();
+        renderDeckLibrary();
+    }
+
     function serializeDeckState(pretty = false) {
-        return JSON.stringify({ config: appConfig, slides: slidesData }, null, pretty ? 2 : 0);
+        return JSON.stringify({ config: appConfig, slides: slidesData, references: deckReferences }, null, pretty ? 2 : 0);
     }
 
     async function saveDeckSnapshotToDb(serializedDeck = serializeDeckState(), options = {}) {
-        if (!serializedDeck || serializedDeck === lastRemoteDeckSnapshot) return true;
+        if (!currentDeckId) ensureCurrentDeckIdentity();
+        const fingerprint = buildDeckFingerprint(serializedDeck);
+        if (!serializedDeck || fingerprint === lastRemoteDeckFingerprint) return true;
         try {
+            const record = buildCurrentDeckRecord(serializedDeck);
             const DBHelper = await initDesignerDb();
             await DBHelper.query(
                 DESIGNER_DB_APP_NAME,
                 'INSERT INTO kv_store (namespace, key_name, value_json, updated_at) VALUES (?, ?, ?, NOW()) ON DUPLICATE KEY UPDATE value_json = VALUES(value_json), updated_at = NOW()',
-                [DESIGNER_DECK_NAMESPACE, DESIGNER_DECK_AUTOSAVE_KEY, serializedDeck]
+                [DESIGNER_DECK_NAMESPACE, getDeckDbKey(currentDeckId), JSON.stringify(record)]
             );
             lastRemoteDeckSnapshot = serializedDeck;
+            lastRemoteDeckFingerprint = buildDeckFingerprint(serializedDeck, record.id, record.name);
+            upsertDeckLibraryEntry(record);
+            updateDeckManagementUI();
             if (options.showToastOnSuccess) showToast('Deck autosaved to DB.');
             return true;
         } catch (err) {
@@ -512,34 +1253,149 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         }
     }
 
-    async function hydrateRemoteDeckAutosave(preferRemote = false) {
+    function loadDeckRecordFromLocal(deckId) {
+        if (!deckId) return null;
+        try {
+            return parseStoredDeckRecord(localStorage.getItem(getDeckLocalCacheKey(deckId)));
+        } catch {
+            return null;
+        }
+    }
+
+    async function loadDeckRecordFromDb(deckId) {
+        if (!deckId) return null;
         try {
             const DBHelper = await initDesignerDb();
             const result = await DBHelper.query(
                 DESIGNER_DB_APP_NAME,
                 'SELECT value_json FROM kv_store WHERE namespace = ? AND key_name = ? LIMIT 1',
-                [DESIGNER_DECK_NAMESPACE, DESIGNER_DECK_AUTOSAVE_KEY]
+                [DESIGNER_DECK_NAMESPACE, getDeckDbKey(deckId)]
+            );
+            return parseStoredDeckRecord(result?.rows?.[0]?.value_json || null);
+        } catch (err) {
+            console.warn('[Designer] Failed to load deck from DB:', err);
+            return null;
+        }
+    }
+
+    async function reloadDeckLibrary(showToastOnSuccess = false) {
+        try {
+            const DBHelper = await initDesignerDb();
+            const result = await DBHelper.query(
+                DESIGNER_DB_APP_NAME,
+                'SELECT key_name, value_json, updated_at FROM kv_store WHERE namespace = ? AND key_name LIKE ? ORDER BY updated_at DESC',
+                [DESIGNER_DECK_NAMESPACE, `${DESIGNER_DECK_RECORD_PREFIX}%`]
+            );
+            cachedDeckLibrary = (result?.rows || [])
+                .map(row => parseStoredDeckRecord(row.value_json || null))
+                .filter(Boolean)
+                .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+            renderDeckLibrary();
+            if (showToastOnSuccess) showToast('Deck list reloaded from DB.');
+            return true;
+        } catch (err) {
+            console.warn('[Designer] Failed to load deck library:', err);
+            setSettingsStatus('deck-doc-status', 'Could not load deck list from DB.', true);
+            if (showToastOnSuccess) showToast('Could not load deck list from DB.', 'error', 3200);
+            return false;
+        }
+    }
+
+    async function openDeckById(deckId) {
+        const normalizedId = String(deckId || '').trim();
+        if (!normalizedId) return false;
+        const localRecord = loadDeckRecordFromLocal(normalizedId);
+        if (localRecord && applyDeckRecord(localRecord, { persistLocal: false })) {
+            setSettingsStatus('deck-doc-status', `Loaded ${getCurrentDeckDisplayName(localRecord)} from local cache.`);
+            showToast(`Loaded ${getCurrentDeckDisplayName(localRecord)}.`);
+            return true;
+        }
+        const remoteRecord = await loadDeckRecordFromDb(normalizedId);
+        if (!remoteRecord) {
+            setSettingsStatus('deck-doc-status', 'Could not load that deck from DB.', true);
+            showToast('Could not load that deck from DB.', 'error', 3200);
+            return false;
+        }
+        applyDeckRecord(remoteRecord);
+        setSettingsStatus('deck-doc-status', `Loaded ${getCurrentDeckDisplayName(remoteRecord)} from DB.`);
+        showToast(`Loaded ${getCurrentDeckDisplayName(remoteRecord)}.`);
+        return true;
+    }
+
+    function updateCurrentDeckName() {
+        currentDeckName = String(document.getElementById('deck-name-input')?.value || '').trim();
+        updateDeckManagementUI();
+        saveState();
+    }
+
+    function createNewBlankDeck() {
+        if (!confirm('Start a new blank deck in this tab? The current deck is already autosaved.')) return;
+        const starter = createStarterDeckPayload();
+        currentDeckId = '';
+        currentDeckName = '';
+        currentDeckCreatedAt = '';
+        currentDeckUpdatedAt = '';
+        lastRemoteDeckSnapshot = '';
+        lastRemoteDeckFingerprint = '';
+        lastDeckLoadedFromRemote = '';
+        ensureCurrentDeckIdentity({ createdAt: new Date().toISOString() });
+        applyDeckPayload(starter);
+        saveState(true);
+        setSettingsStatus('deck-doc-status', 'Started a new blank deck.');
+        showToast('Started a new blank deck.');
+    }
+
+    function migrateLegacyLocalAutosave() {
+        try {
+            const legacy = JSON.parse(localStorage.getItem(LEGACY_LOCAL_DECK_AUTOSAVE_KEY) || 'null');
+            if (!legacy || !Array.isArray(legacy.slides)) return false;
+            currentDeckId = '';
+            currentDeckName = '';
+            currentDeckCreatedAt = '';
+            currentDeckUpdatedAt = '';
+            lastRemoteDeckSnapshot = '';
+            lastRemoteDeckFingerprint = '';
+            lastDeckLoadedFromRemote = '';
+            ensureCurrentDeckIdentity({ createdAt: new Date().toISOString() });
+            applyDeckPayload(legacy);
+            saveState(true);
+            localStorage.removeItem(LEGACY_LOCAL_DECK_AUTOSAVE_KEY);
+            setSettingsStatus('deck-doc-status', 'Migrated the previous local autosave into its own deck.');
+            showToast('Recovered the previous local autosave as its own deck.', 'info', 3200);
+            return true;
+        } catch (err) {
+            console.warn('[Designer] Failed to migrate legacy local autosave:', err);
+            return false;
+        }
+    }
+
+    async function migrateLegacyRemoteAutosave() {
+        try {
+            const DBHelper = await initDesignerDb();
+            const result = await DBHelper.query(
+                DESIGNER_DB_APP_NAME,
+                'SELECT value_json FROM kv_store WHERE namespace = ? AND key_name = ? LIMIT 1',
+                [DESIGNER_DECK_NAMESPACE, LEGACY_DESIGNER_DECK_AUTOSAVE_KEY]
             );
             const serializedDeck = String(result?.rows?.[0]?.value_json || '').trim();
             if (!serializedDeck) return false;
-            lastRemoteDeckSnapshot = serializedDeck;
-            if (!preferRemote || serializedDeck === lastDeckLoadedFromRemote) return true;
-
-            const parsed = JSON.parse(serializedDeck);
-            if (!parsed || !Array.isArray(parsed.slides)) return false;
-            appConfig = parsed.config || {};
-            slidesData = parsed.slides.map(ensureSlideSchema);
-            fillConfigFromActivePreset(appConfig);
-            if (!appConfig.typeOffsets) appConfig.typeOffsets = {};
-            for (const type of ['cover', 'section', 'standard', 'two-column']) {
-                if (!appConfig.typeOffsets[type]) appConfig.typeOffsets[type] = { x: 0, y: 0 };
-            }
-            lastDeckLoadedFromRemote = serializedDeck;
-            applyConfig(); render(); saveState(); showSlide(0);
-            showToast('Recovered the latest autosaved deck from DB.', 'info', 3200);
+            const legacy = JSON.parse(serializedDeck);
+            if (!legacy || !Array.isArray(legacy.slides)) return false;
+            currentDeckId = '';
+            currentDeckName = '';
+            currentDeckCreatedAt = '';
+            currentDeckUpdatedAt = '';
+            lastRemoteDeckSnapshot = '';
+            lastRemoteDeckFingerprint = '';
+            lastDeckLoadedFromRemote = '';
+            ensureCurrentDeckIdentity({ createdAt: new Date().toISOString() });
+            applyDeckPayload(legacy);
+            saveState(true);
+            setSettingsStatus('deck-doc-status', 'Recovered the previous DB autosave into its own deck.');
+            showToast('Recovered the previous DB autosave as its own deck.', 'info', 3200);
             return true;
         } catch (err) {
-            console.warn('[Designer] Failed to load remote deck autosave:', err);
+            console.warn('[Designer] Failed to migrate legacy remote autosave:', err);
             return false;
         }
     }
@@ -586,10 +1442,14 @@ The system is relationship-based and supported by tools such as Salesforce, repo
     function syncLayoutActionButtons() {
         const addBtn = document.getElementById('add-second-column-btn');
         const removeBtn = document.getElementById('remove-second-column-btn');
+        const stackedBtn = document.getElementById('stacked-layout-btn');
+        const sideBySideBtn = document.getElementById('side-by-side-layout-btn');
         const slide = slidesData[currentSlideIndex];
         const type = slide?.type;
         if (addBtn) addBtn.disabled = type !== 'standard';
         if (removeBtn) removeBtn.disabled = type !== 'two-column';
+        if (stackedBtn) stackedBtn.disabled = type !== 'two-column' || getTwoColumnLayoutMode(slide) === 'stacked-left';
+        if (sideBySideBtn) sideBySideBtn.disabled = type !== 'two-column' || getTwoColumnLayoutMode(slide) !== 'stacked-left';
     }
 
     async function getAiTools() {
@@ -789,20 +1649,62 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         const textScale = ['large', 'normal', 'small'].includes(base.textScale) ? base.textScale : 'normal';
         const rawDelta = Number(base.fontDelta ?? 0);
         const fontDelta = Number.isFinite(rawDelta) ? Math.max(-12, Math.min(12, rawDelta)) : 0;
+        const rawOffsetX = Number(base.offsetX ?? 0);
+        const rawOffsetY = Number(base.offsetY ?? 0);
+        const offsetX = Number.isFinite(rawOffsetX) ? rawOffsetX : 0;
+        const offsetY = Number.isFinite(rawOffsetY) ? rawOffsetY : 0;
         return {
             mode,
             text: base.text ?? fallbackText,
             imageUrl: base.imageUrl || '',
             imageAlign,
             imagePrompt: base.imagePrompt || '',   // AI-suggested image idea (preserved across mode switches)
-            imageNotes: base.imageNotes || '',         // alt-text / image description for accessibility & AI generation
+            imageNotes: base.imageNotes || base.imagePrompt || '',         // alt-text / image description for accessibility & AI generation
+            imagePromptPending: !!base.imagePromptPending,
+            imageGenerateQueued: !!base.imageGenerateQueued,
             imageHistory: Array.isArray(base.imageHistory) ? base.imageHistory : [],
             quoteText: base.quoteText ?? fallbackText,
             quoteAttribution: base.quoteAttribution || '',
             sources: Array.isArray(base.sources) ? base.sources : [],
             textScale,
-            fontDelta
+            fontDelta,
+            offsetX,
+            offsetY
         };
+    }
+
+    function nudgeSelectedElements(dx, dy) {
+        const slide = slidesData[currentSlideIndex];
+        if (!slide || !selectedElements.length) return false;
+        let moved = false;
+
+        selectedElements.forEach(el => {
+            if (el.classList.contains('title-wrapper')) {
+                slide.titleX = (slide.titleX || 0) + dx;
+                slide.titleY = (slide.titleY || 0) + dy;
+                el.style.transform = `translate(${slide.titleX}px, ${slide.titleY}px)`;
+                moved = true;
+                return;
+            }
+            if (el.classList.contains('body-wrapper')) {
+                slide.bodyX = (slide.bodyX || 0) + dx;
+                slide.bodyY = (slide.bodyY || 0) + dy;
+                el.style.transform = `translate(${slide.bodyX}px, ${slide.bodyY}px)`;
+                moved = true;
+                return;
+            }
+            if (el.classList.contains('quote-position-target')) {
+                const fieldPath = el.dataset.fieldPath;
+                const field = fieldPath ? getByPath(slide, fieldPath) : null;
+                if (!field) return;
+                field.offsetX = Number(field.offsetX || 0) + dx;
+                field.offsetY = Number(field.offsetY || 0) + dy;
+                el.style.transform = `translate(${field.offsetX}px, ${field.offsetY}px)`;
+                moved = true;
+            }
+        });
+
+        return moved;
     }
 
     function extractQuoteBubbleFromMarkdown(text) {
@@ -843,7 +1745,7 @@ The system is relationship-based and supported by tools such as Salesforce, repo
     }
 
     /** Recognized slide types → rendering pipelines */
-    const KNOWN_SLIDE_TYPES = new Set(['cover', 'section', 'standard', 'two-column']);
+    const KNOWN_SLIDE_TYPES = new Set(['cover', 'section', 'standard', 'image', 'two-column']);
 
     function ensureSlideSchema(slide) {
         if (!slide || typeof slide !== 'object') return { type: 'standard', title: '(empty)', content: '', speakerNotes: '', bodyField: ensureFieldDefaults({}, '') };
@@ -872,24 +1774,37 @@ The system is relationship-based and supported by tools such as Salesforce, repo
                     slide.type = 'two-column';
                     slide.content = parsedQuote.leftText || '';
                     slide.columns = {
+                        layoutMode: 'side-by-side',
                         splitPct: 55,
+                        stackSplitPct: 50,
                         leftField: ensureFieldDefaults({ mode: 'text', text: parsedQuote.leftText || '' }, parsedQuote.leftText || ''),
-                        rightField: ensureFieldDefaults({ mode: 'quote', quoteText: parsedQuote.quoteText, quoteAttribution: parsedQuote.speaker || '' }, '')
+                        rightField: ensureFieldDefaults({ mode: 'quote', quoteText: parsedQuote.quoteText, quoteAttribution: parsedQuote.speaker || '' }, ''),
+                        bottomField: ensureFieldDefaults({ mode: 'quote', quoteText: '', quoteAttribution: '' }, '')
                     };
                     delete slide.bodyField;
                 }
             }
         }
 
+        if (slide.type === 'image') {
+            slide.bodyField = ensureFieldDefaults({ ...(slide.bodyField || {}), mode: 'image' }, slide.content || '');
+            slide.bodyField.mode = 'image';
+        }
+
         // Two-column: ensure columns + sub-fields exist
         if (slide.type === 'two-column') {
             const leftBase = slide.columns?.leftField || { mode: 'text', text: slide.content || '' };
             const rightBase = slide.columns?.rightField || { mode: 'text', text: '' };
+            const bottomBase = slide.columns?.bottomField || { mode: 'quote', quoteText: '', quoteAttribution: '' };
             const splitPct = Number(slide.columns?.splitPct ?? 50);
+            const stackSplitPct = getStackedLeftSplitPct(slide);
             slide.columns = {
+                layoutMode: getTwoColumnLayoutMode(slide),
                 splitPct: Number.isFinite(splitPct) ? Math.max(20, Math.min(80, splitPct)) : 50,
+                stackSplitPct,
                 leftField: ensureFieldDefaults(leftBase, leftBase.text || ''),
-                rightField: ensureFieldDefaults(rightBase, rightBase.text || '')
+                rightField: ensureFieldDefaults(rightBase, rightBase.text || ''),
+                bottomField: ensureFieldDefaults(bottomBase, bottomBase.text || '')
             };
             if (!slide.content) slide.content = leftBase.text || '';
         }
@@ -921,12 +1836,52 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         return n > 0 ? `+${n}` : `${n}`;
     }
 
-    function showFieldTypoIndicator(field) {
+    function syncActiveTypographyTarget() {
+        document.querySelectorAll('.setting-row[data-typography-id]').forEach(row => {
+            row.classList.toggle('active-target', !!activeTypographyTargetId && row.dataset.typographyId === activeTypographyTargetId);
+        });
+    }
+
+    function setActiveTypographyTarget(typeId) {
+        activeTypographyTargetId = typeId || null;
+        syncActiveTypographyTarget();
+    }
+
+    function getTypographyTargetIdFromField(field, role = '') {
+        if (!field) return null;
+        if (role === 'field-quote-attrib') return 'quote-attrib';
+        if (role === 'field-quote-text' || field.mode === 'quote') return 'quote-body';
+        const scale = String(field.textScale || 'normal');
+        if (scale === 'large') return 'p-large';
+        if (scale === 'small') return 'p-small';
+        return 'p-normal';
+    }
+
+    function getTypographyTargetIdFromEditable(el) {
+        if (!el || !el.closest) return null;
+        const field = getFieldFromEditable(el);
+        if (field) return getTypographyTargetIdFromField(field, el.dataset.role || '');
+        if (el.classList?.contains('title-text')) return 'title';
+        if (el.classList?.contains('subtitle-text')) return 'subtitle';
+        if (el.matches?.('h1[data-key="title"]')) return 'h1';
+        if (el.matches?.('h2[data-key="title"]')) return 'h2';
+        if (el.matches?.('h3')) return 'h3';
+        return null;
+    }
+
+    function getTypographyIndicatorLabel(field, role = '') {
+        if (!field) return '';
+        if (role === 'field-quote-attrib') return 'Quote source';
+        if (role === 'field-quote-text' || field.mode === 'quote') return 'Quote text';
+        return `P: ${String(field.textScale || 'normal')}`;
+    }
+
+    function showFieldTypoIndicator(field, role = '') {
         const el = document.getElementById('field-typo-indicator');
         if (!el || !field) return;
-        const scale = String(field.textScale || 'normal');
         const delta = Number(field.fontDelta || 0);
-        el.textContent = `P: ${scale}  ·  Δ ${formatSignedDelta(delta)}px`;
+        setActiveTypographyTarget(getTypographyTargetIdFromField(field, role));
+        el.textContent = `${getTypographyIndicatorLabel(field, role)}  ·  Δ ${formatSignedDelta(delta)}px`;
         el.classList.add('visible');
     }
 
@@ -981,7 +1936,7 @@ The system is relationship-based and supported by tools such as Salesforce, repo
     function renderFieldBody(fieldPath, field, slideIndex = currentSlideIndex) {
         // ── Shared helper: image notes row (shown below loaded image) ──
         function imageNotesHtml(fieldPath, field, options = {}) {
-            const notes = field.imageNotes || '';
+            const notes = field.imageNotes || field.imagePrompt || '';
             const historyEntries = getImageHistoryEntries(field);
             const historyHtml = historyEntries.length
                 ? `<div class="image-history-picker-row">
@@ -1034,35 +1989,34 @@ The system is relationship-based and supported by tools such as Salesforce, repo
                     </div>
                 </div>`;
             }
-            // ── No image: unified drop-zone with all 4 options ──
-            const notes = field.imageNotes || '';
+            // ── No image: placeholder with hover/focus controls ──
+            const notes = field.imageNotes || field.imagePrompt || '';
             return `<div class="field-body" data-mode="image">
-                <div class="image-drop-zone" data-role="image-drop-zone" data-field-path="${fieldPath}">
+                <div class="image-drop-zone image-drop-zone-empty" data-role="image-drop-zone" data-field-path="${fieldPath}" tabindex="0">
                     <input type="file" accept="image/*" data-role="field-image-file" data-field-path="${fieldPath}" style="display:none">
-                    <div class="drop-zone-grid">
-                        <div class="drop-zone-cell drop-cell-browse">
-                            <svg class="drop-icon" viewBox="0 0 24 24"><path d="M19 7v2.99s-1.99.01-2 0V7h-3s.01-1.99 0-2h3V2h2v3h3v2h-3zm-3 4V8h-3V5H5a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2v-8h-3zM5 19l3-4 2 3 3-4 4 5H5z"/></svg>
-                            <div class="drop-label">Drop image here or click to browse</div>
-                        </div>
-                        <div class="drop-zone-cell drop-cell-paste" data-role="image-paste-target" data-field-path="${fieldPath}" tabindex="0" title="Click here, then paste an image from your clipboard">
-                            <div class="drop-cell-title">Paste Image</div>
-                            <div class="drop-paste-hint">Click here, then press Ctrl+V to paste a copied image.</div>
-                        </div>
-                        <div class="drop-zone-cell drop-cell-url">
-                            <div class="drop-cell-title">Paste URL</div>
-                            <div class="url-row">
-                                <input type="text" placeholder="https://..." data-role="field-image-url" data-field-path="${fieldPath}">
-                                <button data-role="url-load-btn" data-field-path="${fieldPath}">Load</button>
+                    <div class="image-empty-placeholder" aria-hidden="true">
+                        <svg class="image-empty-figure" viewBox="0 0 128 128"><circle cx="64" cy="35" r="18" fill="currentColor"></circle><path d="M64 58c-23.2 0-42 18.8-42 42v10h84v-10c0-23.2-18.8-42-42-42Z" fill="currentColor"></path></svg>
+                    </div>
+                    <button class="image-settings-btn image-settings-btn-empty" data-role="image-settings-btn" data-field-path="${fieldPath}" title="Manage image">
+                        <i class="fa-solid fa-gear" aria-hidden="true"></i>
+                    </button>
+                    <div class="image-empty-overlay">
+                        <div class="image-empty-overlay-title">Add or generate an image</div>
+                        <div class="image-empty-actions-grid">
+                            <label class="btn-browse-file image-empty-action" title="Browse for image file">Browse<input type="file" accept="image/*" data-role="field-image-file" data-field-path="${fieldPath}" style="display:none"></label>
+                            <div class="image-empty-action image-empty-paste" data-role="image-paste-target" data-field-path="${fieldPath}" tabindex="0">Paste Image</div>
+                            <div class="image-empty-action image-empty-url">
+                                <div class="url-row">
+                                    <input type="text" placeholder="https://..." data-role="field-image-url" data-field-path="${fieldPath}">
+                                    <button data-role="url-load-btn" data-field-path="${fieldPath}">Load</button>
+                                </div>
                             </div>
                         </div>
-                        <div class="drop-zone-cell drop-cell-ai">
-                            <div class="drop-cell-title">AI Generate</div>
-                            <div class="image-ai-compose">
-                                <textarea class="image-notes-field" data-role="image-notes" data-field-path="${fieldPath}" rows="3" placeholder="Describe the image you want…">${escapeHtml(notes)}</textarea>
-                                <div class="image-ai-actions">
-                                    <button class="auto-prompt-btn" data-role="auto-prompt-btn" data-default-label="Auto Prompt" data-field-path="${fieldPath}">Auto Prompt</button>
-                                    <button class="ai-gen-btn" data-role="ai-gen-btn" data-default-label="Generate" data-field-path="${fieldPath}">Generate</button>
-                                </div>
+                        <div class="image-ai-compose image-ai-compose-empty">
+                            <textarea class="image-notes-field" data-role="image-notes" data-field-path="${fieldPath}" rows="3" placeholder="Describe the image you want…">${escapeHtml(notes)}</textarea>
+                            <div class="image-ai-actions">
+                                <button class="auto-prompt-btn" data-role="auto-prompt-btn" data-default-label="Auto Prompt" data-field-path="${fieldPath}">Auto Prompt</button>
+                                <button class="ai-gen-btn" data-role="ai-gen-btn" data-default-label="Generate" data-field-path="${fieldPath}">Generate</button>
                             </div>
                         </div>
                     </div>
@@ -1081,9 +2035,9 @@ The system is relationship-based and supported by tools such as Salesforce, repo
             const quoteBodyClass = hideGraphics ? 'quote-body quote-body-plain' : 'quote-body';
             const openingMark = hideGraphics ? '<div class="quote-opening-mark" aria-hidden="true">“</div>' : '';
             return `<div class="field-body" data-mode="quote">
-                <div class="${quoteBoxClass}" style="--field-font-delta:${field.fontDelta || 0}px;">
+                <div class="${quoteBoxClass} quote-position-target" data-field-path="${fieldPath}" data-slide-index="${slideIndex}" style="--field-font-delta:${field.fontDelta || 0}px; transform: translate(${field.offsetX || 0}px, ${field.offsetY || 0}px);">
                     ${openingMark}
-                    <div class="${quoteBodyClass}" contenteditable="true" data-role="field-quote-text" data-field-path="${fieldPath}">${escapeHtml(field.quoteText || '')}</div>
+                    <div class="${quoteBodyClass}" contenteditable="true" data-role="field-quote-text" data-field-path="${fieldPath}">${renderPlainTextWithReferenceMarkers(field.quoteText || '')}</div>
                     <div class="${attribClass}${quoteOverrideActive ? ' quote-attrib-override' : ''}" contenteditable="${quoteOverrideActive ? 'false' : 'true'}" data-role="field-quote-attrib" data-field-path="${fieldPath}" title="${quoteOverrideActive ? 'Using universal quote attribution from Settings.' : ''}">${attribText}</div>
                 </div>
             </div>`;
@@ -1096,11 +2050,26 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         return `<div class="field-shell">${renderFieldControls(fieldPath, field)}${renderFieldBody(fieldPath, field, slideIndex)}</div>`;
     }
 
+    function positionSlideHoverMenu() {
+        const menu = document.getElementById('slide-hover-menu');
+        if (!menu || !stage) return;
+        const rect = stage.getBoundingClientRect();
+        if (!rect.width || !rect.height) return;
+        const menuWidth = menu.offsetWidth || 56;
+        menu.style.left = `${Math.max(12, Math.round(rect.left - menuWidth + 4))}px`;
+        menu.style.top = `${Math.round(rect.top + (rect.height / 2))}px`;
+    }
+
+    function scheduleSlideHoverMenuPosition() {
+        window.requestAnimationFrame(positionSlideHoverMenu);
+    }
+
     function resizeStage() {
         const baseWidth = 1280; const baseHeight = 720;
         const availWidth = window.innerWidth - 60; const availHeight = window.innerHeight - 60;
         const scale = Math.min(availWidth / baseWidth, availHeight / baseHeight);
         stage.style.transform = `scale(${scale})`;
+        scheduleSlideHoverMenuPosition();
     }
     window.addEventListener('resize', resizeStage);
 
@@ -1109,16 +2078,17 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         wrapper.innerHTML = '';
         const optionsHTML = fontOptions.map(f => `<option value="${f.value}">${f.name}</option>`).join('');
         types.forEach(t => {
-            wrapper.innerHTML += `<div class="setting-row"><span>${t.label}:</span><select id="font-${t.id}" onchange="updateTheme()">${optionsHTML}</select><input type="number" id="size-${t.id}" onchange="updateTheme()"><div class="color-trigger" id="color-btn-${t.id}" onclick="openColorPicker(event, '${t.id}')"></div></div>`;
+            wrapper.innerHTML += `<div class="setting-row" data-typography-id="${t.id}"><span>${t.label}:</span><select id="font-${t.id}" onchange="updateTheme()">${optionsHTML}</select><input type="number" id="size-${t.id}" onchange="updateTheme()"><div class="color-trigger" id="color-btn-${t.id}" onclick="openColorPicker(event, '${t.id}')"></div></div>`;
         });
         const pop = document.getElementById('color-picker-popover');
         pop.innerHTML = '';
         palette.forEach(c => { pop.innerHTML += `<div class="swatch-btn" style="background:${c}" onclick="pickColor('${c}')"></div>`; });
         pop.innerHTML += `<div class="swatch-btn" style="background:conic-gradient(red,yellow,lime,aqua,blue,magenta,red)" onclick="triggerCustomColor()"></div>`;
+        syncActiveTypographyTarget();
     }
 
     function setSettingsTab(tabId) {
-        activeSettingsTab = ['typography', 'content', 'layout', 'export'].includes(tabId) ? tabId : 'typography';
+        activeSettingsTab = ['typography', 'content', 'layout', 'import', 'export'].includes(tabId) ? tabId : 'typography';
         document.querySelectorAll('[data-settings-tab]').forEach(btn => {
             btn.classList.toggle('active', btn.dataset.settingsTab === activeSettingsTab);
         });
@@ -1225,14 +2195,27 @@ The system is relationship-based and supported by tools such as Salesforce, repo
                 innerHTML = `<div class="title-wrapper" style="${titleStyle}"><h1 contenteditable="true" data-key="title">${slide.title || 'Section'}</h1></div>`;
             } else if (slide.type === 'two-column') {
                 const splitPct = slide.columns?.splitPct ?? 50;
+                const layoutMode = getTwoColumnLayoutMode(slide);
+                const stackSplitPct = getStackedLeftSplitPct(slide);
                 innerHTML = `<div class="title-wrapper" style="${titleStyle}"><h2 contenteditable="true" data-key="title">${iconSVG}${slide.title || 'Two Column Slide'}</h2></div>
                              <div class="body-wrapper" style="${bodyStyle}">
-                                 <div class="two-col-layout" style="--split-left:${splitPct}%;" data-role="two-col-layout" data-slide-index="${index}">
-                                     ${renderFieldShell('columns.leftField', slide.columns.leftField, index)}
+                                 <div class="two-col-layout${layoutMode === 'stacked-left' ? ' stacked-left-layout' : ''}" style="--split-left:${splitPct}%;" data-role="two-col-layout" data-slide-index="${index}">
+                                     ${layoutMode === 'stacked-left'
+                                        ? `<div class="stacked-left-column" style="--stack-top:${stackSplitPct}%;" data-role="stacked-left-column" data-slide-index="${index}">
+                                                <div class="stacked-left-cell stacked-left-top">${renderFieldShell('columns.leftField', slide.columns.leftField, index)}</div>
+                                                <div class="stacked-split-divider" data-role="stacked-split-divider" data-slide-index="${index}" title="Drag to resize top and bottom panels"></div>
+                                                <div class="stacked-left-cell stacked-left-bottom">${renderFieldShell('columns.bottomField', slide.columns.bottomField, index)}</div>
+                                           </div>`
+                                        : renderFieldShell('columns.leftField', slide.columns.leftField, index)}
                                      <div class="split-divider" data-role="split-divider" data-slide-index="${index}" title="Drag to resize columns"></div>
                                      ${renderFieldShell('columns.rightField', slide.columns.rightField, index)}
                                  </div>
                              </div>`;
+            } else if (slide.type === 'image') {
+                const titleMarkup = String(slide.title || '').trim()
+                    ? `<div class="title-wrapper" style="${titleStyle}"><h2 contenteditable="true" data-key="title">${iconSVG}${slide.title}</h2></div>`
+                    : '';
+                innerHTML = `${titleMarkup}<div class="body-wrapper image-slide-body${titleMarkup ? '' : ' image-slide-body-no-title'}" style="${bodyStyle}">${renderFieldShell('bodyField', slide.bodyField, index)}</div>`;
             } else {
                 innerHTML = `<div class="title-wrapper" style="${titleStyle}"><h2 contenteditable="true" data-key="title">${iconSVG}${slide.title || 'Slide Title'}</h2></div>
                              <div class="body-wrapper" style="${bodyStyle}">${renderFieldShell('bodyField', slide.bodyField, index)}</div>`;
@@ -1249,11 +2232,37 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         });
         updateSettingsUI();
         renderSpeakerNotesPanel();
+        syncAllImageActionButtons();
+        scheduleSlideHoverMenuPosition();
+    }
+
+    function syncAllImageActionButtons() {
+        slidesData.forEach((slide, slideIndex) => {
+            getImageFieldsForSlide(slide).forEach(({ fieldPath }) => {
+                refreshImageActionButtons(slideIndex, fieldPath);
+            });
+        });
+    }
+
+    function resumePendingImagePrompts() {
+        slidesData.forEach((slide, slideIndex) => {
+            getImageFieldsForSlide(slide).forEach(({ fieldPath, field }) => {
+                if (!field?.imagePromptPending) return;
+                const state = getFieldAsyncState(slideIndex, fieldPath);
+                if (state.promptPromise) return;
+                generateAutomaticImagePrompt(fieldPath, slideIndex, {
+                    queueGenerate: !!field.imageGenerateQueued,
+                    resumed: true
+                }).catch(err => {
+                    console.warn(`[Designer] Failed to resume prompt for ${fieldPath} on slide ${slideIndex}:`, err);
+                });
+            });
+        });
     }
 
     document.addEventListener('mousedown', (e) => {
         if (e.ctrlKey) {
-            const wrapper = e.target.closest('.title-wrapper, .body-wrapper');
+            const wrapper = e.target.closest('.title-wrapper, .body-wrapper, .quote-position-target');
             if (wrapper) {
                 e.preventDefault(); e.stopPropagation();
                 if (wrapper.classList.contains('selected-for-move')) {
@@ -1306,7 +2315,7 @@ The system is relationship-based and supported by tools such as Salesforce, repo
     }
 
     document.addEventListener('keydown', (e) => {
-        if (e.ctrlKey && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+        if (e.altKey && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key) && !e.target.closest('input, textarea, select')) {
             e.preventDefault();
             const dx = (e.key === 'ArrowRight' ? 5 : (e.key === 'ArrowLeft' ? -5 : 0));
             const dy = (e.key === 'ArrowDown' ? 5 : (e.key === 'ArrowUp' ? -5 : 0));
@@ -1325,17 +2334,7 @@ The system is relationship-based and supported by tools such as Salesforce, repo
             } else {
                 const slide = slidesData[currentSlideIndex];
                 if (selectedElements.length > 0) {
-                    selectedElements.forEach(el => {
-                        if (el.classList.contains('title-wrapper')) {
-                            slide.titleX = (slide.titleX || 0) + dx;
-                            slide.titleY = (slide.titleY || 0) + dy;
-                            el.style.transform = `translate(${slide.titleX}px, ${slide.titleY}px)`;
-                        } else if (el.classList.contains('body-wrapper')) {
-                            slide.bodyX = (slide.bodyX || 0) + dx;
-                            slide.bodyY = (slide.bodyY || 0) + dy;
-                            el.style.transform = `translate(${slide.bodyX}px, ${slide.bodyY}px)`;
-                        }
-                    });
+                    nudgeSelectedElements(dx, dy);
                 } else {
                     slide.x = (slide.x || 0) + dx;
                     slide.y = (slide.y || 0) + dy;
@@ -1344,10 +2343,13 @@ The system is relationship-based and supported by tools such as Salesforce, repo
                 }
             }
             saveState();
+            return;
         }
-        if (!e.ctrlKey && !e.target.closest('[contenteditable]')) {
+        if (!e.ctrlKey && !e.altKey && !e.target.closest('[contenteditable]')) {
             if (e.key === 'ArrowRight') showSlide(currentSlideIndex + 1);
             if (e.key === 'ArrowLeft') showSlide(currentSlideIndex - 1);
+            if (e.key === 'ArrowDown') showSlide(currentSlideIndex + 1);
+            if (e.key === 'ArrowUp') showSlide(currentSlideIndex - 1);
         }
     });
 
@@ -1417,13 +2419,56 @@ The system is relationship-based and supported by tools such as Salesforce, repo
     }
 
     function applyInline(text) {
-        return text
+        return renderInlineReferenceMarkers(escapeHtml(text || ''))
             .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
             .replace(/\*(.+?)\*/g, '<i>$1</i>')
             .replace(/__(.+?)__/g, '<b>$1</b>')
             .replace(/_(.+?)_/g, '<i>$1</i>');
     }
-    function htmlToMd(html) { let temp = document.createElement('div'); temp.innerHTML = html; let text = temp.innerHTML; text = text.replace(/<h3>/gi, '\n### ').replace(/<\/h3>/gi, '\n').replace(/<b>|<strong>/gi, '**').replace(/<\/b>|<\/strong>/gi, '**').replace(/<i>|<em>/gi, '*').replace(/<\/i>|<\/em>/gi, '*').replace(/<li>/gi, '\n* ').replace(/<\/li>/gi, '').replace(/<ul>|<\/ul>|<ol>|<\/ol>/gi, '').replace(/<small>|<\/small>/gi, '').replace(/<br>|<p>|<\/p>|<div>|<\/div>/gi, '\n'); return text.split('\n').map(line => line.trim()).filter(l => l).join('\n'); }
+    function buildPptInlineMarkdownRuns(text, baseOptions = {}, lineOptions = {}, includeBreakLine = true) {
+        const source = String(text || '');
+        const tokenRegex = /(\*\*[^*\n][\s\S]*?\*\*|__[^_\n][\s\S]*?__|\*[^*\n][^*\n]*?\*|_[^_\n][^_\n]*?_)/g;
+        const rawRuns = [];
+        let lastIndex = 0;
+
+        const pushRun = (segmentText, extraOptions = {}) => {
+            if (!segmentText && segmentText !== '') return;
+            rawRuns.push({ text: segmentText, options: { ...baseOptions, ...extraOptions } });
+        };
+
+        let match;
+        while ((match = tokenRegex.exec(source)) !== null) {
+            if (match.index > lastIndex) {
+                pushRun(source.slice(lastIndex, match.index));
+            }
+
+            const token = match[0];
+            if (token.startsWith('**') || token.startsWith('__')) {
+                pushRun(token.slice(2, -2), { bold: true });
+            } else {
+                pushRun(token.slice(1, -1), { italic: true });
+            }
+
+            lastIndex = match.index + token.length;
+        }
+
+        if (lastIndex < source.length) {
+            pushRun(source.slice(lastIndex));
+        }
+
+        const runs = rawRuns.filter(run => run.text.length > 0);
+        if (!runs.length) runs.push({ text: source, options: { ...baseOptions } });
+
+        return runs.map((run, index) => ({
+            text: run.text,
+            options: {
+                ...run.options,
+                ...(index === 0 ? lineOptions : {}),
+                ...(includeBreakLine && index === runs.length - 1 ? { breakLine: true } : {})
+            }
+        }));
+    }
+    function htmlToMd(html) { let temp = document.createElement('div'); temp.innerHTML = html; let text = temp.innerHTML; text = text.replace(/<sup\b[^>]*data-role="inline-ref-marker"[^>]*>\((\d+)\)<\/sup>/gi, '($1)').replace(/<h3>/gi, '\n### ').replace(/<\/h3>/gi, '\n').replace(/<b>|<strong>/gi, '**').replace(/<\/b>|<\/strong>/gi, '**').replace(/<i>|<em>/gi, '*').replace(/<\/i>|<\/em>/gi, '*').replace(/<li>/gi, '\n* ').replace(/<\/li>/gi, '').replace(/<ul>|<\/ul>|<ol>|<\/ol>/gi, '').replace(/<small>|<\/small>/gi, '').replace(/<br>|<p>|<\/p>|<div>|<\/div>/gi, '\n').replace(/<[^>]+>/g, ''); return text.split('\n').map(line => line.trim()).filter(l => l).join('\n'); }
 
     function configHasStyling(cfg) {
         // Check if the config has ANY font/size/color keys defined
@@ -1447,60 +2492,51 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         return cfg;
     }
 
+    async function bootstrapDeckPersistence() {
+        await hydrateRemoteDesignerSettings();
+
+        let loaded = false;
+        const preferredDeckId = getPreferredDeckId();
+        if (preferredDeckId && !currentDeckId) {
+            const remoteRecord = await loadDeckRecordFromDb(preferredDeckId);
+            if (remoteRecord) loaded = applyDeckRecord(remoteRecord);
+        }
+        if (!loaded && !currentDeckId) loaded = migrateLegacyLocalAutosave();
+        if (!loaded && !currentDeckId) loaded = await migrateLegacyRemoteAutosave();
+
+        await reloadDeckLibrary(false);
+        updateDeckManagementUI();
+        if (currentDeckId) scheduleDeckAutosave({ delayMs: 1500 });
+    }
+
     function init() {
         renderSettingsRows();
-        let hasLocalDeck = false;
-        try {
-            const saved = JSON.parse(localStorage.getItem('heart_walk_deck_pro_v3'));
-            if (saved) {
-                appConfig = saved.config;
-                slidesData = saved.slides;
-                hasLocalDeck = true;
-                lastDeckLoadedFromRemote = serializeDeckState();
-            }
-        } catch (err) {
-            console.warn('[Designer] Could not read local autosave:', err);
+
+        const preferredDeckId = getPreferredDeckId();
+        let hasDeckRecord = false;
+        if (preferredDeckId) {
+            const localRecord = loadDeckRecordFromLocal(preferredDeckId);
+            if (localRecord) hasDeckRecord = applyDeckRecord(localRecord, { persistLocal: false, resize: false });
         }
-        if (!hasLocalDeck) {
-            // No saved state: start from active preset (or factory default)
-            appConfig = {};
-            fillConfigFromActivePreset(appConfig);
-            appConfig.shapePath = appConfig.shapePath || defaultShapePath;
-            appConfig.shapeViewBox = appConfig.shapeViewBox || defaultViewBox;
-            slidesData = [{ type: 'cover', title: 'Start', subtitle: 'Import JSON to begin' }];
+        if (!hasDeckRecord) {
+            applyDeckPayload(createStarterDeckPayload(), { resize: false });
         }
 
-        if (typeof appConfig.showShapes !== 'boolean') appConfig.showShapes = true;
-        if (typeof appConfig.hideAttrib !== 'boolean') appConfig.hideAttrib = false;
-        if (typeof appConfig.hideAllImages !== 'boolean') appConfig.hideAllImages = false;
-        if (typeof appConfig.imagePromptStyle !== 'string') appConfig.imagePromptStyle = '';
-        if (typeof appConfig.universalQuoteAttribution !== 'string') appConfig.universalQuoteAttribution = '';
-        if (typeof appConfig.showSpeakerNotes !== 'boolean') appConfig.showSpeakerNotes = false;
-        
-        // Ensure Template Offsets exist (Backward Compat)
-        if(!appConfig.typeOffsets) appConfig.typeOffsets = {};
-        if(!appConfig.typeOffsets.cover) appConfig.typeOffsets.cover = {x:0, y:0};
-        if(!appConfig.typeOffsets.section) appConfig.typeOffsets.section = {x:0, y:0};
-        if(!appConfig.typeOffsets.standard) appConfig.typeOffsets.standard = {x:0, y:0};
-        if(!appConfig.typeOffsets['two-column']) appConfig.typeOffsets['two-column'] = {x:0, y:0};
-        slidesData = (slidesData || []).map(ensureSlideSchema);
-
-        // Fill any missing styling from active preset
-        fillConfigFromActivePreset(appConfig);
-
-        applyConfig(); render(); resizeStage(); renderPresetList(); setSettingsTab(activeSettingsTab);
-        hydrateRemoteDesignerSettings();
-        if (!hasLocalDeck) {
-            hydrateRemoteDeckAutosave(true);
-        } else {
-            scheduleDeckAutosave({ delayMs: 1500 });
-        }
+        renderPresetList();
+        setSettingsTab(activeSettingsTab);
+        updateSettingsUI();
+        bootstrapDeckPersistence();
     }
 
     function saveState(flushRemote = false) {
         const serializedDeck = serializeDeckState();
         try {
-            localStorage.setItem('heart_walk_deck_pro_v3', serializedDeck);
+            const record = buildCurrentDeckRecord(serializedDeck);
+            localStorage.setItem(getDeckLocalCacheKey(record.id), JSON.stringify(record));
+            localStorage.setItem(DESIGNER_LAST_OPENED_DECK_KEY, record.id);
+            rememberActiveDeckId(record.id);
+            upsertDeckLibraryEntry(record);
+            updateDeckManagementUI();
         } catch (err) {
             console.error('[Designer] Local deck autosave failed:', err);
             showToast('Local deck autosave failed. The deck may be too large to store in the browser.', 'error', 4200);
@@ -1510,14 +2546,15 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         else scheduleDeckAutosave();
         return true;
     }
-    function applyConfig() { document.documentElement.style.setProperty('--global-x', (appConfig.globalX || 0) + 'px'); document.documentElement.style.setProperty('--global-y', (appConfig.globalY || 0) + 'px'); if (appConfig.showShapes) document.body.classList.add('show-shapes'); else document.body.classList.remove('show-shapes'); types.forEach(t => { document.documentElement.style.setProperty(`--font-${t.id}`, appConfig[`font-${t.id}`] || "'Source Sans 3', sans-serif"); document.documentElement.style.setProperty(`--size-${t.id}`, appConfig[`size-${t.id}`] || '18pt'); document.documentElement.style.setProperty(`--color-${t.id}`, appConfig[`color-${t.id}`] || '#1e1d21'); }); }
+    function applyConfig() { document.documentElement.style.setProperty('--global-x', (appConfig.globalX || 0) + 'px'); document.documentElement.style.setProperty('--global-y', (appConfig.globalY || 0) + 'px'); if (appConfig.showShapes) document.body.classList.add('show-shapes'); else document.body.classList.remove('show-shapes'); types.forEach(t => { document.documentElement.style.setProperty(`--font-${t.id}`, normalizeDesignerFontValue(appConfig[`font-${t.id}`] || DEFAULT_FONT_STACK)); document.documentElement.style.setProperty(`--size-${t.id}`, appConfig[`size-${t.id}`] || '18pt'); document.documentElement.style.setProperty(`--color-${t.id}`, appConfig[`color-${t.id}`] || '#1e1d21'); }); }
     function updateTheme() { appConfig.showShapes = document.getElementById('toggle-shapes').checked; types.forEach(t => { appConfig[`font-${t.id}`] = document.getElementById(`font-${t.id}`).value; appConfig[`size-${t.id}`] = document.getElementById(`size-${t.id}`).value + 'pt'; }); applyConfig(); saveState(); }
     function toggleHideAllImages() { appConfig.hideAllImages = document.getElementById('toggle-hide-images').checked; saveState(); render(); showSlide(currentSlideIndex); }
     function toggleHideAttrib() { appConfig.hideAttrib = document.getElementById('toggle-hide-attrib').checked; saveState(); syncUniversalQuoteAttributionPreview(); render(); showSlide(currentSlideIndex); }
+    function toggleHideSourceAttribution() { appConfig.hideSourceAttribution = document.getElementById('toggle-hide-source-attrib').checked; saveState(); const previewModal = document.getElementById('reference-preview-modal'); if (previewModal?.classList.contains('open')) renderDeckReferencePreview(Number(previewModal.dataset.refId || 0)); }
     function updateImagePromptStyle() { appConfig.imagePromptStyle = document.getElementById('image-prompt-style').value.trim(); saveState(); updateImageStyleSelectUI(); }
     function updateUniversalQuoteAttribution() { appConfig.universalQuoteAttribution = document.getElementById('universal-quote-attribution').value; saveState(); syncUniversalQuoteAttributionPreview(); }
     function commitUniversalQuoteAttribution() { saveState(); render(); showSlide(currentSlideIndex); }
-    function updateSettingsUI() { document.getElementById('toggle-shapes').checked = (typeof appConfig.showShapes === 'boolean') ? appConfig.showShapes : true; document.getElementById('toggle-hide-images').checked = !!appConfig.hideAllImages; document.getElementById('toggle-hide-attrib').checked = !!appConfig.hideAttrib; document.getElementById('toggle-speaker-notes').checked = !!appConfig.showSpeakerNotes; document.getElementById('image-prompt-style').value = appConfig.imagePromptStyle || ''; document.getElementById('universal-quote-attribution').value = appConfig.universalQuoteAttribution || ''; const overviewEl = document.getElementById('heart-walk-overview-text'); if (overviewEl && document.activeElement !== overviewEl) overviewEl.value = overviewTextCache || DEFAULT_HEART_WALK_OVERVIEW; types.forEach(t => { const fEl = document.getElementById(`font-${t.id}`); const sEl = document.getElementById(`size-${t.id}`); const cBtn = document.getElementById(`color-btn-${t.id}`); if(fEl) fEl.value = appConfig[`font-${t.id}`] || "'Source Sans 3', sans-serif"; if(sEl) sEl.value = (appConfig[`size-${t.id}`] || '').replace('pt',''); if(cBtn) cBtn.style.backgroundColor = appConfig[`color-${t.id}`] || '#000'; }); renderPresetList(); setSettingsTab(activeSettingsTab); renderSpeakerNotesPanel(); updateImageStyleSelectUI(); normalizeBatchParallelismInput(); updateBatchStatusUI(); syncLayoutActionButtons(); }
+    function updateSettingsUI() { document.getElementById('toggle-shapes').checked = (typeof appConfig.showShapes === 'boolean') ? appConfig.showShapes : true; document.getElementById('toggle-hide-images').checked = !!appConfig.hideAllImages; document.getElementById('toggle-hide-attrib').checked = !!appConfig.hideAttrib; document.getElementById('toggle-hide-source-attrib').checked = !!appConfig.hideSourceAttribution; document.getElementById('toggle-speaker-notes').checked = !!appConfig.showSpeakerNotes; document.getElementById('image-prompt-style').value = appConfig.imagePromptStyle || ''; document.getElementById('universal-quote-attribution').value = appConfig.universalQuoteAttribution || ''; const overviewEl = document.getElementById('heart-walk-overview-text'); if (overviewEl && document.activeElement !== overviewEl) overviewEl.value = overviewTextCache || DEFAULT_HEART_WALK_OVERVIEW; types.forEach(t => { const fEl = document.getElementById(`font-${t.id}`); const sEl = document.getElementById(`size-${t.id}`); const cBtn = document.getElementById(`color-btn-${t.id}`); if(fEl) fEl.value = normalizeDesignerFontValue(appConfig[`font-${t.id}`] || DEFAULT_FONT_STACK); if(sEl) sEl.value = (appConfig[`size-${t.id}`] || '').replace('pt',''); if(cBtn) cBtn.style.backgroundColor = appConfig[`color-${t.id}`] || '#000'; }); syncActiveTypographyTarget(); renderPresetList(); setSettingsTab(activeSettingsTab); renderSpeakerNotesPanel(); updateImageStyleSelectUI(); normalizeBatchParallelismInput(); updateBatchStatusUI(); syncLayoutActionButtons(); updateDeckManagementUI(); }
     // ════════════════════════════════════════════════
     //  Resilient import pipeline — extracts JSON from AI prose,
     //  handles slides-only arrays, missing config, unknown types, etc.
@@ -1706,6 +2743,33 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         return ensureFieldDefaults(normalized, fallbackText);
     }
 
+    function normalizeImportReferenceItem(item, warnings, itemIndex) {
+        const label = `Reference ${itemIndex + 1}`;
+        if (!item || typeof item !== 'object' || Array.isArray(item)) {
+            warnings.push(`${label} was ${getImportValueLabel(item)} and was ignored.`);
+            return null;
+        }
+        const normalized = ensureDeckReferenceDefaults(item, itemIndex + 1);
+        if (!normalized.id) {
+            warnings.push(`${label} was missing a positive integer id and was ignored.`);
+            return null;
+        }
+        if (!getDeckReferenceSources(normalized).length) {
+            warnings.push(`${label} was missing supporting quotes and was ignored.`);
+            return null;
+        }
+        return normalized;
+    }
+
+    function normalizeImportReferences(rawReferences, warnings) {
+        if (rawReferences == null) return [];
+        if (!Array.isArray(rawReferences)) {
+            warnings.push('Top-level references must be an array. They were ignored.');
+            return [];
+        }
+        return normalizeDeckReferences(rawReferences.map((item, index) => normalizeImportReferenceItem(item, warnings, index)).filter(Boolean));
+    }
+
     function normalizeImportedSlide(slide, slideIndex, warnings) {
         const slideLabel = `Slide ${slideIndex + 1}`;
         if (!slide || typeof slide !== 'object' || Array.isArray(slide)) {
@@ -1716,11 +2780,12 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         const normalized = { ...slide };
         const effectiveType = KNOWN_SLIDE_TYPES.has(normalized.type) ? normalized.type : 'standard';
 
-        if (effectiveType === 'standard') {
+        if (effectiveType === 'standard' || effectiveType === 'image') {
             if (!normalized.bodyField && typeof normalized.content === 'string' && normalized.content.trim()) {
                 warnings.push(`${slideLabel} was missing bodyField — built it from content.`);
             }
             normalized.bodyField = normalizeImportField(normalized.bodyField, warnings, `${slideLabel} bodyField`, normalized.content || '');
+            if (effectiveType === 'image') normalized.bodyField.mode = 'image';
         }
 
         if (effectiveType === 'two-column') {
@@ -1731,15 +2796,23 @@ The system is relationship-based and supported by tools such as Salesforce, repo
 
             const rawSplitPct = normalized.columns.splitPct ?? 50;
             const splitPct = Number(rawSplitPct);
+            const rawStackSplitPct = normalized.columns.stackSplitPct ?? 50;
+            const stackSplitPct = Number(rawStackSplitPct);
             if (rawSplitPct != null && !Number.isFinite(splitPct)) {
                 warnings.push(`${slideLabel} had non-numeric splitPct and it was reset to 50.`);
+            }
+            if (rawStackSplitPct != null && !Number.isFinite(stackSplitPct)) {
+                warnings.push(`${slideLabel} had non-numeric stackSplitPct and it was reset to 50.`);
             }
 
             normalized.columns = {
                 ...normalized.columns,
+                layoutMode: normalized.columns.layoutMode === 'stacked-left' ? 'stacked-left' : 'side-by-side',
                 splitPct: Number.isFinite(splitPct) ? splitPct : 50,
+                stackSplitPct: Number.isFinite(stackSplitPct) ? stackSplitPct : 50,
                 leftField: normalizeImportField(normalized.columns.leftField, warnings, `${slideLabel} leftField`, normalized.content || ''),
-                rightField: normalizeImportField(normalized.columns.rightField, warnings, `${slideLabel} rightField`, '')
+                rightField: normalizeImportField(normalized.columns.rightField, warnings, `${slideLabel} rightField`, ''),
+                bottomField: normalizeImportField(normalized.columns.bottomField, warnings, `${slideLabel} bottomField`, '')
             };
         }
 
@@ -1825,9 +2898,107 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         return { data, warnings };
     }
 
-    function loadDeckData(inputString) {
+    function normalizeImportedSlideBundle(data, warnings) {
+        const references = normalizeImportReferences(data.references, warnings);
+        let coercedTypes = 0;
+        let missingBodyFields = 0;
+        let missingColumns = 0;
+        let skippedSlides = 0;
+
+        const slides = data.slides.map((slide, index) => {
+            if (slide.type && !KNOWN_SLIDE_TYPES.has(slide.type)) coercedTypes++;
+            if ((slide.type === 'standard' || slide.type === 'image') && !slide.bodyField) missingBodyFields++;
+            if (slide.type === 'two-column' && !slide.columns) missingColumns++;
+            const normalized = normalizeImportedSlide(slide, index, warnings);
+            if (!normalized) skippedSlides++;
+            return normalized;
+        }).filter(Boolean);
+
+        if (!slides.length) {
+            throw new Error('No usable slides were found after import repair. Check the input for malformed slide objects or invalid JSON structure.');
+        }
+
+        if (coercedTypes > 0) warnings.push(`${coercedTypes} slide(s) had unknown types -> converted to "standard".`);
+        if (missingBodyFields > 0) warnings.push(`${missingBodyFields} standard/image slide(s) were missing bodyField -> auto-created.`);
+        if (missingColumns > 0) warnings.push(`${missingColumns} two-column slide(s) were missing columns -> auto-created.`);
+        if (skippedSlides > 0) warnings.push(`${skippedSlides} slide(s) could not be repaired and were skipped.`);
+
+        return { slides, references };
+    }
+
+    function prepareSlidesForInsertion(inputString) {
+        const { data, warnings } = smartParseInput(inputString);
+        const missingConfigWarningIndex = warnings.indexOf('No "config" found — using default design settings.');
+        if (missingConfigWarningIndex >= 0) warnings.splice(missingConfigWarningIndex, 1);
+        const { slides, references } = normalizeImportedSlideBundle(data, warnings);
+
+        if (data.config && typeof data.config === 'object') {
+            warnings.push('Pasted JSON included config, but slide paste keeps the current deck styling and ignored that config.');
+        }
+
+        const referencedIds = [];
+        const seenReferencedIds = new Set();
+        slides.forEach(slide => {
+            collectReferenceIdsForSlide(slide).forEach(referenceId => {
+                if (seenReferencedIds.has(referenceId)) return;
+                seenReferencedIds.add(referenceId);
+                referencedIds.push(referenceId);
+            });
+        });
+
+        const importedReferenceMap = new Map(references.map(reference => [reference.id, reference]));
+        const occupiedIds = new Set(deckReferences.map(reference => Number(reference?.id) || 0).filter(id => id > 0));
+        const assignedIds = new Set();
+        let nextReferenceId = getNextDeckReferenceId();
+
+        const allocateReferenceId = (preferredId) => {
+            if (Number.isInteger(preferredId) && preferredId > 0 && !occupiedIds.has(preferredId) && !assignedIds.has(preferredId)) {
+                assignedIds.add(preferredId);
+                return preferredId;
+            }
+            while (occupiedIds.has(nextReferenceId) || assignedIds.has(nextReferenceId)) nextReferenceId += 1;
+            const chosenId = nextReferenceId;
+            assignedIds.add(chosenId);
+            nextReferenceId += 1;
+            return chosenId;
+        };
+
+        const referenceIdMap = new Map();
+        const remappedPairs = [];
+        const preparedReferences = referencedIds.map(oldId => {
+            const newId = allocateReferenceId(oldId);
+            referenceIdMap.set(oldId, newId);
+            if (newId !== oldId) remappedPairs.push([oldId, newId]);
+            const sourceReference = importedReferenceMap.get(oldId);
+            if (sourceReference) return { ...cloneJsonData(sourceReference), id: newId };
+            warnings.push(`Reference (${oldId}) was cited in pasted slides but no reference data was provided. A blank placeholder reference was created as (${newId}).`);
+            return { id: newId, sources: [createBlankDeckReferenceSource()] };
+        });
+
+        const unusedReferenceCount = references.filter(reference => !seenReferencedIds.has(reference.id)).length;
+        if (unusedReferenceCount > 0) {
+            warnings.push(`${unusedReferenceCount} pasted reference${unusedReferenceCount === 1 ? ' was' : 's were'} not used by the inserted slides and ${unusedReferenceCount === 1 ? 'was' : 'were'} ignored.`);
+        }
+
+        if (remappedPairs.length > 0) {
+            const preview = remappedPairs.slice(0, 4).map(([fromId, toId]) => `(${fromId}) -> (${toId})`).join(', ');
+            const suffix = remappedPairs.length > 4 ? `, +${remappedPairs.length - 4} more` : '';
+            warnings.push(`Pasted reference markers were renumbered to fit this deck: ${preview}${suffix}.`);
+        }
+
+        const preparedSlides = slides.map(slide => remapReferenceIdsForSlide(ensureSlideSchema(cloneJsonData(slide)), referenceIdMap));
+        return {
+            slides: preparedSlides,
+            references: normalizeDeckReferences(preparedReferences),
+            warnings
+        };
+    }
+
+    function loadDeckData(inputString, options = {}) {
         try {
             const { data, warnings } = smartParseInput(inputString);
+            const normalizedBundle = normalizeImportedSlideBundle(data, warnings);
+            deckReferences = normalizedBundle.references;
 
             // ── Config ──
             if (data.config) {
@@ -1842,38 +3013,27 @@ The system is relationship-based and supported by tools such as Salesforce, repo
                 // Preserve current config so we don't clobber an existing theme
                 // (appConfig already has sensible defaults from init)
             }
-
-            // ── Slide schema normalization ──
-            let coercedTypes = 0;
-            let missingBodyFields = 0;
-            let missingColumns = 0;
-            let skippedSlides = 0;
-            slidesData = data.slides.map((slide, index) => {
-                // Track fixups for user notice
-                if (slide.type && !KNOWN_SLIDE_TYPES.has(slide.type)) coercedTypes++;
-                if (slide.type === 'standard' && !slide.bodyField) missingBodyFields++;
-                if (slide.type === 'two-column' && !slide.columns) missingColumns++;
-                const normalized = normalizeImportedSlide(slide, index, warnings);
-                if (!normalized) skippedSlides++;
-                return normalized;
-            }).filter(Boolean);
-
-            if (slidesData.length === 0) {
-                throw new Error('No usable slides were found after import repair. Check the input for malformed slide objects or invalid JSON structure.');
-            }
-
-            if (coercedTypes > 0) warnings.push(`${coercedTypes} slide(s) had unknown types → converted to "standard".`);
-            if (missingBodyFields > 0) warnings.push(`${missingBodyFields} standard slide(s) were missing bodyField → auto-created from content.`);
-            if (missingColumns > 0) warnings.push(`${missingColumns} two-column slide(s) were missing columns → auto-created.`);
-            if (skippedSlides > 0) warnings.push(`${skippedSlides} slide(s) could not be repaired and were skipped.`);
+            slidesData = normalizedBundle.slides;
 
             // ── Ensure template offsets ──
             if (!appConfig.typeOffsets) appConfig.typeOffsets = {};
-            for (const t of ['cover', 'section', 'standard', 'two-column']) {
+            for (const t of ['cover', 'section', 'standard', 'image', 'two-column']) {
                 if (!appConfig.typeOffsets[t]) appConfig.typeOffsets[t] = { x: 0, y: 0 };
             }
 
-            applyConfig(); render(); saveState(); showSlide(0);
+            if (options.createNewDeck !== false || !currentDeckId) {
+                currentDeckId = '';
+                currentDeckName = '';
+                currentDeckCreatedAt = '';
+                currentDeckUpdatedAt = '';
+                lastRemoteDeckSnapshot = '';
+                lastRemoteDeckFingerprint = '';
+                lastDeckLoadedFromRemote = '';
+                ensureCurrentDeckIdentity({ createdAt: new Date().toISOString() });
+            }
+
+            applyDeckPayload({ config: appConfig, references: deckReferences, slides: slidesData }, { resize: true });
+            saveState(true);
             document.body.classList.add('flash-success');
             setTimeout(() => document.body.classList.remove('flash-success'), 600);
             closeImport(); toggleSettings();
@@ -1885,6 +3045,7 @@ The system is relationship-based and supported by tools such as Salesforce, repo
             if (warnings.length > 0) {
                 showNotice(warnings);
             }
+            setSettingsStatus('deck-doc-status', `Imported JSON into ${getCurrentDeckDisplayName()}.`);
         } catch (err) {
             showError(err.message);
         }
@@ -1926,16 +3087,89 @@ The system is relationship-based and supported by tools such as Salesforce, repo
     }
 
     let toastTimer = null;
-    function showToast(message, variant = 'info', durationMs = 2200) {
+    let toastCountdownTimer = null;
+
+    function clearToastTimers() {
+        if (toastTimer) clearTimeout(toastTimer);
+        if (toastCountdownTimer) clearInterval(toastCountdownTimer);
+        toastTimer = null;
+        toastCountdownTimer = null;
+    }
+
+    function hideToast() {
         const el = document.getElementById('toast-notice');
         if (!el) return;
-        el.textContent = message;
-        el.classList.remove('error');
+        clearToastTimers();
+        el.classList.remove('visible', 'error', 'interactive');
+        el.innerHTML = '';
+    }
+
+    function renderToastContent(message, actionLabel = '', onAction = null) {
+        const el = document.getElementById('toast-notice');
+        if (!el) return null;
+        el.innerHTML = '';
+
+        const messageEl = document.createElement('span');
+        messageEl.className = 'toast-message';
+        messageEl.textContent = message;
+        el.appendChild(messageEl);
+
+        if (actionLabel) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'toast-action-btn';
+            button.textContent = actionLabel;
+            button.addEventListener('click', () => {
+                const handler = onAction;
+                hideToast();
+                if (typeof handler === 'function') handler();
+            });
+            el.appendChild(button);
+        }
+
+        return el;
+    }
+
+    function showToast(message, variant = 'info', durationMs = 2200) {
+        const el = renderToastContent(message);
+        if (!el) return;
+        clearToastTimers();
+        el.classList.remove('error', 'interactive');
         if (variant === 'error') el.classList.add('error');
         el.classList.add('visible');
-        if (toastTimer) clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => hideToast(), durationMs);
+    }
+
+    function showActionToast(message, actionLabel, onAction, options = {}) {
+        const {
+            variant = 'info',
+            durationMs = 30000,
+            withCountdown = false,
+            onExpire = null
+        } = options;
+
+        let remainingSeconds = Math.max(1, Math.ceil(durationMs / 1000));
+        const getActionLabel = () => withCountdown ? `${actionLabel} (${remainingSeconds}s)` : actionLabel;
+        const el = renderToastContent(message, getActionLabel(), onAction);
+        if (!el) return;
+
+        clearToastTimers();
+        el.classList.remove('error');
+        if (variant === 'error') el.classList.add('error');
+        el.classList.add('interactive', 'visible');
+
+        if (withCountdown) {
+            toastCountdownTimer = setInterval(() => {
+                remainingSeconds -= 1;
+                const button = el.querySelector('.toast-action-btn');
+                if (!button || remainingSeconds <= 0) return;
+                button.textContent = getActionLabel();
+            }, 1000);
+        }
+
         toastTimer = setTimeout(() => {
-            el.classList.remove('visible');
+            hideToast();
+            if (typeof onExpire === 'function') onExpire();
         }, durationMs);
     }
     
@@ -1951,11 +3185,13 @@ The system is relationship-based and supported by tools such as Salesforce, repo
             appConfig.typeOffsets[type].y += y;
             render();
         } else { 
-            const slide = slidesData[currentSlideIndex]; 
-            slide.x = (slide.x || 0) + x; 
-            slide.y = (slide.y || 0) + y; 
-            document.querySelector(`.slide.active`).style.setProperty('--local-x', slide.x + 'px'); 
-            document.querySelector(`.slide.active`).style.setProperty('--local-y', slide.y + 'px'); 
+            if (!nudgeSelectedElements(x, y)) {
+                const slide = slidesData[currentSlideIndex]; 
+                slide.x = (slide.x || 0) + x; 
+                slide.y = (slide.y || 0) + y; 
+                document.querySelector(`.slide.active`).style.setProperty('--local-x', slide.x + 'px'); 
+                document.querySelector(`.slide.active`).style.setProperty('--local-y', slide.y + 'px'); 
+            }
         } 
         saveState(); 
     }
@@ -1990,6 +3226,36 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         onMove({ clientX });
     }
 
+    function startStackSplitDrag(dividerEl, clientY) {
+        const slideIndex = parseInt(dividerEl.dataset.slideIndex, 10);
+        const column = dividerEl.closest('[data-role="stacked-left-column"]');
+        if (!column || Number.isNaN(slideIndex)) return;
+        dividerEl.classList.add('is-dragging');
+
+        const bounds = column.getBoundingClientRect();
+        const slide = slidesData[slideIndex];
+        ensureSlideSchema(slide);
+
+        const onMove = (moveEvent) => {
+            const y = moveEvent.clientY - bounds.top;
+            const pct = (y / bounds.height) * 100;
+            const clamped = Math.max(25, Math.min(75, pct));
+            slide.columns.stackSplitPct = Math.round(clamped * 10) / 10;
+            column.style.setProperty('--stack-top', `${slide.columns.stackSplitPct}%`);
+        };
+
+        const onUp = () => {
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onUp);
+            dividerEl.classList.remove('is-dragging');
+            saveState();
+        };
+
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+        onMove({ clientY });
+    }
+
     function edgeAlignFromClick(rect, x, y) {
         const edgeThreshold = 22;
         if (y - rect.top <= edgeThreshold) return 'top';
@@ -2013,14 +3279,14 @@ The system is relationship-based and supported by tools such as Salesforce, repo
             field.text = htmlToMd(el.innerHTML);
             if (el.dataset.fieldPath === 'bodyField') slide.content = field.text;
             saveState();
-            showFieldTypoIndicator(field);
+            showFieldTypoIndicator(field, el.dataset.role);
             return;
         }
         if (el.dataset.role === 'field-quote-text') {
             const field = getByPath(slide, el.dataset.fieldPath);
             field.quoteText = el.innerText;
             saveState();
-            showFieldTypoIndicator(field);
+            showFieldTypoIndicator(field, el.dataset.role);
             return;
         }
         if (el.dataset.role === 'field-quote-attrib') {
@@ -2030,7 +3296,7 @@ The system is relationship-based and supported by tools such as Salesforce, repo
             el.classList.toggle('quote-attrib-empty', !field.quoteAttribution);
             if (!field.quoteAttribution && el.innerHTML.trim() === '') el.innerHTML = '&nbsp;';
             saveState();
-            showFieldTypoIndicator(field);
+            showFieldTypoIndicator(field, el.dataset.role);
             return;
         }
         if (el.dataset.role === 'ai-prompt-edit') {
@@ -2067,8 +3333,43 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         speakerNotesInput.addEventListener('input', updateSpeakerNotes);
     }
 
+    document.addEventListener('input', (e) => {
+        const refInput = e.target.closest('[data-role="reference-source-input"]');
+        if (!refInput) return;
+        updateDeckReferenceSourceField(refInput.dataset.refId, refInput.dataset.sourceIndex, refInput.dataset.refField, refInput.value);
+    });
+
+    document.addEventListener('click', (e) => {
+        const addSourceBtn = e.target.closest('[data-role="add-reference-source"]');
+        if (addSourceBtn) {
+            addDeckReferenceSource(addSourceBtn.dataset.refId);
+            return;
+        }
+
+        const deleteSourceBtn = e.target.closest('[data-role="delete-reference-source"]');
+        if (deleteSourceBtn) {
+            deleteDeckReferenceSource(deleteSourceBtn.dataset.refId, deleteSourceBtn.dataset.sourceIndex);
+            return;
+        }
+
+        const deleteBtn = e.target.closest('[data-role="delete-reference"]');
+        if (deleteBtn) {
+            deleteDeckReference(deleteBtn.dataset.refId);
+            return;
+        }
+    });
+
     // ── Mode icon button clicks ──
     container.addEventListener('click', (e) => {
+        const inlineRef = e.target.closest('[data-role="inline-ref-marker"]');
+        if (inlineRef) {
+            e.preventDefault();
+            e.stopPropagation();
+            if (getDeckReferenceById(inlineRef.dataset.refId)) openReferencePreview(inlineRef.dataset.refId);
+            else openReferenceManager(inlineRef.dataset.refId);
+            return;
+        }
+
         const fontStepBtn = e.target.closest('[data-role="field-font-step"]');
         if (fontStepBtn) {
             const slideEl = fontStepBtn.closest('.slide');
@@ -2140,6 +3441,13 @@ The system is relationship-based and supported by tools such as Salesforce, repo
             if (!slideEl) return;
             const index = parseInt(slideEl.dataset.index, 10);
             if (Number.isNaN(index)) return;
+            const slide = slidesData[index];
+            ensureSlideSchema(slide);
+            const field = getByPath(slide, settingsBtn.dataset.fieldPath);
+            if (!field?.imageUrl) {
+                settingsBtn.closest('[data-role="image-drop-zone"]')?.focus({ preventScroll: true });
+                return;
+            }
             setImageManageMode(index, settingsBtn.dataset.fieldPath, true);
             render(); showSlide(currentSlideIndex);
             return;
@@ -2219,6 +3527,10 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         // ── Click on drop-zone opens file picker ──
         const dropZone = e.target.closest('[data-role="image-drop-zone"]');
         if (dropZone && !e.target.closest('input') && !e.target.closest('button') && !e.target.closest('textarea') && !e.target.closest('.drop-cell-url') && !e.target.closest('.drop-cell-ai')) {
+            if (dropZone.classList.contains('image-drop-zone-empty')) {
+                dropZone.focus({ preventScroll: true });
+                return;
+            }
             const fileInput = dropZone.querySelector('[data-role="field-image-file"]');
             if (fileInput) fileInput.click();
             return;
@@ -2313,6 +3625,12 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         if (divider) {
             e.preventDefault();
             startSplitDrag(divider, e.clientX);
+            return;
+        }
+        const stackedDivider = e.target.closest('[data-role="stacked-split-divider"]');
+        if (stackedDivider) {
+            e.preventDefault();
+            startStackSplitDrag(stackedDivider, e.clientY);
         }
     });
 
@@ -2320,8 +3638,13 @@ The system is relationship-based and supported by tools such as Salesforce, repo
     //  Image upload handler — uploads to server, falls back to data-URI
     // ════════════════════════════════════════════════
     const IMAGE_UPLOAD_URL = 'https://happydo.xyz/harvester/api/image-store.php';
+    const IMAGE_LIBRARY_PAGE_URL = IMAGE_UPLOAD_URL.replace(/\/api\/image-store\.php$/i, '/50-designer/image-library.html');
     const IMAGE_HISTORY_MAX = 10;
     const AI_GEN_IN_FLIGHT = new Set();
+
+    function openServerImageLibrary() {
+        window.open(IMAGE_LIBRARY_PAGE_URL, '_blank', 'noopener');
+    }
 
     /** Push the current imageUrl onto the field's history stack before replacing it */
     function pushImageHistory(field) {
@@ -2395,11 +3718,12 @@ The system is relationship-based and supported by tools such as Salesforce, repo
     function getImageFieldsForSlide(slide) {
         ensureSlideSchema(slide);
         const targets = [];
-        if (slide.type === 'standard' && slide.bodyField?.mode === 'image') {
+        if ((slide.type === 'standard' || slide.type === 'image') && slide.bodyField?.mode === 'image') {
             targets.push({ fieldPath: 'bodyField', field: slide.bodyField });
         }
         if (slide.type === 'two-column') {
             if (slide.columns?.leftField?.mode === 'image') targets.push({ fieldPath: 'columns.leftField', field: slide.columns.leftField });
+            if (slide.columns?.bottomField?.mode === 'image') targets.push({ fieldPath: 'columns.bottomField', field: slide.columns.bottomField });
             if (slide.columns?.rightField?.mode === 'image') targets.push({ fieldPath: 'columns.rightField', field: slide.columns.rightField });
         }
         return targets;
@@ -2425,8 +3749,11 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         const leftField = ensureFieldDefaults(slide.bodyField, slide.content || '');
         slide.type = 'two-column';
         slide.columns = {
+            layoutMode: 'side-by-side',
             splitPct: 50,
+            stackSplitPct: 50,
             leftField,
+            bottomField: ensureFieldDefaults({ mode: 'quote', quoteText: '', quoteAttribution: '' }, ''),
             rightField: ensureFieldDefaults({ mode: 'image', imageUrl: '', imageAlign: 'center', imagePrompt: '', imageNotes: '' }, '')
         };
         slide.content = leftField.text || slide.content || '';
@@ -2461,12 +3788,46 @@ The system is relationship-based and supported by tools such as Salesforce, repo
             showToast('Select a two-column slide to remove the second column.', 'error', 2500);
             return;
         }
-        if (slideHasMeaningfulFieldContent(slide.columns?.rightField) && !confirm('Remove the second column? Content in the right column will be discarded.')) {
+        if ((slideHasMeaningfulFieldContent(slide.columns?.rightField) || slideHasMeaningfulFieldContent(slide.columns?.bottomField)) && !confirm('Remove the second column? Content outside the left text field will be discarded.')) {
             return;
         }
         convertTwoColumnToStandard(slide);
         render(); saveState(); showSlide(currentSlideIndex);
         showToast('Removed the second column.');
+    }
+
+    function enableCurrentSlideStackedLayout() {
+        const slide = slidesData[currentSlideIndex];
+        if (!slide || slide.type !== 'two-column') {
+            showToast('Select a two-column slide first.', 'error', 2400);
+            return;
+        }
+        ensureSlideSchema(slide);
+        slide.columns.layoutMode = 'stacked-left';
+        if (!slideHasMeaningfulFieldContent(slide.columns.bottomField) && slide.columns.rightField?.mode === 'quote') {
+            slide.columns.bottomField = ensureFieldDefaults(slide.columns.rightField, '');
+        }
+        if (slide.columns.rightField?.mode !== 'image') {
+            slide.columns.rightField = ensureFieldDefaults({ mode: 'image', imageUrl: '', imageAlign: 'center', imagePrompt: slide.columns.rightField?.imagePrompt || '' }, '');
+        }
+        render(); saveState(); showSlide(currentSlideIndex);
+        showToast('Left column is now stacked text-over-quote, with a full graphic space on the right.');
+    }
+
+    function disableCurrentSlideStackedLayout() {
+        const slide = slidesData[currentSlideIndex];
+        if (!slide || slide.type !== 'two-column') {
+            showToast('Select a two-column slide first.', 'error', 2400);
+            return;
+        }
+        ensureSlideSchema(slide);
+        if (slide.columns.layoutMode !== 'stacked-left') return;
+        slide.columns.layoutMode = 'side-by-side';
+        if ((!slideHasMeaningfulFieldContent(slide.columns.rightField) || slide.columns.rightField?.mode === 'image') && slideHasMeaningfulFieldContent(slide.columns.bottomField)) {
+            slide.columns.rightField = ensureFieldDefaults(slide.columns.bottomField, '');
+        }
+        render(); saveState(); showSlide(currentSlideIndex);
+        showToast('Restored the standard side-by-side two-column layout.');
     }
 
     async function handleImageFile(file, fieldPath, slideIndex) {
@@ -2531,12 +3892,16 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         const state = getFieldAsyncState(slideIndex, fieldPath);
         if (state.promptPending) {
             if (options.queueGenerate) state.generateQueued = true;
+            updateFieldPromptFlags(field, state.promptPending, state.generateQueued);
+            saveState();
             refreshImageActionButtons(slideIndex, fieldPath);
             return state.promptPromise;
         }
 
         state.promptPending = true;
         if (options.queueGenerate) state.generateQueued = true;
+        updateFieldPromptFlags(field, state.promptPending, state.generateQueued);
+        saveState();
         const requestId = ++state.requestId;
         refreshImageActionButtons(slideIndex, fieldPath);
 
@@ -2555,10 +3920,12 @@ The system is relationship-based and supported by tools such as Salesforce, repo
                 field.imageNotes = promptText;
                 saveState();
                 updateImagePromptInputs(slideIndex, fieldPath, promptText);
-                showToast('Image prompt drafted.');
+                showToast(options.resumed ? 'Image prompt finished after reload.' : 'Image prompt drafted.');
 
                 if (state.generateQueued) {
                     state.generateQueued = false;
+                    updateFieldPromptFlags(field, state.promptPending, state.generateQueued);
+                    saveState();
                     refreshImageActionButtons(slideIndex, fieldPath);
                     await generateAIImage(fieldPath, slideIndex, promptText);
                 }
@@ -2566,6 +3933,8 @@ The system is relationship-based and supported by tools such as Salesforce, repo
                 return promptText;
             } catch (err) {
                 state.generateQueued = false;
+                updateFieldPromptFlags(field, state.promptPending, state.generateQueued);
+                saveState();
                 showToast(`Auto prompt failed: ${err.message}`, 'error', 3600);
                 throw err;
             } finally {
@@ -2573,6 +3942,8 @@ The system is relationship-based and supported by tools such as Salesforce, repo
                     state.promptPending = false;
                     state.promptPromise = null;
                 }
+                updateFieldPromptFlags(field, state.promptPending, state.generateQueued);
+                saveState();
                 refreshImageActionButtons(slideIndex, fieldPath);
             }
         })();
@@ -2591,6 +3962,8 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         if (customPrompt) {
             const state = getFieldAsyncState(slideIndex, fieldPath);
             state.generateQueued = false;
+            updateFieldPromptFlags(field, state.promptPending, state.generateQueued);
+            saveState();
             refreshImageActionButtons(slideIndex, fieldPath);
             await generateAIImage(fieldPath, slideIndex, customPrompt, triggerBtn);
             return;
@@ -2598,12 +3971,19 @@ The system is relationship-based and supported by tools such as Salesforce, repo
 
         const existingPrompt = String(field.imagePrompt || field.imageNotes || '').trim();
         if (existingPrompt) {
+            const state = getFieldAsyncState(slideIndex, fieldPath);
+            state.generateQueued = false;
+            updateFieldPromptFlags(field, state.promptPending, state.generateQueued);
+            saveState();
+            refreshImageActionButtons(slideIndex, fieldPath);
             await generateAIImage(fieldPath, slideIndex, existingPrompt, triggerBtn);
             return;
         }
 
         const state = getFieldAsyncState(slideIndex, fieldPath);
         state.generateQueued = true;
+        updateFieldPromptFlags(field, state.promptPending, state.generateQueued);
+        saveState();
         refreshImageActionButtons(slideIndex, fieldPath);
         showToast('Generating an image prompt first, then the image.', 'info', 2800);
         await generateAutomaticImagePrompt(fieldPath, slideIndex, { queueGenerate: true });
@@ -2688,55 +4068,346 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         let template;
         if (type === 'standard') {
             template = { type: 'standard', title: 'New Slide', content: '* Point 1', speakerNotes: '', bodyField: ensureFieldDefaults({ mode: 'text', text: '* Point 1' }, '* Point 1') };
+        } else if (type === 'image') {
+            template = { type: 'image', title: 'Image Slide', speakerNotes: '', bodyField: ensureFieldDefaults({ mode: 'image', imageUrl: '', imageAlign: 'center', imagePrompt: '', imageNotes: '' }, '') };
         } else if (type === 'two-column') {
             template = {
                 type: 'two-column',
                 title: 'Two-Column Slide',
                 speakerNotes: '',
                 columns: {
+                    layoutMode: 'side-by-side',
                     splitPct: 50,
+                    stackSplitPct: 50,
                     leftField: ensureFieldDefaults({ mode: 'text', text: '* Left panel notes' }, '* Left panel notes'),
+                    bottomField: ensureFieldDefaults({ mode: 'quote', quoteText: '', quoteAttribution: '' }, ''),
                     rightField: ensureFieldDefaults({ mode: 'image', imageUrl: '', imageAlign: 'center' }, '• Right panel notes')
                 }
             };
         } else {
             template = { type: type, title: 'New Title', subtitle: 'Subtitle', speakerNotes: '' };
         }
-        slidesData.splice(currentSlideIndex + 1, 0, template);
-        currentSlideIndex++;
+        const insertIndex = insertSlidesAfterIndex([template], currentSlideIndex);
+        render();
+        saveState();
+        showSlide(insertIndex);
+    }
+
+    function insertSlidesAfterIndex(newSlides, afterIndex = currentSlideIndex) {
+        const normalizedSlides = (Array.isArray(newSlides) ? newSlides : [newSlides])
+            .filter(Boolean)
+            .map(slide => ensureSlideSchema(cloneJsonData(slide)));
+        if (!normalizedSlides.length) return currentSlideIndex;
+        const numericAfterIndex = Number.isInteger(afterIndex) ? afterIndex : currentSlideIndex;
+        const insertIndex = Math.max(0, Math.min(slidesData.length, numericAfterIndex + 1));
+        slidesData.splice(insertIndex, 0, ...normalizedSlides);
+        currentSlideIndex = insertIndex;
+        return insertIndex;
+    }
+
+    function mergeDeckReferences(nextReferences) {
+        if (!Array.isArray(nextReferences) || !nextReferences.length) return;
+        deckReferences = normalizeDeckReferences([...deckReferences, ...nextReferences]);
+    }
+
+    function createDeletedSlideSnapshot(slideIndex = currentSlideIndex) {
+        const numericIndex = Number.isInteger(slideIndex) ? slideIndex : currentSlideIndex;
+        if (slidesData.length <= 1 || numericIndex < 0 || numericIndex >= slidesData.length) return null;
+        const removedSlide = ensureSlideSchema(cloneJsonData(slidesData[numericIndex]));
+        slidesData.splice(numericIndex, 1);
+        const focusIndex = Math.max(0, Math.min(numericIndex, slidesData.length - 1));
+        currentSlideIndex = focusIndex;
+        return { slide: removedSlide, index: numericIndex, focusIndex };
+    }
+
+    function restoreDeletedSlideSnapshot(snapshot) {
+        if (!snapshot?.slide) return false;
+        const insertIndex = Math.max(0, Math.min(Number(snapshot.index) || 0, slidesData.length));
+        slidesData.splice(insertIndex, 0, ensureSlideSchema(cloneJsonData(snapshot.slide)));
+        currentSlideIndex = insertIndex;
+        return true;
+    }
+
+    function undoPendingSlideDeletion(options = {}) {
+        if (!pendingDeletedSlide) {
+            if (options.showToast !== false) showToast('There is no slide deletion to undo.', 'error', 2800);
+            return false;
+        }
+        const snapshot = pendingDeletedSlide;
+        pendingDeletedSlide = null;
+        const restored = restoreDeletedSlideSnapshot(snapshot);
+        if (!restored) {
+            if (options.showToast !== false) showToast('The deleted slide could not be restored.', 'error', 3200);
+            return false;
+        }
         render();
         saveState();
         showSlide(currentSlideIndex);
+        if (options.showToast !== false) showToast('Slide restored.');
+        return true;
     }
-    function deleteSlide() { if (slidesData.length <= 1) return; if (confirm("Delete slide?")) { slidesData.splice(currentSlideIndex, 1); if (currentSlideIndex >= slidesData.length) currentSlideIndex--; render(); saveState(); showSlide(currentSlideIndex); } }
-    function showSlide(idx) { if (idx < 0 || idx >= slidesData.length) return; currentSlideIndex = idx; document.querySelectorAll('.slide').forEach((s, i) => s.classList.toggle('active', i === idx)); updateSelectionMenu(); renderSpeakerNotesPanel(); syncLayoutActionButtons(); }
+
+    function deleteSlideAtIndex(slideIndex = currentSlideIndex, options = {}) {
+        const snapshot = createDeletedSlideSnapshot(slideIndex);
+        if (!snapshot) {
+            if (options.showToast !== false) showToast('Cannot delete the only slide in the deck.', 'error', 3200);
+            return false;
+        }
+
+        pendingDeletedSlide = snapshot;
+        render();
+        saveState();
+        showSlide(snapshot.focusIndex);
+
+        if (options.showToast !== false) {
+            showActionToast('Slide deleted.', 'Undo', () => undoPendingSlideDeletion({ showToast: true }), {
+                durationMs: 30000,
+                withCountdown: true,
+                onExpire: () => {
+                    pendingDeletedSlide = null;
+                }
+            });
+        }
+        return true;
+    }
+
+    function deleteSlide() {
+        deleteSlideAtIndex(currentSlideIndex);
+    }
+
+    function showSlide(idx) {
+        if (idx < 0 || idx >= slidesData.length) return;
+        currentSlideIndex = idx;
+        document.querySelectorAll('.slide').forEach((s, i) => s.classList.toggle('active', i === idx));
+        updateSelectionMenu();
+        renderSpeakerNotesPanel();
+        syncLayoutActionButtons();
+        syncAllImageActionButtons();
+        scheduleSlideHoverMenuPosition();
+    }
+
     function exportDeck() { navigator.clipboard.writeText(serializeDeckState(true)).then(() => alert("JSON Copied!")); }
+
+    async function copyCurrentSlideJson() {
+        if (!slidesData[currentSlideIndex]) {
+            showToast('No slide is selected to copy.', 'error', 3200);
+            return;
+        }
+        const payload = buildSlideClipboardPayload([currentSlideIndex]);
+        try {
+            await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
+            showToast('Slide JSON copied to clipboard.');
+        } catch (_err) {
+            showToast('Clipboard was blocked. Allow clipboard access and try again.', 'error', 3600);
+        }
+    }
+
+    function formatPasteClipboardError(rawText, errorMessage) {
+        const message = String(errorMessage || 'Clipboard JSON could not be pasted.');
+        if (!String(rawText || '').trim()) return 'Clipboard does not contain any text JSON to paste.';
+        if (/Could not parse JSON/i.test(message)) {
+            return `Clipboard text was found, but it was not valid Designer JSON.\n\n${message}`;
+        }
+        if (/No "slides" array found/i.test(message) || /The "slides" array is empty/i.test(message)) {
+            return `Clipboard JSON was readable, but it did not contain any usable slides.\n\n${message}`;
+        }
+        return message;
+    }
+
+    async function pasteSlidesAfterCurrent() {
+        let clipboardText = '';
+        try {
+            clipboardText = await navigator.clipboard.readText();
+        } catch (_err) {
+            showToast('Clipboard access was blocked. Allow clipboard access and try again.', 'error', 3600);
+            return;
+        }
+
+        if (!String(clipboardText || '').trim()) {
+            showToast('Clipboard does not contain any text JSON to paste.', 'error', 3600);
+            return;
+        }
+
+        try {
+            const prepared = prepareSlidesForInsertion(clipboardText);
+            const insertIndex = insertSlidesAfterIndex(prepared.slides, currentSlideIndex);
+            mergeDeckReferences(prepared.references);
+            render();
+            saveState(true);
+            showSlide(insertIndex);
+            document.body.classList.add('flash-success');
+            setTimeout(() => document.body.classList.remove('flash-success'), 600);
+            setSettingsStatus('deck-doc-status', `Pasted ${prepared.slides.length} slide${prepared.slides.length === 1 ? '' : 's'} after the current slide.`);
+            showToast(`Inserted ${prepared.slides.length} slide${prepared.slides.length === 1 ? '' : 's'} after the current slide.`);
+            if (prepared.warnings.length > 0) showNotice(prepared.warnings);
+        } catch (err) {
+            showError(formatPasteClipboardError(clipboardText, err.message));
+        }
+    }
+
+    function buildReferenceSpeakerNoteLine(source) {
+        const quote = String(source?.text || '').trim();
+        if (!quote) return '';
+        const attribution = formatDeckSourceAttribution(source);
+        return attribution ? `"${quote}" - ${attribution}` : `"${quote}"`;
+    }
+
+    function buildSlideReferenceNotes(slide) {
+        const referenceIds = collectReferenceIdsForSlide(slide);
+        if (!referenceIds.length) return '';
+        const lines = ['Sources'];
+        referenceIds.forEach(referenceId => {
+            const reference = getDeckReferenceById(referenceId);
+            if (!reference) {
+                lines.push(`${referenceId}. Missing reference definition.`);
+                return;
+            }
+            const sources = getDeckReferenceSources(reference);
+            if (!sources.length) {
+                lines.push(`${referenceId}. Missing supporting quote.`);
+                return;
+            }
+            sources.forEach((source, sourceIndex) => {
+                const line = buildReferenceSpeakerNoteLine(source);
+                if (!line) return;
+                lines.push(`${sourceIndex === 0 ? `${referenceId}. ` : '    '}${line}`);
+            });
+        });
+        return lines.join('\n');
+    }
+
+    function getSlideImageTargets(slide, slideIndex) {
+        return getImageFieldsForSlide(slide)
+            .filter(target => String(target.field?.imageUrl || '').trim())
+            .map((target, imageIndex) => ({
+                slideIndex,
+                fieldPath: target.fieldPath,
+                imageUrl: String(target.field.imageUrl || '').trim(),
+                imageIndex
+            }));
+    }
+
+    function sanitizeSlideTitleForFileName(title, maxWords = 3) {
+        const words = String(title || '')
+            .replace(/[^A-Za-z0-9]+/g, ' ')
+            .trim()
+            .split(/\s+/)
+            .filter(Boolean)
+            .slice(0, maxWords);
+        return words.length ? words.join('-') : 'Slide';
+    }
+
+    function inferImageExtension(imageUrl, mimeType = '') {
+        const fromMime = String(mimeType || '').match(/^image\/(png|jpeg|jpg|webp|gif|svg\+xml)$/i);
+        if (fromMime) {
+            const ext = fromMime[1].toLowerCase();
+            return ext === 'jpeg' ? 'jpg' : ext === 'svg+xml' ? 'svg' : ext;
+        }
+        const fromData = String(imageUrl || '').match(/^data:image\/(png|jpeg|jpg|webp|gif|svg\+xml)/i);
+        if (fromData) {
+            const ext = fromData[1].toLowerCase();
+            return ext === 'jpeg' ? 'jpg' : ext === 'svg+xml' ? 'svg' : ext;
+        }
+        const fromPath = String(imageUrl || '').match(/\.([A-Za-z0-9]+)(?:[?#].*)?$/);
+        if (fromPath) {
+            const ext = fromPath[1].toLowerCase();
+            if (['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'].includes(ext)) return ext === 'jpeg' ? 'jpg' : ext;
+        }
+        return 'png';
+    }
+
+    async function downloadImageAsset(imageUrl, fileName) {
+        try {
+            const response = await fetch(imageUrl);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const blob = await response.blob();
+            const objectUrl = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = objectUrl;
+            link.download = fileName;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+            return true;
+        } catch {
+            const link = document.createElement('a');
+            link.href = imageUrl;
+            link.download = fileName;
+            link.target = '_blank';
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            return false;
+        }
+    }
+
+    async function downloadAllImages() {
+        const targets = slidesData.flatMap((slide, slideIndex) => getSlideImageTargets(slide, slideIndex));
+        if (!targets.length) {
+            showToast('No slide images are currently available to download.', 'error', 2600);
+            return;
+        }
+
+        let downloaded = 0;
+        for (const target of targets) {
+            const slide = slidesData[target.slideIndex] || {};
+            const titleSlug = sanitizeSlideTitleForFileName(slide.title || 'Slide');
+            const ext = inferImageExtension(target.imageUrl);
+            const suffix = target.imageIndex > 0 ? `-${target.imageIndex + 1}` : '';
+            const fileName = `${target.slideIndex + 1}.${titleSlug}${suffix}.${ext}`;
+            await downloadImageAsset(target.imageUrl, fileName);
+            downloaded += 1;
+            await new Promise(resolve => setTimeout(resolve, 80));
+        }
+        showToast(`Started downloading ${downloaded} image${downloaded === 1 ? '' : 's'}.`, 'info', 2600);
+    }
+
     async function copyJsonHowTo() {
         const guide = [
             'Designer JSON authoring guide',
             '',
-            'Use this format:',
+            'Use this format for either full-deck import or slide paste:',
             '{',
+            '  "meta": {',
+            '    "designerPayloadType": "slide-clipboard",',
+            '    "slideClipboard": true,',
+            '    "slideCount": 2',
+            '  },',
             '  "config": {',
             '    "globalX": 0,',
             '    "globalY": 0,',
             '    "imagePromptStyle": "Optional universal image style"',
             '  },',
+            '  "references": [',
+            '    { "id": 12, "sources": [',
+            '      { "text": "Quoted supporting evidence", "interviewee": "Person Name", "sourceLabel": "Lauren Verrill.md", "timestamp": "00:14:32" },',
+            '      { "text": "Second supporting quote for the same sentence", "interviewee": "Another Person" }',
+            '    ] }',
+            '  ],',
             '  "slides": [',
             '    { "type": "cover", "title": "Deck Title", "subtitle": "Optional subtitle" },',
             '    { "type": "section", "title": "Section Header", "subtitle": "Optional subtitle" },',
             '    {',
             '      "type": "standard",',
             '      "title": "Slide title",',
-            '      "bodyField": { "mode": "text", "text": "Bullet or paragraph text" }',
+            '      "bodyField": { "mode": "text", "text": "Bullet or paragraph text (12)" }',
+            '    },',
+            '    {',
+            '      "type": "image",',
+            '      "title": "Optional image title",',
+            '      "bodyField": { "mode": "image", "imageUrl": "" }',
             '    },',
             '    {',
             '      "type": "two-column",',
             '      "title": "Two-column title",',
             '      "columns": {',
+            '        "layoutMode": "stacked-left",',
             '        "splitPct": 55,',
-            '        "leftField": { "mode": "text", "text": "Left content" },',
-            '        "rightField": { "mode": "quote", "quoteText": "Quoted text", "quoteAttribution": "Person" }',
+            '        "stackSplitPct": 48,',
+            '        "leftField": { "mode": "text", "text": "Top-left content (12)" },',
+            '        "bottomField": { "mode": "quote", "quoteText": "Quoted text (12)", "quoteAttribution": "Person" },',
+            '        "rightField": { "mode": "image", "imageUrl": "" }',
             '      }',
             '    }',
             '  ]',
@@ -2744,21 +4415,32 @@ The system is relationship-based and supported by tools such as Salesforce, repo
             '',
             'Rules and tips:',
             '- Required top-level key: "slides" (array).',
-            '- Optional top-level key: "config" (object). If missing, Designer uses defaults.',
+            '- The `slides` array can contain one slide or many slides.',
+            '- Optional top-level key: `meta` (object). For slide paste, use `meta.designerPayloadType: "slide-clipboard"` and `meta.slideClipboard: true` so it is obvious this payload is slide-only JSON.',
+            '- Optional top-level key: "config" (object). If missing, full-deck import uses defaults.',
+            '- The hover Paste button ignores `config` and only inserts the slides into the current deck.',
+            '- Optional top-level key: "references" (array). Each item should have an integer `id` and a `sources` array.',
+            '- One sentence or quote should usually use one marker number, and that reference should contain all supporting quotes in its `sources` list.',
             '- `config.imagePromptStyle` stores the universal image style used for AI image generation.',
-            '- Supported slide types: "cover", "section", "standard", "two-column".',
+            '- Supported slide types: "cover", "section", "standard", "image", "two-column".',
+            '- `image` slides render one large image field. If `title` is blank, Designer omits the title row and shows only the image area.',
+            '- Inline reference markers use plain parentheses: `(12)` means "link this sentence to deck reference #12".',
+            '- `columns.layoutMode: "stacked-left"` uses top-left text, bottom-left quote, and a full-height right graphic field.',
+            '- `columns.stackSplitPct` controls the vertical split between the top-left and bottom-left panels on stacked-left slides.',
             '- Unknown slide types are auto-converted to "standard".',
             '- If you only have one slide object, wrap it in "slides".',
             '- A plain array is accepted and treated as slides.',
             '- AI prose around JSON is okay, but the JSON object must still be valid.',
+            '- If inline markers like `(12)` are used, include matching `references` entries whenever possible.',
+            '- If pasted reference ids collide with the current deck, Designer renumbers them automatically.',
             '- For image fields use mode "image" with "imageUrl".',
             '- Use "imageNotes" for alt-text and AI image generation prompts.',
             '- Automatic prompt drafting writes into `imagePrompt` and `imageNotes` on the field.',
             '',
             'How to use:',
             '1) Paste this guide into an AI prompt and ask for valid JSON only.',
-            '2) In Designer, open Settings > Import JSON.',
-            '3) Paste the JSON or use Upload/Clipboard import.'
+            '2) To add slides after the current slide, copy the JSON to the clipboard and use the hover Paste button beside the slide.',
+            '3) To replace/load a whole deck, open Settings > Import JSON and paste the JSON or use Upload/Clipboard import.'
         ].join('\n');
 
         showToast('Copying JSON guide...');
@@ -2772,7 +4454,26 @@ The system is relationship-based and supported by tools such as Salesforce, repo
     function toggleSettings() { document.getElementById('settings-panel').classList.toggle('open'); }
     function openImport() { document.getElementById('import-modal').classList.add('open'); }
     function closeImport() { document.getElementById('import-modal').classList.remove('open'); }
-    function resetAll() { if(confirm("Clear All?")) { localStorage.removeItem('heart_walk_deck_pro_v3'); location.reload(); }}
+    function resetAll() {
+        if(!confirm('Clear this tab back to a blank deck? Saved DB decks will remain available in the list.')) return;
+        try {
+            if (currentDeckId) localStorage.removeItem(getDeckLocalCacheKey(currentDeckId));
+            localStorage.removeItem(LEGACY_LOCAL_DECK_AUTOSAVE_KEY);
+            sessionStorage.removeItem(DESIGNER_ACTIVE_DECK_SESSION_KEY);
+        } catch (err) {
+            console.warn('[Designer] Could not clear local deck cache:', err);
+        }
+        currentDeckId = '';
+        currentDeckName = '';
+        currentDeckCreatedAt = '';
+        currentDeckUpdatedAt = '';
+        lastRemoteDeckSnapshot = '';
+        lastRemoteDeckFingerprint = '';
+        lastDeckLoadedFromRemote = '';
+        applyDeckPayload(createStarterDeckPayload());
+        setSettingsStatus('deck-doc-status', 'This tab is back to a blank unsaved deck.');
+        showToast('This tab is back to a blank deck.');
+    }
     function exec(cmd, val=null) { document.execCommand(cmd, false, val); }
 
     function getActiveFieldContext() {
@@ -2803,8 +4504,11 @@ The system is relationship-based and supported by tools such as Salesforce, repo
     }
 
     container.addEventListener('focusin', (e) => {
+        const typographyTargetId = getTypographyTargetIdFromEditable(e.target);
+        if (typographyTargetId) setActiveTypographyTarget(typographyTargetId);
         const field = getFieldFromEditable(e.target);
-        if (field) showFieldTypoIndicator(field);
+        if (field) showFieldTypoIndicator(field, e.target.dataset.role || '');
+        else hideFieldTypoIndicator();
     });
 
     container.addEventListener('focusout', (e) => {
@@ -2819,7 +4523,7 @@ The system is relationship-based and supported by tools such as Salesforce, repo
 
     function showContextMenu(x, y) { const menu = document.getElementById('context-menu'); menu.style.left = x + 'px'; menu.style.top = y + 'px'; menu.classList.add('visible'); }
     function setShapeColor(colorVar) { slidesData[currentSlideIndex].shapeColor = colorVar; render(); saveState(); document.getElementById('context-menu').classList.remove('visible'); }
-    document.addEventListener('click', e => { if(e.target.closest('[contenteditable]') || e.target.closest('#settings-wrapper') || e.target.closest('#top-hotspot') || e.target.closest('.modal-content') || e.target.closest('.error-content') || e.target.closest('#selection-floater') || e.target.closest('.color-trigger') || e.target.closest('#color-picker-popover') || e.target.closest('#context-menu') || e.target.closest('.color-option')) return; if(!e.ctrlKey) { document.querySelectorAll('.selected-for-move').forEach(el => el.classList.remove('selected-for-move')); selectedElements = []; updateSelectionMenu(); } document.getElementById('context-menu').classList.remove('visible'); });
+    document.addEventListener('click', e => { if(e.target.closest('[contenteditable]') || e.target.closest('#settings-wrapper') || e.target.closest('#top-hotspot') || e.target.closest('.modal-content') || e.target.closest('.error-content') || e.target.closest('#selection-floater') || e.target.closest('.color-trigger') || e.target.closest('#color-picker-popover') || e.target.closest('#context-menu') || e.target.closest('.color-option')) return; if(!e.ctrlKey) { document.querySelectorAll('.selected-for-move').forEach(el => el.classList.remove('selected-for-move')); selectedElements = []; updateSelectionMenu(); setActiveTypographyTarget(null); hideFieldTypoIndicator(); } document.getElementById('context-menu').classList.remove('visible'); });
     
     // --- PPT GENERATOR LOGIC ---
     async function generatePPTX() {
@@ -2839,6 +4543,8 @@ The system is relationship-based and supported by tools such as Salesforce, repo
             return parseInt(val.replace('pt', ''));
         };
 
+        const getFontFace = (key, fallback = DEFAULT_FONT_STACK) => extractPrimaryFontFamily(appConfig[key] || fallback);
+
         const getScaleKey = (safeField) => {
             const scale = String(safeField?.textScale || 'normal');
             if (scale === 'large') return 'p-large';
@@ -2846,7 +4552,7 @@ The system is relationship-based and supported by tools such as Salesforce, repo
             return 'p-normal';
         };
 
-        const parseBullets = (mdText, basePt) => {
+        const parseBullets = (mdText, basePt, scaleKey) => {
             const lines = mdText.split('\n');
             let items = [];
             lines.forEach(line => {
@@ -2862,14 +4568,13 @@ The system is relationship-based and supported by tools such as Salesforce, repo
 
                 let isBullet = false;
                 let isNumbered = false;
-                let isBold = false;
-                let isItalic = false;
+                let isHeader = false;
                 let fontSize = basePt;
                 
                 // Detect ### Header
                 if(clean.startsWith('### ')) {
                     clean = clean.substring(4);
-                    isBold = true;
+                    isHeader = true;
                     fontSize += 2;
                 }
                 // Detect Bullets: *, -, +
@@ -2883,35 +4588,32 @@ The system is relationship-based and supported by tools such as Salesforce, repo
                     isNumbered = true;
                 }
 
-                // Detect inline bold/italic and strip markers for PPTX
-                if (/^\*\*(.+)\*\*$/.test(clean) || /^__(.+)__$/.test(clean)) {
-                    clean = clean.replace(/^\*\*(.+)\*\*$/, '$1').replace(/^__(.+)__$/, '$1');
-                    isBold = true;
-                }
-                if (/^\*(.+)\*$/.test(clean) || /^_(.+)_$/.test(clean)) {
-                    clean = clean.replace(/^\*(.+)\*$/, '$1').replace(/^_(.+)_$/, '$1');
-                    isItalic = true;
-                }
-
                 // Spacing: paragraphs get full space, root bullets get 3/4, nested less
                 const isRootListItem = (isBullet || isNumbered) && indentLevel === 0;
-                const paraSpaceAfter = (!isBullet && !isNumbered && !isBold) ? 12
+                const paraSpaceAfter = (!isBullet && !isNumbered && !isHeader) ? 12
                     : isRootListItem ? 8
                     : 3;
 
-                items.push({ 
-                    text: clean, 
-                    options: { 
-                        breakLine: true, 
-                        bullet: isBullet ? { indent: indentLevel * 18 } : (isNumbered ? { type: 'number', indent: indentLevel * 18 } : false),
-                        bold: isBold,
-                        italic: isItalic,
-                        fontSize: fontSize,
+                const lineFontKey = isHeader ? 'h3' : scaleKey;
+
+                const lineRuns = buildPptInlineMarkdownRuns(
+                    clean,
+                    {
+                        fontSize,
+                        fontFace: getFontFace(`font-${lineFontKey}`),
+                        color: getHex(`color-${lineFontKey}`, '333333'),
+                        ...(isHeader ? { bold: true } : {})
+                    },
+                    {
+                        ...(isBullet ? { bullet: { indent: indentLevel * 18 } } : {}),
+                        ...(isNumbered ? { bullet: { type: 'number', indent: indentLevel * 18 } } : {}),
                         indentLevel: indentLevel,
-                        paraSpaceBefore: isBold ? 10 : (indentLevel > 0 ? 2 : 5),
+                        paraSpaceBefore: isHeader ? 10 : (indentLevel > 0 ? 2 : 5),
                         paraSpaceAfter: paraSpaceAfter
-                    } 
-                });
+                    }
+                );
+
+                items.push(...lineRuns);
             });
             return items;
         };
@@ -2940,16 +4642,21 @@ The system is relationship-based and supported by tools such as Salesforce, repo
 
                 const quoteBodyPt = Math.max(10, getPt('size-quote-body', '18pt') + ((safeField.fontDelta || 0) * 0.75));
                 const quoteBodyColor = getHex('color-quote-body', '1e1d21');
+                const quoteBodyFontFace = getFontFace('font-quote-body');
                 const quoteAttribPt = Math.max(8, getPt('size-quote-attrib', '16pt') + ((safeField.fontDelta || 0) * 0.75));
                 const quoteAttribColor = getHex('color-quote-attrib', '1e1d21');
+                const quoteAttribFontFace = getFontFace('font-quote-attrib');
                 const quoteAttrib = getResolvedQuoteAttribution(safeField);
                 const attribH = (quoteAttrib && !appConfig.hideAttrib) ? 0.35 : 0;
+                const quoteOffsetX = (Number(safeField.offsetX) || 0) / 96;
+                const quoteOffsetY = (Number(safeField.offsetY) || 0) / 96;
 
-                // Quote bubble: 90% of field width, 50% of field height, centered at 40% down
-                const bubbleW = w * 0.9;
+                // Quote bubble: 80% of field width, centered horizontally, offset about 200px from the top when space allows.
+                const bubbleW = w * 0.8;
                 const bubbleH = h * 0.5;
-                const bubbleX = x + (w - bubbleW) / 2;
-                const bubbleY = y + (h * 0.4) - (bubbleH / 2);
+                const bubbleX = x + (w - bubbleW) / 2 + quoteOffsetX;
+                const desiredTopOffset = 200 / 96;
+                const bubbleY = Math.min(y + desiredTopOffset + quoteOffsetY, y + Math.max(0, h - bubbleH));
                 // Rect body is 79.5% of total SVG height (766/963)
                 const rectH = bubbleH * 0.795;
 
@@ -2964,12 +4671,16 @@ The system is relationship-based and supported by tools such as Salesforce, repo
                     });
 
                     // Quote text positioned inside the rect portion of the bubble
-                    pptSlide.addText(quoteText, {
+                    pptSlide.addText(buildPptInlineMarkdownRuns(quoteText, {
+                        color: quoteBodyColor,
+                        fontSize: quoteBodyPt,
+                        fontFace: quoteBodyFontFace
+                    }, {}, false), {
                         x: bubbleX + 0.3, y: bubbleY + 0.15,
                         w: bubbleW - 0.6,
                         h: Math.max(0.2, rectH - 0.3 - attribH),
                         color: quoteBodyColor, fontSize: quoteBodyPt,
-                        align: 'center', valign: 'mid', fontFace: 'Arial'
+                        align: 'center', valign: 'mid', fontFace: quoteBodyFontFace
                     });
 
                     if (quoteAttrib && !appConfig.hideAttrib) {
@@ -2978,24 +4689,28 @@ The system is relationship-based and supported by tools such as Salesforce, repo
                             w: bubbleW - 0.6, h: attribH,
                             color: quoteAttribColor, bold: true,
                             fontSize: quoteAttribPt,
-                            align: 'right', fontFace: 'Arial'
+                            align: 'right', fontFace: quoteAttribFontFace
                         });
                     }
                 } else {
                     // Plain-text fallback when images hidden
-                    pptSlide.addText(quoteText, {
-                        x: x + 0.2, y: y + (h * 0.4) - 0.5,
+                    pptSlide.addText(buildPptInlineMarkdownRuns(quoteText, {
+                        color: quoteBodyColor,
+                        fontSize: quoteBodyPt,
+                        fontFace: quoteBodyFontFace
+                    }, {}, false), {
+                        x: x + 0.2 + quoteOffsetX, y: y + (h * 0.4) - 0.5 + quoteOffsetY,
                         w: w - 0.4, h: Math.max(0.2, 1.0),
                         color: quoteBodyColor, fontSize: quoteBodyPt,
-                        align: 'center', valign: 'mid', fontFace: 'Arial'
+                        align: 'center', valign: 'mid', fontFace: quoteBodyFontFace
                     });
                     if (quoteAttrib && !appConfig.hideAttrib) {
                         pptSlide.addText(quoteAttrib, {
-                            x: x + 0.2, y: y + (h * 0.4) + 0.5,
+                            x: x + 0.2 + quoteOffsetX, y: y + (h * 0.4) + 0.5 + quoteOffsetY,
                             w: w - 0.4, h: attribH,
                             color: quoteAttribColor, bold: true,
                             fontSize: quoteAttribPt,
-                            align: 'right', fontFace: 'Arial'
+                            align: 'right', fontFace: quoteAttribFontFace
                         });
                     }
                 }
@@ -3004,10 +4719,10 @@ The system is relationship-based and supported by tools such as Salesforce, repo
 
             const scaleKey = getScaleKey(safeField);
             const basePt = Math.max(8, getPt(`size-${scaleKey}`, '16pt') + ((safeField.fontDelta || 0) * 0.75));
-            const textObjects = parseBullets(safeField.text || '', basePt);
+            const textObjects = parseBullets(safeField.text || '', basePt, scaleKey);
             textObjects.forEach(obj => {
-                obj.options.color = getHex(`color-${scaleKey}`, '333333');
-                obj.options.fontFace = 'Arial';
+                if (!obj.options.color) obj.options.color = getHex(`color-${scaleKey}`, '333333');
+                if (!obj.options.fontFace) obj.options.fontFace = getFontFace(`font-${scaleKey}`);
             });
             pptSlide.addText(textObjects, { x, y, w, h, valign: 'top' });
         };
@@ -3015,7 +4730,9 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         for (const [index, data] of slidesData.entries()) {
             let slide = pres.addSlide();
             const speakerNotes = String(data.speakerNotes || '').trim();
-            if (speakerNotes) slide.addNotes(speakerNotes);
+            const sourceNotes = buildSlideReferenceNotes(data);
+            const combinedNotes = [speakerNotes, sourceNotes].filter(Boolean).join('\n\n');
+            if (combinedNotes) slide.addNotes(combinedNotes);
             
             // Background Vector Shape (SVG path — matches HTML preview)
             if (!hideAllImages && appConfig.showShapes && (data.type === 'cover' || data.type === 'section')) {
@@ -3040,13 +4757,13 @@ The system is relationship-based and supported by tools such as Salesforce, repo
                     x: 0.5, y: '38%', w: '90%', h: 1, 
                     fontSize: getPt('size-title', '45pt'), 
                     color: getHex('color-title', '16bfec'), 
-                    bold: true, align: 'center', fontFace: 'Arial'
+                    bold: true, align: 'center', fontFace: getFontFace('font-title')
                 });
                 slide.addText(data.subtitle, { 
                     x: 0.5, y: '47%', w: '90%', h: 1, 
                     fontSize: getPt('size-subtitle', '25pt'), 
                     color: getHex('color-subtitle', '333333'), 
-                    align: 'center', fontFace: 'Arial'
+                    align: 'center', fontFace: getFontFace('font-subtitle')
                 });
             } 
             else if (data.type === 'section') {
@@ -3054,16 +4771,20 @@ The system is relationship-based and supported by tools such as Salesforce, repo
                     x: 0.5, y: '45%', w: '90%', h: 1.5, 
                     fontSize: getPt('size-h1', '32pt'), 
                     color: getHex('color-h1', '16bfec'), 
-                    bold: true, align: 'center', fontFace: 'Arial'
+                    bold: true, align: 'center', fontFace: getFontFace('font-h1')
                 });
             } 
             else {
-                slide.addText(data.title, { 
-                    x: 0.83, y: 0.63, w: 11.67, h: 1, 
-                    fontSize: getPt('size-h2', '28pt'), 
-                    color: getHex('color-h2', '16bfec'), 
-                    bold: true, fontFace: 'Arial'
-                });
+                const isImageSlide = data.type === 'image';
+                const hasTitle = !!String(data.title || '').trim();
+                if (!isImageSlide || hasTitle) {
+                    slide.addText(data.title, { 
+                        x: 0.83, y: 0.63, w: 11.67, h: 1, 
+                        fontSize: getPt('size-h2', '28pt'), 
+                        color: getHex('color-h2', '16bfec'), 
+                        bold: true, fontFace: getFontFace('font-h2')
+                    });
+                }
 
                 if (data.type === 'two-column') {
                     ensureSlideSchema(data);
@@ -3075,11 +4796,23 @@ The system is relationship-based and supported by tools such as Salesforce, repo
                     const baseX = 0.83;
                     const baseY = 1.83;
                     const bodyH = 5.0;
-                    await addFieldToPpt(slide, data.columns.leftField, baseX, baseY, leftW, bodyH);
-                    await addFieldToPpt(slide, data.columns.rightField, baseX + leftW + gap, baseY, rightW, bodyH);
+                    if (getTwoColumnLayoutMode(data) === 'stacked-left') {
+                        const stackGap = 0.18;
+                        const usableStackH = bodyH - stackGap;
+                        const topH = usableStackH * (getStackedLeftSplitPct(data) / 100);
+                        const bottomH = usableStackH - topH;
+                        await addFieldToPpt(slide, data.columns.leftField, baseX, baseY, leftW, topH);
+                        await addFieldToPpt(slide, data.columns.bottomField, baseX, baseY + topH + stackGap, leftW, bottomH);
+                        await addFieldToPpt(slide, data.columns.rightField, baseX + leftW + gap, baseY, rightW, bodyH);
+                    } else {
+                        await addFieldToPpt(slide, data.columns.leftField, baseX, baseY, leftW, bodyH);
+                        await addFieldToPpt(slide, data.columns.rightField, baseX + leftW + gap, baseY, rightW, bodyH);
+                    }
                 } else {
                     const field = ensureFieldDefaults(data.bodyField, data.content || '');
-                    await addFieldToPpt(slide, field, 0.83, 1.83, 11.67, 5.0);
+                    const bodyY = isImageSlide && !hasTitle ? 0.63 : 1.83;
+                    const bodyH = isImageSlide && !hasTitle ? 6.2 : 5.0;
+                    await addFieldToPpt(slide, field, 0.83, bodyY, 11.67, bodyH);
                 }
             }
 
@@ -3087,7 +4820,7 @@ The system is relationship-based and supported by tools such as Salesforce, repo
             slide.slideNumber = { x: '95%', y: '90%', fontSize: 10, color: '999999' };
         }
 
-        await pres.writeFile({ fileName: "HeartWalk_Deck_Fixed.pptx" });
+        await pres.writeFile({ fileName: `${getCurrentDeckDownloadBaseName()}.pptx` });
     }
 
     // ════════════════════════════════════════════════
@@ -3228,24 +4961,26 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         // import + export preserves required schema keys and slide types
         try {
             const testPayload = {
-                config: { 'font-title': "'Source Sans 3', sans-serif", 'size-title': '32pt', 'color-title': '#16bfec', showShapes: true },
+                config: { 'font-title': DEFAULT_FONT_STACK, 'size-title': '32pt', 'color-title': '#16bfec', showShapes: true },
                 slides: [
                     { type: 'cover', title: 'Test Cover', subtitle: 'Sub' },
                     { type: 'section', title: 'Test Section' },
                     { type: 'standard', title: 'Test Standard', content: '* Bullet', bodyField: { mode: 'text', text: '* Bullet', imageUrl: '', imageAlign: 'center', imagePrompt: 'test prompt', quoteText: '', quoteAttribution: '' } },
+                    { type: 'image', title: '', bodyField: { mode: 'image', imageUrl: '', imageAlign: 'center', imagePrompt: 'image prompt', imageNotes: 'image prompt' } },
                     { type: 'two-column', title: 'Test TwoCol', columns: { splitPct: 55, leftField: { mode: 'text', text: 'Left' }, rightField: { mode: 'quote', quoteText: 'Quote', quoteAttribution: 'Author' } } }
                 ]
             };
             const parsed = smartParseInput(JSON.stringify(testPayload));
             const slides = parsed.data.slides.map(ensureSlideSchema);
             const types = slides.map(s => s.type);
-            const hasAllTypes = ['cover', 'section', 'standard', 'two-column'].every(t => types.includes(t));
+            const hasAllTypes = ['cover', 'section', 'standard', 'image', 'two-column'].every(t => types.includes(t));
             const stdHasBody = slides.find(s => s.type === 'standard')?.bodyField;
+            const imageHasBody = slides.find(s => s.type === 'image')?.bodyField?.mode === 'image';
             const tcHasCols = slides.find(s => s.type === 'two-column')?.columns;
-            if (hasAllTypes && stdHasBody && tcHasCols) {
-                pass('JSON Contract', `All 4 slide types preserved, bodyField + columns intact.`);
+            if (hasAllTypes && stdHasBody && imageHasBody && tcHasCols) {
+                pass('JSON Contract', `All 5 slide types preserved, bodyField + image bodyField + columns intact.`);
             } else {
-                fail('JSON Contract', `Missing: types=${hasAllTypes}, bodyField=${!!stdHasBody}, columns=${!!tcHasCols}`);
+                fail('JSON Contract', `Missing: types=${hasAllTypes}, bodyField=${!!stdHasBody}, imageBody=${!!imageHasBody}, columns=${!!tcHasCols}`);
             }
         } catch (e) {
             fail('JSON Contract', `Exception: ${e.message}`);
@@ -3265,6 +5000,14 @@ The system is relationship-based and supported by tools such as Salesforce, repo
                 const f = ensureFieldDefaults({ mode: m, text: 'T', imageUrl: m === 'image' ? 'http://x.png' : '', quoteText: 'Q', quoteAttribution: 'A' });
                 const html = renderFieldBody('bodyField', f);
                 if (!html || typeof html !== 'string') { allValid = false; details.push(`${m} render failed`); }
+            }
+            const inlineRuns = buildPptInlineMarkdownRuns('Top **15.6%** and *This should be italics*', { fontSize: 16 }, {}, false);
+            const hasBoldRun = inlineRuns.some(run => run.text === '15.6%' && run.options.bold === true);
+            const hasItalicRun = inlineRuns.some(run => run.text === 'This should be italics' && run.options.italic === true);
+            const strippedMarkers = inlineRuns.every(run => !/\*\*/.test(run.text) && !/^\*.*\*$/.test(run.text));
+            if (!hasBoldRun || !hasItalicRun || !strippedMarkers) {
+                allValid = false;
+                details.push(`inline markdown runs failed: bold=${hasBoldRun}, italic=${hasItalicRun}, stripped=${strippedMarkers}`);
             }
             if (allValid) pass('Field Modes', 'All 3 modes (text/image/quote) render without errors.');
             else fail('Field Modes', details.join('; '));
@@ -3381,6 +5124,52 @@ The system is relationship-based and supported by tools such as Salesforce, repo
             fail('Reporter Handoff', `Exception: ${e.message}`);
         }
 
+        // ── TEST 7: Slide clipboard workflow smoke test ──
+        try {
+            const savedSlides = cloneJsonData(slidesData);
+            const savedReferences = cloneJsonData(deckReferences);
+            const savedCurrentSlideIndex = currentSlideIndex;
+            try {
+                slidesData = [
+                    ensureSlideSchema({ type: 'standard', title: 'Base', content: 'Base text (1)', bodyField: { mode: 'text', text: 'Base text (1)' } }),
+                    ensureSlideSchema({ type: 'standard', title: 'Copied', content: 'Copied text (2)', bodyField: { mode: 'text', text: 'Copied text (2)' } })
+                ];
+                deckReferences = normalizeDeckReferences([
+                    { id: 1, sources: [{ text: 'Base ref', interviewee: 'Base Person' }] },
+                    { id: 2, sources: [{ text: 'Copied ref', interviewee: 'Copied Person' }] }
+                ]);
+                currentSlideIndex = 1;
+
+                const clipboardPayload = buildSlideClipboardPayload([1]);
+                const prepared = prepareSlidesForInsertion(JSON.stringify(clipboardPayload));
+                const pastedMarkerIds = collectReferenceIdsForSlide(prepared.slides[0]);
+                const pastedReferenceId = prepared.references[0]?.id;
+                const remapOk = pastedMarkerIds.length === 1 && pastedReferenceId === pastedMarkerIds[0] && pastedReferenceId !== 2;
+
+                const insertIndex = insertSlidesAfterIndex(prepared.slides, 0);
+                mergeDeckReferences(prepared.references);
+                const insertedOk = slidesData.length === 3 && insertIndex === 1 && slidesData[1]?.title === 'Copied';
+
+                const deleteSnapshot = createDeletedSlideSnapshot(insertIndex);
+                const deletedOk = !!deleteSnapshot && slidesData.length === 2;
+                const restoredOk = restoreDeletedSlideSnapshot(deleteSnapshot) && slidesData.length === 3 && slidesData[1]?.title === 'Copied';
+
+                if (remapOk && insertedOk && deletedOk && restoredOk) {
+                    pass('Slide Clipboard Workflow', 'Slide copy JSON, paste prep, reference remap, and delete/undo snapshot flow all worked.');
+                } else {
+                    fail('Slide Clipboard Workflow', `Remap=${!!remapOk}, Insert=${!!insertedOk}, Delete=${!!deletedOk}, Restore=${!!restoredOk}`);
+                }
+            } finally {
+                slidesData = savedSlides;
+                deckReferences = savedReferences;
+                currentSlideIndex = Math.min(savedCurrentSlideIndex, Math.max(0, slidesData.length - 1));
+                render();
+                showSlide(currentSlideIndex);
+            }
+        } catch (e) {
+            fail('Slide Clipboard Workflow', `Exception: ${e.message}`);
+        }
+
         // \u2500\u2500 Display results \u2500\u2500
         const body = document.getElementById('smoke-body');
         const passed = results.filter(r => r.ok).length;
@@ -3391,5 +5180,13 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         console.log(`[Designer] Smoke tests: ${passed}/${total} passed`);
         results.forEach(r => console.log(`  ${r.ok ? '\u2713' : '\u2717'} ${r.name}: ${r.detail || ''}`));
     }
+
+    window.addEventListener('beforeunload', () => {
+        flushDeckAutosave({ silent: true });
+    });
+
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) flushDeckAutosave({ silent: true });
+    });
 
     init();

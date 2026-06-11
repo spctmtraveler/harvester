@@ -1,227 +1,3 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Reporter - Cited Output</title>
-  <style>
-    :root {
-      --bg:#0d1117; --panel:#161b22; --panel2:#21262d; --border:#30363d; --text:#c9d1d9; --muted:#8b949e;
-      --ok:#2ea043; --warn:#d29922; --err:#da3633; --blue:#1f6feb; --mono:Consolas,Menlo,monospace;
-    }
-    *{box-sizing:border-box}
-    body{margin:0;display:flex;height:100vh;background:var(--bg);color:var(--text);font:13px "Segoe UI",system-ui,sans-serif;overflow:hidden}
-    .side{width:310px;min-width:310px;background:#010409;border-right:1px solid var(--border);padding:14px;overflow:auto}
-    .main{flex:1;display:flex;flex-direction:column;overflow:hidden}
-    .title{font-size:15px;font-weight:700}.sub{font-size:11px;color:var(--muted)}.meta{font-size:11px;color:var(--muted);font-family:var(--mono);margin-top:3px}
-    .sec{border-bottom:1px solid var(--border);padding:10px 0}.sec:last-child{border-bottom:none}
-    .lbl{font-size:10px;letter-spacing:.8px;color:var(--muted);text-transform:uppercase;font-weight:700;margin-bottom:8px}
-    .status{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:8px;font-size:11px;line-height:1.8}
-    .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:#666}
-    .green{background:var(--ok)}.yellow{background:var(--warn)}.red{background:var(--err)}
-    .grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}
-    .box{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:8px;text-align:center}
-    .num{font:700 18px var(--mono)}.cap{font-size:10px;color:var(--muted)}
-    label{display:block;color:var(--muted);font-size:11px;margin-bottom:4px}
-    input,select,textarea{width:100%;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:5px;padding:7px 9px;font-size:12px;margin-bottom:8px}
-    .line{display:flex;gap:7px;align-items:center;font-size:11px;color:var(--muted)}
-    button{width:100%;padding:9px 10px;border:none;border-radius:6px;font-weight:700;cursor:pointer;margin-bottom:6px;font-size:12px}
-    button:disabled{opacity:.45;cursor:not-allowed}.primary{background:var(--ok);color:#fff}.ghost{background:transparent;color:var(--text);border:1px solid var(--border)}.blue{background:var(--blue);color:#fff}
-    .log{background:var(--panel);border:1px solid var(--border);border-radius:6px;max-height:140px;overflow:auto;padding:8px;font:11px/1.45 var(--mono)}
-    .tabs{display:flex;background:var(--panel);border-bottom:1px solid var(--border);padding:0 4px}
-    .tab{padding:12px 14px;color:var(--muted);font-weight:700;cursor:pointer;border-bottom:2px solid transparent}
-    .tab.active{color:var(--text);border-bottom-color:var(--ok)}
-    .badge{background:var(--panel2);border-radius:10px;padding:1px 6px;font-size:10px;margin-left:5px}
-    .view{display:none;padding:16px;overflow:auto;flex:1}.view.active{display:block}
-    .panel{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:12px}
-    pre{margin:0;white-space:pre-wrap;line-height:1.55}
-    .json{min-height:520px;font:12px/1.45 var(--mono)}
-    .test{border:1px solid var(--border);border-radius:6px;padding:10px;margin-bottom:8px}.pass{background:rgba(46,160,67,.12);border-color:var(--ok)}.fail{background:rgba(218,54,51,.12);border-color:var(--err)}
-    .empty{border:1px dashed var(--border);border-radius:8px;padding:34px;color:var(--muted);text-align:center}
-    .api-toolbar{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-bottom:10px;flex-wrap:wrap}
-    .api-toolbar button{width:auto;margin:0;padding:7px 12px}
-    .api-subhead{font-size:11px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px}
-    .api-card{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px}
-    .api-meta{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:8px}
-    .pill{display:inline-block;padding:2px 7px;border-radius:10px;font:600 10px var(--mono)}
-    .pill-blue{background:rgba(31,111,235,.2);color:var(--blue)}
-    .pill-green{background:rgba(46,160,67,.2);color:var(--ok)}
-    .pill-red{background:rgba(218,54,51,.2);color:var(--err)}
-    .pill-yellow{background:rgba(210,153,34,.2);color:var(--warn)}
-    .api-block{background:#0b1220;border:1px solid #1e2a3a;border-radius:6px;padding:10px;white-space:pre-wrap;word-break:break-word;font:11px/1.45 var(--mono);color:#c7d2e0;max-height:220px;overflow:auto}
-    .api-grid{display:grid;grid-template-columns:1fr;gap:12px}
-    .health-banner{border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:10px;font:12px/1.4 var(--mono)}
-    .health-ok{background:rgba(46,160,67,.14);border-color:var(--ok);color:#a8e6b4}
-    .health-warn{background:rgba(210,153,34,.14);border-color:var(--warn);color:#ffd88a}
-    .health-err{background:rgba(218,54,51,.14);border-color:var(--err);color:#ffb3b0}
-    .health-neutral{background:rgba(139,148,158,.12);border-color:var(--border);color:var(--muted)}
-    .mdtool-status{margin-bottom:10px;padding:10px;border-radius:6px;border:1px solid var(--border);font:12px/1.4 var(--mono);color:var(--muted);background:rgba(139,148,158,.08)}
-    .mdtool-status.running{border-color:var(--blue);color:var(--blue);background:rgba(31,111,235,.12)}
-    .mdtool-status.ok{border-color:var(--ok);color:#a8e6b4;background:rgba(46,160,67,.14)}
-    .mdtool-status.err{border-color:var(--err);color:#ffb3b0;background:rgba(218,54,51,.14)}
-    .mdtool-output{min-height:360px;font:12px/1.45 var(--mono)}
-    .mdtool-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
-    .mdtool-actions button{width:auto;margin:0;padding:7px 12px}
-    @media (max-width: 980px){
-      body{display:block;height:auto;overflow:auto}
-      .side{width:100%;min-width:0;border-right:none;border-bottom:1px solid var(--border)}
-      .main{height:auto}
-      .json{min-height:360px}
-    }
-  </style>
-</head>
-<body>
-  <aside class="side">
-    <div class="title">Reporter</div>
-    <div class="sub">Job 4 - Cited Report + Designer JSON</div>
-    <div class="meta" id="appMeta">Version v1.4 | Last updated -</div>
-
-    <div class="sec">
-      <div class="lbl">System</div>
-      <div class="status">
-        <div><span class="dot" id="dotDb"></span>DB - checking...</div>
-        <div><span class="dot" id="dotData"></span>Data - waiting</div>
-        <div><span class="dot" id="dotOut"></span>Outputs - not generated</div>
-      </div>
-    </div>
-
-    <div class="sec">
-      <div class="lbl">Dataset</div>
-      <div class="grid">
-        <div class="box"><div class="num" id="nInsights">-</div><div class="cap">Insights</div></div>
-        <div class="box"><div class="num" id="nLinks">-</div><div class="cap">Evidence Links</div></div>
-        <div class="box"><div class="num" id="nLoaded">-</div><div class="cap">Loaded</div></div>
-        <div class="box"><div class="num" id="nNoEv">-</div><div class="cap">No Evidence</div></div>
-        <div class="box"><div class="num" id="nClaims">-</div><div class="cap">Claims Out</div></div>
-        <div class="box"><div class="num" id="nSlides">-</div><div class="cap">Slides Out</div></div>
-      </div>
-    </div>
-
-    <div class="sec">
-      <div class="lbl">Settings</div>
-      <label for="maxInsights">Max insights to load</label>
-      <input id="maxInsights" type="number" min="1" max="500" value="120" />
-      <label for="citationsPerClaim">Citations per claim</label>
-      <input id="citationsPerClaim" type="number" min="1" max="6" value="2" />
-      <label for="preferredRank">Preferred minimum quote_rank</label>
-      <select id="preferredRank">
-        <option value="3">3 (great only)</option>
-        <option value="2" selected>2 (good+)</option>
-        <option value="1">1 (ok+)</option>
-        <option value="0">0 (any)</option>
-      </select>
-      <label for="narrativeSlideMode">Narrative slide mode</label>
-      <select id="narrativeSlideMode">
-        <option value="mode-a">Mode A (bullets + optional quote slide)</option>
-        <option value="mode-b" selected>Mode B (Mode A + elaboration slide)</option>
-      </select>
-      <label class="line"><input id="includeQuotes" type="checkbox" checked />Include short quote text</label>
-
-      <button class="primary" id="btnGenerate" disabled>Generate Outputs</button>
-      <button class="ghost" id="btnRefresh">Refresh Data</button>
-      <button class="blue" id="btnTest">Run Smoke Tests</button>
-    </div>
-
-    <div class="sec">
-      <div class="lbl">Export</div>
-      <button class="ghost" id="btnCopyNarrative">Copy Narrative Report</button>
-      <button class="ghost" id="btnSaveNarrative">Download Narrative Report</button>
-      <button class="ghost" id="btnCopyReport">Copy Cited Report</button>
-      <button class="ghost" id="btnSaveReport">Download Cited Report</button>
-      <button class="ghost" id="btnCopyJson">Copy Designer JSON</button>
-      <button class="ghost" id="btnSaveJson">Download Designer JSON</button>
-      <button class="ghost" id="btnClearSaved">Clear Saved Output</button>
-    </div>
-
-    <div class="sec">
-      <div class="lbl">MD to Designer Tool</div>
-      <label for="mdToolModel">Conversion model</label>
-      <select id="mdToolModel">
-        <option value="gpt-4o" selected>gpt-4o (higher quality)</option>
-        <option value="gpt-4o-mini">gpt-4o-mini (faster)</option>
-      </select>
-      <label for="mdToolInput">Paste Markdown report</label>
-      <textarea id="mdToolInput" style="min-height:150px" placeholder="# Report Title&#10;&#10;## Executive Summary&#10;- Point 1&#10;- Point 2&#10;&#10;## Recommendations&#10;- Action A"></textarea>
-      <button class="blue" id="btnMdToolConvert">Convert MD to Designer JSON</button>
-      <button class="ghost" id="btnLoadNarrativeMd">Use Narrative as Input</button>
-      <button class="ghost" id="btnOpenMdTool">Open MD Tool View</button>
-    </div>
-
-    <div class="sec">
-      <div class="lbl">Debug</div>
-      <button class="ghost" id="btnOpenApi">Open API Traffic View</button>
-      <button class="ghost" id="btnDebugBundle">Download Full Debug JSON</button>
-    </div>
-
-    <div class="sec">
-      <div class="lbl">Log</div>
-      <div class="log" id="log"></div>
-    </div>
-  </aside>
-
-  <main class="main">
-    <nav class="tabs">
-      <div class="tab active" data-tab="narrative">Client Report <span class="badge" id="bNarrative">0</span></div>
-      <div class="tab" data-tab="report">Cited Report <span class="badge" id="bReport">0</span></div>
-      <div class="tab" data-tab="json">Designer JSON <span class="badge" id="bJson">0</span></div>
-      <div class="tab" data-tab="mdtool">MD to Designer <span class="badge" id="bMdTool">0</span></div>
-      <div class="tab" data-tab="api">API Traffic <span class="badge" id="bApi">0</span></div>
-      <div class="tab" data-tab="tests">Smoke Tests <span class="badge" id="bTests">0</span></div>
-      <div class="tab" data-tab="trace">Trace (Later)</div>
-    </nav>
-
-    <section id="v-narrative" class="view active">
-      <h2>Client-Facing Narrative Report</h2>
-      <div id="debugHealthBanner" class="health-banner health-neutral">Health: waiting for first data refresh.</div>
-      <div id="narrativeProgress" style="display:none;margin-bottom:10px;padding:10px;background:rgba(31,111,235,.15);border:1px solid var(--blue);border-radius:6px;font:12px var(--mono);color:var(--blue)"></div>
-      <div id="qualityCheckResults" style="display:none;margin-bottom:10px;padding:10px;border:1px solid var(--border);border-radius:6px;font:12px/1.5 var(--mono);white-space:pre-wrap"></div>
-      <div class="panel"><pre id="narrativeText" style="white-space:pre-wrap;line-height:1.7">Generate outputs to create the client-facing narrative report.</pre></div>
-    </section>
-
-    <section id="v-report" class="view">
-      <h2>Plain-Text Cited Report (Internal / Audit)</h2>
-      <div class="panel"><pre id="reportText">Generate outputs to create a report preview.</pre></div>
-    </section>
-
-    <section id="v-json" class="view">
-      <h2>Designer JSON Payload</h2>
-      <textarea id="jsonText" class="json" readonly>{}</textarea>
-    </section>
-
-    <section id="v-mdtool" class="view">
-      <h2>Markdown to Designer JSON (AI)</h2>
-      <div id="mdToolStatus" class="mdtool-status">Paste Markdown in the sidebar tool, then click Convert.</div>
-      <div class="panel">
-        <textarea id="mdToolJson" class="mdtool-output" readonly>{}</textarea>
-        <div class="mdtool-actions">
-          <button class="ghost" id="btnCopyMdToolJson">Copy MD Tool JSON</button>
-          <button class="ghost" id="btnSaveMdToolJson">Download MD Tool JSON</button>
-          <button class="ghost" id="btnUseMdToolJson">Use as Active Designer JSON</button>
-        </div>
-      </div>
-    </section>
-
-    <section id="v-api" class="view">
-      <h2>API Traffic</h2>
-      <div class="api-toolbar">
-        <button class="ghost" id="btnApiRefresh">Refresh API Traffic</button>
-        <button class="ghost" id="btnApiDownload">Download Debug JSON</button>
-      </div>
-      <div id="apiArea" class="empty">API traffic and run trace will appear here after refresh.</div>
-    </section>
-
-    <section id="v-tests" class="view">
-      <h2>Smoke Tests</h2>
-      <div id="testsArea" class="empty">Run smoke tests after generating outputs.</div>
-    </section>
-
-    <section id="v-trace" class="view">
-      <h2>Trace Explorer (Deferred)</h2>
-      <div class="panel">Interactive claim-to-transcript drill-down is deferred to phase 2.</div>
-    </section>
-  </main>
-
-  <script type="module">
     import { DBHelper } from "https://happydo.xyz/api_auto_db/db_helper.js";
     import { askAI } from "https://happydo.xyz/api/ailnl.js";
 
@@ -689,8 +465,51 @@
 
     function chunks(arr, n) { const out=[]; for(let i=0;i<arr.length;i+=n) out.push(arr.slice(i,i+n)); return out; }
 
-    function claimMd(c, includeQuotes) {
-      const lines = [`### Insight I${c.insight.insight_id}`, `${c.claim} ${c.citation}`];
+    function buildDeckReferenceRegistry(claims) {
+      const refs = [];
+      const keyToId = new Map();
+
+      const getClaimKey = (claim) => {
+        const insightId = String(claim?.insight?.insight_id || "").trim();
+        const claimText = String(claim?.claim || "").replace(/\s+/g, " ").trim().toLowerCase();
+        return `${insightId}::${claimText}`;
+      };
+
+      const getId = (claim) => {
+        const key = getClaimKey(claim);
+        if (!key) return null;
+        if (keyToId.has(key)) return keyToId.get(key);
+        const id = refs.length + 1;
+        keyToId.set(key, id);
+        const sources = (claim?.evidence || []).map((e) => ({
+          text: String(e?.clean_text || e?.raw_text || "").replace(/\s+/g, " ").trim(),
+          interviewee: String(e?.speaker || sourceName(e?.source_file || e?.interview_id || "") || "").trim(),
+          sourceLabel: String(sourceName(e?.source_file || e?.interview_id || "") || "").trim(),
+          timestamp: String(e?.timestamp_block || "").trim()
+        })).filter(source => source.text);
+        refs.push({
+          id,
+          sources
+        });
+        return id;
+      };
+
+      for (const claim of claims || []) {
+        if (claim?.evidence?.length) getId(claim);
+      }
+
+      return { references: refs, getId };
+    }
+
+    function claimReferenceMarkers(claim, registry) {
+      if (!registry) return "";
+      const id = registry.getId(claim);
+      return id ? ` (${id})` : "";
+    }
+
+    function claimMd(c, includeQuotes, registry = null) {
+      const markers = claimReferenceMarkers(c, registry);
+      const lines = [`### Insight I${c.insight.insight_id}`, `${c.claim}${markers}`];
       for (const e of c.evidence) {
         lines.push(`* Evidence: ${e.sentence_id}${e.timestamp_block ? ` @${e.timestamp_block}` : ""}${sourceName(e.source_file || e.interview_id || "") ? ` - ${sourceName(e.source_file || e.interview_id || "")}` : ""} (rank ${e.quote_rank}, ${e.support_role})`);
         if (includeQuotes) lines.push(`* Quote: "${short(e.clean_text || e.raw_text || "")}"`);
@@ -717,7 +536,7 @@
       };
     }
 
-    function addSectionSlides(slides, title, claims, includeQuotes) {
+    function addSectionSlides(slides, title, claims, includeQuotes, registry) {
       slides.push({ type: "section", title });
       if (!claims.length) {
         slides.push(makeStandardSlide(
@@ -732,13 +551,14 @@
         const slideTitle = cc.length > 1 ? `${title} (${i+1}/${cc.length})` : title;
         slides.push(makeStandardSlide(
           slideTitle,
-          cc[i].map(c => claimMd(c, includeQuotes)).join("\n\n"),
+          cc[i].map(c => claimMd(c, includeQuotes, registry)).join("\n\n"),
           `A documentary-style photo of Heart Walk staff collaborating on '${title}' planning with notes, timelines, and sponsor outreach materials visible.`
         ));
       }
     }
 
     function makeDeck(summary, groups, claims, includeQuotes) {
+      const registry = buildDeckReferenceRegistry(claims);
       const slides = [
         { type: "cover", title: "Heart Walk Evidence Report", subtitle: `Generated ${nowLocal()} | ${claims.length} cited claims` },
         { type: "section", title: "Executive Summary" },
@@ -748,10 +568,10 @@
           "A polished photo of Heart Walk leaders reviewing campaign dashboards and sponsorship plans in a modern conference room."
         )
       ];
-      addSectionSlides(slides, "Problems", groups.problems, includeQuotes);
-      addSectionSlides(slides, "Solutions", groups.solutions, includeQuotes);
-      addSectionSlides(slides, "Mechanisms", groups.mechanisms, includeQuotes);
-      return { config: JSON.parse(JSON.stringify(DESIGNER_CONFIG)), slides };
+      addSectionSlides(slides, "Problems", groups.problems, includeQuotes, registry);
+      addSectionSlides(slides, "Solutions", groups.solutions, includeQuotes, registry);
+      addSectionSlides(slides, "Mechanisms", groups.mechanisms, includeQuotes, registry);
+      return { config: JSON.parse(JSON.stringify(DESIGNER_CONFIG)), references: registry.references, slides };
     }
 
     function setMdToolStatus(kind, msg) {
@@ -773,6 +593,51 @@
 
       for (let i = 0; i < s.length; i++) {
         const ch = s[i];
+
+    function extractFirstJsonArray(text) {
+      const s = String(text || "");
+      let inString = false;
+      let escaped = false;
+      let depth = 0;
+      let start = -1;
+
+      for (let i = 0; i < s.length; i++) {
+        const ch = s[i];
+
+        if (inString) {
+          if (escaped) {
+            escaped = false;
+            continue;
+          }
+          if (ch === "\\") {
+            escaped = true;
+            continue;
+          }
+          if (ch === '"') inString = false;
+          continue;
+        }
+
+        if (ch === '"') {
+          inString = true;
+          continue;
+        }
+
+        if (ch === "[") {
+          if (depth === 0) start = i;
+          depth += 1;
+          continue;
+        }
+
+        if (ch === "]") {
+          if (depth > 0) depth -= 1;
+          if (depth === 0 && start >= 0) {
+            return s.slice(start, i + 1);
+          }
+        }
+      }
+
+      return null;
+    }
 
         if (inString) {
           if (escaped) {
@@ -1530,7 +1395,7 @@ ${JSON.stringify(claimBundle, null, 1)}`;
       for (const c of claimBundle) claimMap.set(c.id, c);
 
       const narrativeSlides = [];
-      const BATCH_SIZE = 4; // Process 4 slide groups per AI call to reduce round-trips
+      const BATCH_SIZE = 2; // Smaller batches improve JSON reliability and reduce fallback placeholders
       const slideBatches = chunks(slideGroups.slides, BATCH_SIZE);
 
       for (let bi = 0; bi < slideBatches.length; bi++) {
@@ -1636,23 +1501,67 @@ ${JSON.stringify(slidesForPrompt, null, 1)}`;
 
         try {
           const cleaned = contentStr.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
-          const batchSlides = JSON.parse(cleaned);
+          let batchSlides = null;
+
+          try {
+            batchSlides = JSON.parse(cleaned);
+          } catch (_) {
+            const extracted = extractFirstJsonArray(cleaned) || extractFirstJsonArray(contentStr);
+            if (!extracted) throw _;
+            batchSlides = JSON.parse(extracted);
+          }
+
           if (Array.isArray(batchSlides)) {
             for (const s of batchSlides) {
               narrativeSlides.push(normalizeNarrativeDraftSlide(s));
             }
+          } else {
+            throw new Error("Narrative batch response was not a JSON array.");
           }
         } catch (e) {
           log("warn", `Failed to parse narrative batch ${bi + 1}: ${e.message}`, "NARRATIVE");
-          // Try to salvage: use raw content
-          for (const sg of batch) {
-            narrativeSlides.push(normalizeNarrativeDraftSlide({
-              title: sg.title,
-              layout: "text",
-              content: "• Content generation failed for this slide.",
-              elaboration: "• Re-run narrative generation for this section.",
-              supporting_quotes: []
-            }));
+          // Recovery path: generate each slide individually before falling back to placeholders.
+          for (let si = 0; si < batch.length; si++) {
+            const sg = batch[si];
+            const source = slidesForPrompt[si] || { title: sg.title, section_type: sg.section_type, research_context: [], direct_quotes: [] };
+            const recoveryPrompt = `You are writing ONE client-facing qualitative research slide.
+
+Return ONLY valid JSON object (no markdown):
+{
+  "title": "${String(source.title || sg.title).replace(/"/g, '\\"')}",
+  "layout": "text",
+  "content": "• ...\\n• ...",
+  "supporting_quotes": [{"text":"...","speaker":"..."}],
+  "elaboration": "• ...\\n• ...",
+  "image_prompt": "..."
+}
+
+Rules:
+- Use only the evidence below.
+- No invented statistics.
+- Keep bullets concrete and concise.
+- supporting_quotes max 2 items.
+
+EVIDENCE:
+${JSON.stringify(source, null, 1)}`;
+
+            try {
+              trackApiTraffic({ stage: "narrative_content_recovery_request", batch: bi + 1, slide_index: si + 1 });
+              const recoveryRaw = await askAI(recoveryPrompt, model, { temperature: 0.2 });
+              const recoveryStr = String(recoveryRaw || "").trim();
+              trackApiTraffic({ stage: "narrative_content_recovery_response", batch: bi + 1, slide_index: si + 1, response_length: recoveryStr.length });
+              const extracted = extractFirstJsonObject(recoveryStr) || recoveryStr.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
+              const recovered = JSON.parse(extracted);
+              narrativeSlides.push(normalizeNarrativeDraftSlide(recovered));
+            } catch (_) {
+              narrativeSlides.push(normalizeNarrativeDraftSlide({
+                title: sg.title,
+                layout: "text",
+                content: "• Content generation failed for this slide.",
+                elaboration: "• Re-run narrative generation for this section.",
+                supporting_quotes: []
+              }));
+            }
           }
         }
       }
@@ -2471,6 +2380,3 @@ RETURN JSON:
     }
 
     init();
-  </script>
-</body>
-</html>

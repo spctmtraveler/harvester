@@ -624,6 +624,7 @@
     </div>
 </main>
 
+<script src="../done-modal.js"></script>
 <script type="module">
     import { DBHelper } from "https://happydo.xyz/api_auto_db/db_helper.js";
     import { askAI } from "https://happydo.xyz/api/ailnl.js";
@@ -1248,6 +1249,7 @@ Return a JSON array ONLY — no commentary, no markdown fences. Array length mus
         if (isRunning) return;
         isRunning = true;
         shouldStop = false;
+        let completedAll = false;
         document.getElementById("btnStart").disabled = true;
         document.getElementById("btnStop").disabled = false;
 
@@ -1276,6 +1278,7 @@ Return a JSON array ONLY — no commentary, no markdown fences. Array length mus
             const batch = res?.rows || [];
             if (batch.length === 0) {
                 log("ok", "DONE", "All blocks processed. Queue empty.");
+                completedAll = true;
                 break;
             }
 
@@ -1303,6 +1306,13 @@ Return a JSON array ONLY — no commentary, no markdown fences. Array length mus
         document.getElementById("btnStop").disabled = true;
         log("ok", "FINISH", "Processing loop ended.");
         await refreshStats();
+        if (completedAll) {
+            window.HWDoneModal?.show({
+                title: "Finished",
+                message: "Analyst finished coding all blocks currently in the queue.",
+                nextSteps: "Review anything marked Needs Review in the Review Queue, then continue to Synthesizer when the coding set looks ready."
+            });
+        }
     };
 
     window.stopProcessing = function() {

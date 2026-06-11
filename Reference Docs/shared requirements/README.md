@@ -13,10 +13,10 @@ The original file is preserved as backup and remains the single full-source refe
 
 App-specific requirement files live under:
 
-- `Reference Docs/apps/10-gatekeeper/10-gatekeeper-requirements.md`
-- `Reference Docs/apps/20-analyst/20-analyst-requirements.md`
-- `Reference Docs/apps/30-synthesizer/30-synthesizer-requirements.md`
-- `Reference Docs/apps/40-reporter/40-reporter-requirements.md`
+- `apps/10-gatekeeper/10-gatekeeper-requirements.md`
+- `apps/20-analyst/20-analyst-requirements.md`
+- `apps/30-synthesizer/30-synthesizer-requirements.md`
+- `apps/40-reporter/40-reporter-requirements.md`
 
 ## Progress Dashboard
 
@@ -38,4 +38,4 @@ Status source: checkbox totals in app requirement files.
 
 ## Note
 
-To avoid drift, update `Reference Docs/requirements.md` first, then sync these split docs.
+To avoid drift, update `Reference Docs/requirements.md` first, then sync these split docs and the app-specific requirement files under `apps/`.

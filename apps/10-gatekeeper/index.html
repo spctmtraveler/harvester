@@ -181,6 +181,7 @@
     </div>
   </div>
 
+  <script src="../done-modal.js"></script>
   <script type="module">
     import { DBHelper } from "https://happydo.xyz/api_auto_db/db_helper.js";
     import { askAI } from "https://happydo.xyz/api/ailnl.js";
@@ -2909,6 +2910,11 @@
           btn.textContent = `🛑 Stopped ${result.processedFiles}/${result.totalFiles}`;
         } else {
           btn.textContent = "✅ Ingest Complete";
+          window.HWDoneModal?.show({
+            title: "Finished",
+            message: `Gatekeeper finished ingesting ${result.processedFiles}/${result.totalFiles} files into the database.`,
+            nextSteps: "Post-ingest checks run automatically. Review the QA panel if anything looks off, then continue to Analyst when you are ready."
+          });
         }
         setTimeout(() => {
           btn.textContent = original;

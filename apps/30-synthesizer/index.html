@@ -417,6 +417,7 @@
     </div>
 </main>
 
+<script src="../done-modal.js"></script>
 <script type="module">
     import { DBHelper } from "https://happydo.xyz/api_auto_db/db_helper.js";
     import { askAI } from "https://happydo.xyz/api/ailnl.js";
@@ -935,6 +936,7 @@ The object MUST have exactly two keys: "insights" (array) and "_meta" (diagnosti
         if (isRunning) return;
         isRunning = true;
         shouldStop = false;
+        let completedAll = false;
         document.getElementById("btnStart").disabled = true;
         document.getElementById("btnStop").disabled = false;
         switchTab("log");
@@ -960,6 +962,7 @@ The object MUST have exactly two keys: "insights" (array) and "_meta" (diagnosti
 
             if (!enriched || enriched.length === 0) {
                 log("ok", "DONE", "No eligible thematic blocks remaining (only irrelevant/misc or untagged blocks left)." );
+                completedAll = true;
                 break;
             }
 
@@ -1019,6 +1022,13 @@ The object MUST have exactly two keys: "insights" (array) and "_meta" (diagnosti
         document.getElementById("btnStart").disabled = false;
         log("ok", "FINISH", "Synthesis loop ended.");
         await refreshRunStatus();
+        if (completedAll) {
+            window.HWDoneModal?.show({
+                title: "Finished",
+                message: "Synthesizer finished generating insights for all eligible coded blocks.",
+                nextSteps: "Review the resulting insight set, then continue to Reporter to generate the cited narrative and Designer JSON."
+            });
+        }
     };
 
     window.stopSynthesis = function() {

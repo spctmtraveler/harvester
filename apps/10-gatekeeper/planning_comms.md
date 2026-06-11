@@ -20,18 +20,18 @@ Feb 18, 2026 Codex: start of round; reinforcement note: MANDATORY first step of 
 ___________________________
 File Locking Communication- indicate here if you are using a file that nobody else should touch until you are done. When you are done, come back here and ADD a node that you've unlocked it again. Use the format: "Feb 18, 12:07PM locking file "50-designer/index.html  -   Feb 18, 12:10PM unlocking"
 
-Feb 19, 2026 CoPilot: locking file "Reference Docs/apps/10-gatekeeper/index.html" and "Reference Docs/apps/10-gatekeeper/gatekeeper.html" while restoring canonical runtime content and implementing interviewer-only frame merge guard.
-Feb 19, 2026 CoPilot: unlocking file "Reference Docs/apps/10-gatekeeper/index.html" and "Reference Docs/apps/10-gatekeeper/gatekeeper.html" after restore + guardrail patch + sync.
-Feb 19, 2026 CoPilot: locking file "Reference Docs/apps/10-gatekeeper/planning_comms.md" while posting review response to new proposal notes.
-Feb 19, 2026 CoPilot: unlocking file "Reference Docs/apps/10-gatekeeper/planning_comms.md" after posting proposal review and execution order.
-Feb 19, 2026 Codex: locking file "Reference Docs/apps/10-gatekeeper/index.html"; locking file "Reference Docs/apps/10-gatekeeper/gatekeeper.html" for clean-text disfluency and block-boundary fixes.
-Feb 19, 2026 Codex: unlocking file "Reference Docs/apps/10-gatekeeper/index.html"; unlocking file "Reference Docs/apps/10-gatekeeper/gatekeeper.html" after clean-text and segmentation fixes.
-Feb 19, 2026 Codex: locking file "Reference Docs/apps/10-gatekeeper/index.html"; locking file "Reference Docs/apps/10-gatekeeper/gatekeeper.html" for copy-all spot-check button and diagnostics export.
-Feb 19, 2026 Codex: unlocking file "Reference Docs/apps/10-gatekeeper/index.html"; unlocking file "Reference Docs/apps/10-gatekeeper/gatekeeper.html" after copy-all spot-check export edits.
-Feb 19, 2026 Codex: locking file "Reference Docs/apps/10-gatekeeper/index.html"; locking file "Reference Docs/apps/10-gatekeeper/gatekeeper.html" for settings prompt accessibility edits.
-Feb 19, 2026 Codex: unlocking file "Reference Docs/apps/10-gatekeeper/index.html"; unlocking file "Reference Docs/apps/10-gatekeeper/gatekeeper.html" after settings prompt edits.
-Feb 18, 2026 Codex: locking file "Reference Docs/apps/10-gatekeeper/index.html"; locking file "Reference Docs/apps/10-gatekeeper/gatekeeper.html" for spot-check sampler update.
-Feb 18, 2026 Codex: unlocking file "Reference Docs/apps/10-gatekeeper/index.html"; unlocking file "Reference Docs/apps/10-gatekeeper/gatekeeper.html" after sampler update.
+Feb 19, 2026 CoPilot: locking file "apps/10-gatekeeper/index.html" and "apps/10-gatekeeper/gatekeeper.html" while restoring canonical runtime content and implementing interviewer-only frame merge guard.
+Feb 19, 2026 CoPilot: unlocking file "apps/10-gatekeeper/index.html" and "apps/10-gatekeeper/gatekeeper.html" after restore + guardrail patch + sync.
+Feb 19, 2026 CoPilot: locking file "apps/10-gatekeeper/planning_comms.md" while posting review response to new proposal notes.
+Feb 19, 2026 CoPilot: unlocking file "apps/10-gatekeeper/planning_comms.md" after posting proposal review and execution order.
+Feb 19, 2026 Codex: locking file "apps/10-gatekeeper/index.html"; locking file "apps/10-gatekeeper/gatekeeper.html" for clean-text disfluency and block-boundary fixes.
+Feb 19, 2026 Codex: unlocking file "apps/10-gatekeeper/index.html"; unlocking file "apps/10-gatekeeper/gatekeeper.html" after clean-text and segmentation fixes.
+Feb 19, 2026 Codex: locking file "apps/10-gatekeeper/index.html"; locking file "apps/10-gatekeeper/gatekeeper.html" for copy-all spot-check button and diagnostics export.
+Feb 19, 2026 Codex: unlocking file "apps/10-gatekeeper/index.html"; unlocking file "apps/10-gatekeeper/gatekeeper.html" after copy-all spot-check export edits.
+Feb 19, 2026 Codex: locking file "apps/10-gatekeeper/index.html"; locking file "apps/10-gatekeeper/gatekeeper.html" for settings prompt accessibility edits.
+Feb 19, 2026 Codex: unlocking file "apps/10-gatekeeper/index.html"; unlocking file "apps/10-gatekeeper/gatekeeper.html" after settings prompt edits.
+Feb 18, 2026 Codex: locking file "apps/10-gatekeeper/index.html"; locking file "apps/10-gatekeeper/gatekeeper.html" for spot-check sampler update.
+Feb 18, 2026 Codex: unlocking file "apps/10-gatekeeper/index.html"; unlocking file "apps/10-gatekeeper/gatekeeper.html" after sampler update.
 
 ___________________________
 Put communications here - We will all identify ourselves with  of these: "Feb 18, 12:07PM Codex:", "Feb 18, 12:07PM CoPilot:", and I will use "Feb 18, 12:07PM Robin:" (update the date, obviuosly)
@@ -42,8 +42,8 @@ Feb 19, 2026 CoPilot: robin: acknowledged. Confirmed concern about potential sta
 Feb 19, 2026 CoPilot: robin: acknowledged. Review complete on Codex proposals.
 
 Key finding before point-by-point decisions: current files are divergent again.
-- `Reference Docs/apps/10-gatekeeper/index.html` = heuristic v1.2 build (no AI segmentation model selector, no `{{CHUNK_TURNS}}` prompt placeholders).
-- `Reference Docs/apps/10-gatekeeper/gatekeeper.html` = AI v1.6 build (this is the file Codex reviewed; proposal line refs map here).
+- `apps/10-gatekeeper/index.html` = heuristic v1.2 build (no AI segmentation model selector, no `{{CHUNK_TURNS}}` prompt placeholders).
+- `apps/10-gatekeeper/gatekeeper.html` = AI v1.6 build (this is the file Codex reviewed; proposal line refs map here).
 
 Because of that, all listed proposal line references target `gatekeeper.html` semantics, not current `index.html` semantics. To avoid patching the wrong code path, I recommend we first re-establish a single canonical runtime file, then apply fixes once.
 

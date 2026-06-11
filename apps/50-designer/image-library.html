@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Designer Image Library</title>
+    <style>
+        :root {
+            --bg: #eef3f6;
+            --panel: #ffffff;
+            --line: #d4dde4;
+            --text: #23333d;
+            --muted: #647682;
+            --accent: #16bfec;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: "Segoe UI", Tahoma, sans-serif;
+            color: var(--text);
+            background: linear-gradient(180deg, #f7fafc 0%, var(--bg) 100%);
+            min-height: 100vh;
+        }
+        .shell {
+            display: grid;
+            grid-template-columns: 340px minmax(0, 1fr);
+            min-height: 100vh;
+        }
+        .sidebar, .preview {
+            min-height: 0;
+        }
+        .sidebar {
+            border-right: 1px solid var(--line);
+            background: rgba(255,255,255,0.82);
+            backdrop-filter: blur(10px);
+            display: flex;
+            flex-direction: column;
+        }
+        .sidebar-head {
+            padding: 18px 18px 12px;
+            border-bottom: 1px solid var(--line);
+        }
+        h1 {
+            margin: 0 0 6px;
+            font-size: 20px;
+            color: #0f6b85;
+        }
+        .help {
+            margin: 0;
+            color: var(--muted);
+            font-size: 13px;
+            line-height: 1.45;
+        }
+        .toolbar {
+            padding: 12px 18px;
+            border-bottom: 1px solid var(--line);
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .toolbar input {
+            width: 100%;
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            padding: 10px 12px;
+            font: inherit;
+        }
+        .toolbar-meta {
+            font-size: 12px;
+            color: var(--muted);
+        }
+        .image-list {
+            overflow: auto;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .image-item {
+            border: 1px solid var(--line);
+            background: var(--panel);
+            border-radius: 12px;
+            padding: 10px;
+            cursor: pointer;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .image-item.active {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(22,191,236,0.14);
+        }
+        .thumb {
+            width: 68px;
+            height: 68px;
+            border-radius: 10px;
+            border: 1px solid var(--line);
+            background: #f4f7f9;
+            object-fit: cover;
+            flex: 0 0 auto;
+        }
+        .item-copy {
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .item-name {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--text);
+            word-break: break-all;
+        }
+        .item-meta {
+            font-size: 12px;
+            color: var(--muted);
+        }
+        .preview {
+            padding: 18px;
+            display: grid;
+            grid-template-rows: auto auto minmax(0, 1fr);
+            gap: 14px;
+        }
+        .preview-card {
+            background: rgba(255,255,255,0.92);
+            border: 1px solid var(--line);
+            border-radius: 16px;
+            box-shadow: 0 12px 30px rgba(22,40,54,0.08);
+        }
+        .preview-head {
+            padding: 18px 20px 8px;
+        }
+        .preview-title {
+            margin: 0 0 6px;
+            font-size: 18px;
+            word-break: break-all;
+        }
+        .preview-sub {
+            color: var(--muted);
+            font-size: 13px;
+            line-height: 1.45;
+        }
+        .preview-actions {
+            padding: 0 20px 18px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .preview-actions a {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            text-decoration: none;
+            border: 1px solid #b8dce7;
+            color: #0f6b85;
+            background: #f4fbfd;
+            border-radius: 10px;
+            padding: 10px 14px;
+            font-weight: 700;
+        }
+        .preview-stage {
+            min-height: 0;
+            padding: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .preview-stage-inner {
+            width: 100%;
+            height: 100%;
+            border-radius: 16px;
+            border: 1px solid var(--line);
+            background: linear-gradient(180deg, #fafcfd 0%, #edf3f6 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            min-height: 420px;
+        }
+        .preview-stage-inner img {
+            max-width: 100%;
+            max-height: calc(100vh - 240px);
+            object-fit: contain;
+            display: block;
+        }
+        .empty {
+            padding: 32px;
+            text-align: center;
+            color: var(--muted);
+            font-size: 14px;
+        }
+        @media (max-width: 920px) {
+            .shell {
+                grid-template-columns: 1fr;
+                grid-template-rows: 42vh 58vh;
+            }
+            .sidebar {
+                border-right: none;
+                border-bottom: 1px solid var(--line);
+            }
+            .preview-stage-inner {
+                min-height: 240px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="shell">
+        <aside class="sidebar">
+            <div class="sidebar-head">
+                <h1>Server Image Library</h1>
+                <p class="help">Uploaded Designer images, newest first. Click any item or use arrow keys to move through the list.</p>
+            </div>
+            <div class="toolbar">
+                <input id="search-input" type="search" placeholder="Filter by filename..." autocomplete="off">
+                <div class="toolbar-meta" id="library-status">Loading...</div>
+            </div>
+            <div class="image-list" id="image-list"></div>
+        </aside>
+        <main class="preview">
+            <section class="preview-card">
+                <div class="preview-head">
+                    <h2 class="preview-title" id="preview-title">No image selected</h2>
+                    <div class="preview-sub" id="preview-meta">Select an uploaded image from the list.</div>
+                </div>
+                <div class="preview-actions" id="preview-actions"></div>
+            </section>
+            <section class="preview-card preview-stage">
+                <div class="preview-stage-inner" id="preview-stage">
+                    <div class="empty">Choose an image to preview it here.</div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        const apiUrl = new URL('../api/image-library-index.php', window.location.href).toString();
+        const imageListEl = document.getElementById('image-list');
+        const libraryStatusEl = document.getElementById('library-status');
+        const previewTitleEl = document.getElementById('preview-title');
+        const previewMetaEl = document.getElementById('preview-meta');
+        const previewActionsEl = document.getElementById('preview-actions');
+        const previewStageEl = document.getElementById('preview-stage');
+        const searchInputEl = document.getElementById('search-input');
+
+        let allItems = [];
+        let filteredItems = [];
+        let selectedIndex = -1;
+
+        function formatBytes(bytes) {
+            if (!Number.isFinite(bytes) || bytes < 0) return 'Unknown size';
+            if (bytes < 1024) return `${bytes} B`;
+            const units = ['KB', 'MB', 'GB'];
+            let value = bytes / 1024;
+            let unitIndex = 0;
+            while (value >= 1024 && unitIndex < units.length - 1) {
+                value /= 1024;
+                unitIndex += 1;
+            }
+            return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unitIndex]}`;
+        }
+
+        function formatDate(isoValue) {
+            if (!isoValue) return 'Unknown date';
+            const date = new Date(isoValue);
+            return Number.isNaN(date.getTime()) ? 'Unknown date' : date.toLocaleString();
+        }
+
+        function updatePreview() {
+            const item = filteredItems[selectedIndex] || null;
+            if (!item) {
+                previewTitleEl.textContent = 'No image selected';
+                previewMetaEl.textContent = 'Select an uploaded image from the list.';
+                previewActionsEl.innerHTML = '';
+                previewStageEl.innerHTML = '<div class="empty">Choose an image to preview it here.</div>';
+                return;
+            }
+
+            previewTitleEl.textContent = item.filename;
+            previewMetaEl.textContent = `${formatDate(item.modifiedIso)} · ${formatBytes(item.sizeBytes)}`;
+            previewActionsEl.innerHTML = [
+                `<a href="${item.url}" target="_blank" rel="noopener">Open Full Size</a>`,
+                `<a href="${item.url}" download="${item.filename}">Download</a>`
+            ].join('');
+            previewStageEl.innerHTML = `<a href="${item.url}" target="_blank" rel="noopener"><img src="${item.url}" alt="${item.filename}"></a>`;
+
+            imageListEl.querySelectorAll('.image-item').forEach((el, idx) => {
+                el.classList.toggle('active', idx === selectedIndex);
+            });
+        }
+
+        function selectIndex(index) {
+            if (!filteredItems.length) {
+                selectedIndex = -1;
+                updatePreview();
+                return;
+            }
+            selectedIndex = Math.max(0, Math.min(filteredItems.length - 1, index));
+            updatePreview();
+            const activeEl = imageListEl.querySelector(`.image-item[data-index="${selectedIndex}"]`);
+            if (activeEl) activeEl.scrollIntoView({ block: 'nearest' });
+        }
+
+        function renderList() {
+            if (!filteredItems.length) {
+                imageListEl.innerHTML = '<div class="empty">No uploaded images matched the current filter.</div>';
+                selectedIndex = -1;
+                updatePreview();
+                return;
+            }
+
+            imageListEl.innerHTML = filteredItems.map((item, index) => `
+                <button type="button" class="image-item${index === selectedIndex ? ' active' : ''}" data-index="${index}">
+                    <img class="thumb" src="${item.url}" alt="${item.filename}" loading="lazy">
+                    <div class="item-copy">
+                        <div class="item-name">${item.filename}</div>
+                        <div class="item-meta">${formatDate(item.modifiedIso)}</div>
+                        <div class="item-meta">${formatBytes(item.sizeBytes)}</div>
+                    </div>
+                </button>
+            `).join('');
+
+            imageListEl.querySelectorAll('.image-item').forEach(button => {
+                button.addEventListener('click', () => selectIndex(Number(button.dataset.index || 0)));
+            });
+
+            if (selectedIndex < 0 || selectedIndex >= filteredItems.length) selectedIndex = 0;
+            updatePreview();
+        }
+
+        function applyFilter() {
+            const q = String(searchInputEl.value || '').trim().toLowerCase();
+            filteredItems = !q
+                ? allItems.slice()
+                : allItems.filter(item => String(item.filename || '').toLowerCase().includes(q));
+            libraryStatusEl.textContent = `${filteredItems.length} of ${allItems.length} images shown`;
+            selectedIndex = filteredItems.length ? Math.min(Math.max(selectedIndex, 0), filteredItems.length - 1) : -1;
+            renderList();
+        }
+
+        async function loadLibrary() {
+            libraryStatusEl.textContent = 'Loading...';
+            try {
+                const response = await fetch(apiUrl, { cache: 'no-store' });
+                const data = await response.json();
+                if (!response.ok || !data?.ok || !Array.isArray(data.items)) {
+                    throw new Error(data?.error || `HTTP ${response.status}`);
+                }
+                allItems = data.items.slice();
+                filteredItems = allItems.slice();
+                selectedIndex = filteredItems.length ? 0 : -1;
+                libraryStatusEl.textContent = `${allItems.length} images`;
+                renderList();
+            } catch (error) {
+                imageListEl.innerHTML = `<div class="empty">Failed to load the server image library. ${error.message}</div>`;
+                libraryStatusEl.textContent = 'Load failed';
+                selectedIndex = -1;
+                updatePreview();
+            }
+        }
+
+        document.addEventListener('keydown', (event) => {
+            if (event.target === searchInputEl) return;
+            if (event.key === 'ArrowDown' || event.key === 'ArrowRight') {
+                event.preventDefault();
+                selectIndex(selectedIndex + 1);
+            }
+            if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
+                event.preventDefault();
+                selectIndex(selectedIndex - 1);
+            }
+        });
+
+        searchInputEl.addEventListener('input', applyFilter);
+        loadLibrary();
+    </script>
+</body>
+</html>

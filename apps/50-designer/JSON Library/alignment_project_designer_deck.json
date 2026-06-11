@@ -1,0 +1,574 @@
+{
+  "config": {
+    "showShapes": true,
+    "hideAttrib": false,
+    "hideSourceAttribution": false,
+    "showSpeakerNotes": false,
+    "imagePromptStyle": "clean nonprofit strategy deck, warm human documentary tone, simple visual metaphors, uncluttered composition"
+  },
+  "references": [
+    {
+      "id": 1,
+      "sources": [
+        {
+          "text": "This is the tool I can't live without — it's my true north for coaching my team.",
+          "interviewee": "VP-level, oversees all campaigns",
+          "sourceLabel": "The Alignment Project field interview, anonymized"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "sources": [
+        {
+          "text": "If you do what this paper says, you can have a successful event.",
+          "interviewee": "long-tenured walk leader",
+          "sourceLabel": "The Alignment Project field interview, anonymized"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "sources": [
+        {
+          "text": "My favorite tool is the impact plan. It makes an awkward conversation so much easier.",
+          "interviewee": "VP-level, socials + walk",
+          "sourceLabel": "The Alignment Project field interview, anonymized"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "sources": [
+        {
+          "text": "Everybody's got kind of a version of it.",
+          "interviewee": "Associate VP, walk",
+          "sourceLabel": "The Alignment Project field interview, anonymized"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "sources": [
+        {
+          "text": "I created my own mini groups for my own sanity.",
+          "interviewee": "Senior Director, walk",
+          "sourceLabel": "The Alignment Project field interview, anonymized"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "sources": [
+        {
+          "text": "SharePoint is the abyss… I don't know anyone who feels confident finding things in it.",
+          "interviewee": "VP-level",
+          "sourceLabel": "The Alignment Project field interview, anonymized"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "sources": [
+        {
+          "text": "I found this thing from three years ago — yeah, because of the way you typed in 'go red script.'",
+          "interviewee": "Executive Director",
+          "sourceLabel": "The Alignment Project field interview, anonymized"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "sources": [
+        {
+          "text": "If I could wave a magic wand, I'd remove all the links that don't work anymore.",
+          "interviewee": "Director",
+          "sourceLabel": "The Alignment Project field interview, anonymized"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "sources": [
+        {
+          "text": "We send them a 14-page document and they're like, 'Oh my god.' The higher the person, the less they read.",
+          "interviewee": "VP-level",
+          "sourceLabel": "The Alignment Project field interview, anonymized"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "sources": [
+        {
+          "text": "How are we leading the mission and not the event? Staff are confident about the walk because they've seen it. We don't see our mission come to life day to day.",
+          "interviewee": "Executive Director",
+          "sourceLabel": "The Alignment Project field interview, anonymized"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "sources": [
+        {
+          "text": "There's a slide that's the exact same — just a different campaign.",
+          "interviewee": "Executive Director",
+          "sourceLabel": "The Alignment Project field interview, anonymized"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "sources": [
+        {
+          "text": "I felt like a deer in headlights — the acronyms, all of it.",
+          "interviewee": "Director, recalling her first day",
+          "sourceLabel": "The Alignment Project field interview, anonymized"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "sources": [
+        {
+          "text": "Can we see ten examples of ones that have been really successful?",
+          "interviewee": "VP-level",
+          "sourceLabel": "The Alignment Project field interview, anonymized"
+        }
+      ]
+    }
+  ],
+  "slides": [
+    {
+      "type": "cover",
+      "title": "The Alignment Project — Field Research: Findings & Directions",
+      "subtitle": "Findings & Directions | Designer JSON import"
+    },
+    {
+      "type": "section",
+      "title": "About this research"
+    },
+    {
+      "type": "standard",
+      "title": "We set out to answer three questions.",
+      "bodyField": {
+        "mode": "text",
+        "text": "* What tools staff rely on today, and where those tools create friction, confusion, or duplicated effort.\n* What staff need going forward, and what could be standardized across campaigns to reduce confusion.\n* How staff expect to find resources, so a future SharePoint can be organized the way they actually think.",
+        "textScale": "normal"
+      }
+    },
+    {
+      "type": "standard",
+      "title": "We interviewed 16 staff members in depth, across the whole organization.",
+      "bodyField": {
+        "mode": "text",
+        "text": "* The interviews spanned all five regions, every major campaign, and every level of seniority.\n* Tenure ranged from three months to more than ten years, so we heard both the new-hire and the expert experience.\n* Many interviews included live screen-sharing, where we watched people try to find real documents. These moments were the single richest source of insight.",
+        "textScale": "normal"
+      }
+    },
+    {
+      "type": "standard",
+      "title": "This is the interview phase, and it sets up a survey phase.",
+      "bodyField": {
+        "mode": "text",
+        "text": "* The interviews are meant to help structure the survey for maximum insight gathering.",
+        "textScale": "normal"
+      }
+    },
+    {
+      "type": "standard",
+      "title": "A note on scope.",
+      "bodyField": {
+        "mode": "text",
+        "text": "* The project's scope is the resources themselves and how they are organized and found — primarily in SharePoint, with a limited ability to surface a few high-value items inside Salesforce.\n* The large fundraising systems — Tableau, Luminate, Greater Giving — are outside this project.\n* Staff nevertheless talked about those systems, and we explored them in an attempt to understand the ecosystem these documents function within. In particular, those systems may offer better places to access just the right tool at just the right time.",
+        "textScale": "normal"
+      }
+    },
+    {
+      "type": "section",
+      "title": "The story in brief (opening build — one line per slide)"
+    },
+    {
+      "type": "section",
+      "title": "We set out to understand how staff find and use the tools National provides."
+    },
+    {
+      "type": "section",
+      "title": "The tools themselves? Staff value them, often without being asked."
+    },
+    {
+      "type": "section",
+      "title": "The harder part is finding them."
+    },
+    {
+      "type": "section",
+      "title": "And, for some staff, there may simply be more than anyone can hold in their head."
+    },
+    {
+      "type": "section",
+      "title": "So staff have built their own clever ways to cope."
+    },
+    {
+      "type": "section",
+      "title": "Which points to the opportunity: improve the path to the tools, more than the tools."
+    },
+    {
+      "type": "section",
+      "title": "What we heard"
+    },
+    {
+      "type": "standard",
+      "title": "Staff value the national tools, and said so unprompted.",
+      "bodyField": {
+        "mode": "text",
+        "text": "* The Plan Builder came up most often as a tool people rely on daily and use to coach their teams.\n  * *“This is the tool I can't live without — it's my true north for coaching my team.” — VP-level, oversees all campaigns (1)*\n* The campaign playbooks were described by several as the first thing they hand a new hire.\n  * *“If you do what this paper says, you can have a successful event.” — long-tenured walk leader (2)*\n* The Impact Plan / ELT impact sheet was named by several as a tool that makes a hard conversation easier.\n  * *“My favorite tool is the impact plan. It makes an awkward conversation so much easier.” — VP-level, socials + walk (3)*",
+        "textScale": "normal"
+      }
+    },
+    {
+      "type": "standard",
+      "title": "Staff are impressively resourceful, and that is a strength worth naming.",
+      "bodyField": {
+        "mode": "text",
+        "text": "* When something is hard to find, people help each other quickly through team chats.\n* Several have built their own trackers and dashboards to see their numbers in real time.\n  * *“Everybody's got kind of a version of it.” — Associate VP, walk (4)*\n* A few build lighter personal systems, like grouping browser tabs by topic.\n  * *“I created my own mini groups for my own sanity.” — Senior Director, walk (5)*",
+        "textScale": "normal"
+      }
+    },
+    {
+      "type": "standard",
+      "title": "Finding things is the most consistent friction, and it is already getting attention.",
+      "bodyField": {
+        "mode": "text",
+        "text": "* Most people we spoke with described real difficulty finding documents in SharePoint.\n  * *“SharePoint is the abyss… I don't know anyone who feels confident finding things in it.” — VP-level (6)*\n* Even very experienced staff sometimes could not find a basic document on a live call.\n  * In a few screen-shares, a tenured staffer searched, came up empty, and messaged a colleague instead.\n* We note this is a known issue the team is already working to improve, which is encouraging.",
+        "textScale": "normal"
+      }
+    },
+    {
+      "type": "standard",
+      "title": "Even when a document turns up, it can be hard to tell if it is the current, official one.",
+      "bodyField": {
+        "mode": "text",
+        "text": "* A search can return another market's older file alongside the national one, with no clear signal of which to trust.\n  * *“I found this thing from three years ago — yeah, because of the way you typed in 'go red script.'” — Executive Director (7)*\n* Broken links came up repeatedly as a small but recurring frustration.\n  * *“If I could wave a magic wand, I'd remove all the links that don't work anymore.” — Director (8)*\n* A few staff noted that updated materials sometimes arrive late for their event's calendar, which adds to the confusion about what is current.",
+        "textScale": "normal"
+      }
+    },
+    {
+      "type": "standard",
+      "title": "For some staff, the sheer number of resources is itself a lot to manage.",
+      "bodyField": {
+        "mode": "text",
+        "text": "* A few described feeling that they need a template for everything, and unsure of themselves without one.\n* Long documents can stall the very first conversation with a prospect.\n  * *“We send them a 14-page document and they're like, 'Oh my god.' The higher the person, the less they read.” — VP-level (9)*\n* A couple of staff used oversized materials exactly as delivered, because it wasn't clear to them that adapting was allowed.",
+        "textScale": "normal"
+      }
+    },
+    {
+      "type": "standard",
+      "title": "Staff speak confidently about the event, and find the mission harder to put into words.",
+      "bodyField": {
+        "mode": "text",
+        "text": "* One Executive Director captured a feeling a few others touched on.\n  * *“How are we leading the mission and not the event? Staff are confident about the walk because they've seen it. We don't see our mission come to life day to day.” — Executive Director (10)*\n* A related thread: national sponsorship materials can read as more about the organization than about the donor's impact, so staff rework them.\n* The need here is for simple, confident mission language — the \"how,\" not the \"whether.\"",
+        "textScale": "normal"
+      }
+    },
+    {
+      "type": "standard",
+      "title": "The campaigns share a lot, but they are genuinely different too.",
+      "bodyField": {
+        "mode": "text",
+        "text": "* Several people pointed to real overlap in core fundraising work.\n  * *“There's a slide that's the exact same — just a different campaign.” — Executive Director (11)*\n* At the same time, whole pieces exist in one campaign and not another.\n  * Participant fundraising and company management are central to Heart Walk but minor in the galas, and the Impact Campaigns run as short, timed sprints unlike the others.\n* The honest read is \"similar, but not the same,\" which points to standardizing the shared parts rather than forcing one universal template.",
+        "textScale": "normal"
+      }
+    },
+    {
+      "type": "standard",
+      "title": "New staff describe a steep first few weeks, and a couple noted support roles want the same help.",
+      "bodyField": {
+        "mode": "text",
+        "text": "* New hires described the early ramp as a lot to absorb at once.\n  * *“I felt like a deer in headlights — the acronyms, all of it.” — Director, recalling her first day (12)*\n* It appears a clear \"start here\" path would help; one newer staffer estimated she spent 30–45 minutes a day just looking for documents.\n* One VP suggested the administrative coordinators who handle data, finance, and logistics would benefit from more of the same kind of support fundraisers get.\n* Several people wished for a simple \"who do I go to for this\" reference.",
+        "textScale": "normal"
+      }
+    },
+    {
+      "type": "standard",
+      "title": "Two concrete requests came up again and again.",
+      "bodyField": {
+        "mode": "text",
+        "text": "* Several staff want to see real, finished examples next to the blank template.\n  * *“Can we see ten examples of ones that have been really successful?” — VP-level (13)*\n* One staffer made a useful point: write internal documents so they can be shared externally without rework, instead of carrying internal-only wording.",
+        "textScale": "normal"
+      }
+    },
+    {
+      "type": "standard",
+      "title": "What it means (the behavioral lens)",
+      "bodyField": {
+        "mode": "text",
+        "text": "This section names the human patterns underneath the findings. It is meant to prime the more detailed solution work that follows in a later phase.",
+        "textScale": "normal"
+      }
+    },
+    {
+      "type": "standard",
+      "title": "The opportunity is mostly about access, not about the assets themselves.",
+      "bodyField": {
+        "mode": "text",
+        "text": "* Nearly every difficulty traces back to finding things and trusting that they are current, not to the quality of the documents.\n* That reframes the work: improve the path to the tools first.",
+        "textScale": "normal"
+      }
+    },
+    {
+      "type": "standard",
+      "title": "People look for things by whatever facet matches how they are thinking right now.",
+      "bodyField": {
+        "mode": "text",
+        "text": "* At any moment a staffer might think \"I need the Heart Walk thing,\" or \"I'm in the recruitment phase,\" or \"I need the coach materials,\" or \"I just need a one-pager.\"\n* The practical implication is to let people start from any of those entry points — campaign, phase, audience, or purpose — rather than forcing one path.\n  * One director described wanting to click \"Coach\" on the Heart Walk page and instantly see every coach resource gathered in one place.\n* Offering the same item through more than one sensible path is a feature, not a flaw; it meets people where their thinking is.",
+        "textScale": "normal"
+      }
+    },
+    {
+      "type": "standard",
+      "title": "People navigate best when information has a tangible shape they can picture.",
+      "bodyField": {
+        "mode": "text",
+        "text": "* Humans evolved to find their way through physical space, and our memory leans on larger structures we can step through in our minds.\n* Plain menus and lists of links strip that away, leaving an abstract space with no landmarks.\n  * One long-tenured staffer missed the days of a physical binder, where he always knew where a thing was and when it had last changed.\n* The implication is to give navigation a concrete, picture-able structure — ideally tied to things that already have a real-world shape, like a timeline, an org structure, or the layout of the event.",
+        "textScale": "normal"
+      }
+    },
+    {
+      "type": "standard",
+      "title": "Different people need different depth at different times, and the same person needs less over time.",
+      "bodyField": {
+        "mode": "text",
+        "text": "* Staff told us documents can be too detailed, yet sometimes the detail is exactly what they need.\n  * One staffer wanted simpler versions to share with volunteers, while still keeping the deeper detail for herself until she had learned it.\n* The implication is to let a document start simple and open up on demand, so one resource serves both the newcomer and the expert.",
+        "textScale": "normal"
+      }
+    },
+    {
+      "type": "standard",
+      "title": "Past a point, more resources can mean less confidence, not more.",
+      "bodyField": {
+        "mode": "text",
+        "text": "* When there are many options and no clear default, it is human to hesitate or fall back on the one familiar thing.\n* This is a plausible reason a very long document or deck can backfire even when its content is good.\n* The implication is to simplify on purpose and make clear that adapting is welcome, so confidence grows alongside completeness.",
+        "textScale": "normal"
+      }
+    },
+    {
+      "type": "standard",
+      "title": "Finding things looks like a learnable skill, which is good news.",
+      "bodyField": {
+        "mode": "text",
+        "text": "* One long-tenured staffer, who had used SharePoint extensively at a previous organization, said she had no real trouble finding things.\n* It appears she has learned a transferable skill for reading the interface and parsing search results.\n* If that is true, it is something we could study and teach, so more people can navigate as well as she does.",
+        "textScale": "normal"
+      }
+    },
+    {
+      "type": "standard",
+      "title": "Directions and principles",
+      "bodyField": {
+        "mode": "text",
+        "text": "These are directions, not a finished plan or a feature list. They follow from the findings above and are meant to guide the next phase of design.",
+        "textScale": "normal"
+      }
+    },
+    {
+      "type": "standard",
+      "title": "Don't replace search — make it trustworthy and precise through good tagging.",
+      "bodyField": {
+        "mode": "text",
+        "text": "* Search is what most people reach for first, so it is worth improving rather than working around.\n* Tagging documents — by campaign, phase, audience, purpose, and level — lets people filter results precisely, the way an online store lets you narrow by brand, size, and price.\n* Flagging the current, official version (and clearly marking everything else as not-yet-official) would solve much of the \"which one do I trust\" problem. Start with the most-used documents and work down.",
+        "textScale": "normal"
+      }
+    },
+    {
+      "type": "standard",
+      "title": "Offer the same simple set of starting points everywhere staff look.",
+      "bodyField": {
+        "mode": "text",
+        "text": "* Use the same facets — campaign, phase, audience, purpose — in the menus, on the campaign home pages, and in search filters.\n* When the structure is the same everywhere, learning it once makes every campaign feel familiar.",
+        "textScale": "normal"
+      }
+    },
+    {
+      "type": "standard",
+      "title": "Make the campaign home pages visual and easy to scan, not walls of text.",
+      "bodyField": {
+        "mode": "text",
+        "text": "* A clear, picture-based layout with an obvious order helps people see where to go at a glance.\n* We discussed this idea with several staff, and the reaction was consistently positive, as long as the imagery stays simple rather than busy.",
+        "textScale": "normal"
+      }
+    },
+    {
+      "type": "standard",
+      "title": "Let key documents start simple and open up.",
+      "bodyField": {
+        "mode": "text",
+        "text": "* Lead with a one-page overview that a reader can skim, with a clear and consistent way to expand into more detail only if they want it.\n* For the Heart Walk overview in particular, a teaching version could start very simple and then let a new staffer open up each phase, then the roles inside it, then the tools.",
+        "textScale": "normal"
+      }
+    },
+    {
+      "type": "standard",
+      "title": "Standardize the shared core across campaigns; allow local versions where they are genuinely needed.",
+      "bodyField": {
+        "mode": "text",
+        "text": "* Build one common framework for the parts that are truly the same across campaigns, and reuse it.\n* Where only the branding differs, offer one set of materials that swaps the logo, so the same content is not maintained several times.\n* Keep the campaign-specific pieces distinct, since the differences between campaigns are real.",
+        "textScale": "normal"
+      }
+    },
+    {
+      "type": "standard",
+      "title": "Show real examples beside the template, and write so documents can go external.",
+      "bodyField": {
+        "mode": "text",
+        "text": "* A few finished examples next to a blank template show staff not just the form, but how to use it.\n* Writing internal documents in plain, externally-shareable language saves the field a rewriting step.",
+        "textScale": "normal"
+      }
+    },
+    {
+      "type": "standard",
+      "title": "Help staff speak about the mission with confidence.",
+      "bodyField": {
+        "mode": "text",
+        "text": "* Short, ready talking points let staff lead with why the work matters, not only with the event.\n* Mission content organized by a donor's interest helps staff match the cause to the person quickly.\n* Making the existing Grants Portal easy to share lets staff show real, local impact (\"here's the research happening in your community\").",
+        "textScale": "normal"
+      }
+    },
+    {
+      "type": "standard",
+      "title": "Make currency visible and align timing to the calendar.",
+      "bodyField": {
+        "mode": "text",
+        "text": "* A simple \"last reviewed\" date and an official-version flag help staff trust what they find.\n* Where possible, time material releases to the campaign calendar, including the off-cycle (for example, spring) markets.",
+        "textScale": "normal"
+      }
+    },
+    {
+      "type": "standard",
+      "title": "A small but possibly important note: many staff prefer Canva.",
+      "bodyField": {
+        "mode": "text",
+        "text": "* Across several interviews, staff said they rebuild national PowerPoint files in Canva before using them.\n* Because Canva connects well with AI, it may be a natural fit for generating polished, on-brand documents from shared content. Worth exploring.",
+        "textScale": "normal"
+      }
+    },
+    {
+      "type": "standard",
+      "title": "Keep local innovation flowing, with light guidance rather than heavy rules.",
+      "bodyField": {
+        "mode": "text",
+        "text": "* Make clear that adapting national materials and building local versions is allowed and expected, since no national tool can anticipate every situation on the ground.\n* Offer light guidance, not a heavy approval process, so the encouragement does not become a burden.\n* Give people a simple way to send their best local tools upward, so good ideas can be reviewed and shared rather than lost.",
+        "textScale": "normal"
+      }
+    },
+    {
+      "type": "section",
+      "title": "What comes next: the survey"
+    },
+    {
+      "type": "standard",
+      "title": "These interviews were the first step toward a survey that reaches many more staff.",
+      "bodyField": {
+        "mode": "text",
+        "text": "* Their job was to surface the real language, mental models, and pain points, so we can write a survey people can answer well.\n* The survey is where we turn these directional findings into numbers.",
+        "textScale": "normal"
+      }
+    },
+    {
+      "type": "standard",
+      "title": "A key result: some of the sharpest questions are hard for staff to answer off the top of their head.",
+      "bodyField": {
+        "mode": "text",
+        "text": "* When asked directly what is redundant across campaigns, or how they would simplify, even experienced staff found it hard to give concrete answers.\n* This is itself a useful finding. The likely reason is that these questions ask people to hold hundreds of scattered items in mind at once, which is very hard to do.",
+        "textScale": "normal"
+      }
+    },
+    {
+      "type": "standard",
+      "title": "So the survey should ask staff to recognize and react, not to recall and invent.",
+      "bodyField": {
+        "mode": "text",
+        "text": "* The redundancy and simplification analysis is best built from the existing tool audit plus a structured comparison, then checked by staff.\n* Survey questions should show concrete, named tools and ask simple things: do you use it, how useful is it, do you modify it.\n* Organizing the questions by campaign and then by phase or audience — the way staff already think — makes them easy to answer.",
+        "textScale": "normal"
+      }
+    },
+    {
+      "type": "standard",
+      "title": "Use the survey to put numbers on what we heard.",
+      "bodyField": {
+        "mode": "text",
+        "text": "* How widespread the finding-things problem is, and roughly how much time it costs.\n* Which tools are truly relied on, and which are rarely used.\n* How common specific preferences are, such as Canva over PowerPoint, and which campaigns feel under-resourced.",
+        "textScale": "normal"
+      }
+    },
+    {
+      "type": "standard",
+      "title": "Capture role, tenure, region, and campaign so we can see where experiences differ.",
+      "bodyField": {
+        "mode": "text",
+        "text": "* We sensed that some people rely on tools others never mention, but could not tell what drives that difference.\n* Those attributes let us test whether the variation is about role, experience, region, or local culture.",
+        "textScale": "normal"
+      }
+    },
+    {
+      "type": "standard",
+      "title": "Keep it short and time it well.",
+      "bodyField": {
+        "mode": "text",
+        "text": "* The field is heading into its busiest fundraising stretch, so the survey should be brief and front-load the questions that matter most.",
+        "textScale": "normal"
+      }
+    },
+    {
+      "type": "standard",
+      "title": "Additional findings to pass along",
+      "bodyField": {
+        "mode": "text",
+        "text": "A short collection of specific, useful things we heard that did not fit the main themes but are worth the team's awareness.",
+        "textScale": "normal"
+      }
+    },
+    {
+      "type": "standard",
+      "title": "A change to event-planning support drew strong reactions in at least one market.",
+      "bodyField": {
+        "mode": "text",
+        "text": "* One staffer felt that moving event-planning coordinators to a shared regional model made the work feel less personal and slower for their team.",
+        "textScale": "normal"
+      }
+    },
+    {
+      "type": "standard",
+      "title": "Sponsorship recognition rules are a sore point in at least one market.",
+      "bodyField": {
+        "mode": "text",
+        "text": "* A staffer noted frustration that a company can raise a large amount through participation yet receive less visible recognition than a smaller sponsor, and that a recent logo-recognition threshold has not landed well locally.",
+        "textScale": "normal"
+      }
+    },
+    {
+      "type": "standard",
+      "title": "\"Cycle Nation\" and a few smaller efforts are seen as under-resourced relative to the core campaigns.",
+      "bodyField": {
+        "mode": "text",
+        "text": "* A few staff noted these get fewer updates and materials, which they understood, but which makes the work harder.",
+        "textScale": "normal"
+      }
+    },
+    {
+      "type": "standard",
+      "title": "A few procedural ideas worth a look.",
+      "bodyField": {
+        "mode": "text",
+        "text": "* One large market builds most of its own materials; a direct conversation with that team could surface ideas worth sharing more broadly.",
+        "textScale": "normal"
+      }
+    },
+    {
+      "type": "section",
+      "title": "Close"
+    },
+    {
+      "type": "section",
+      "title": "The tools are good; the opportunity is to make them easy to find, easy to trust, and easy to grow into — so staff spend their energy on the mission, not on the search."
+    }
+  ]
+}

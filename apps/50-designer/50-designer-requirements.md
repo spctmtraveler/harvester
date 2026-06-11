@@ -1,8 +1,8 @@
 # Designer Requirements (Job 5)
 
 Source:
-- `Reference Docs/apps/50-designer/designer requirements.md` (v3.4 usage guide)
-- `Reference Docs/apps/40-reporter/40-reporter-requirements.md` (Designer JSON contract dependencies)
+- `apps/50-designer/designer requirements.md` (v3.4 usage guide)
+- `apps/40-reporter/40-reporter-requirements.md` (Designer JSON contract dependencies)
 - `Reference Docs/requirements.md` (pipeline-level constraints)
 
 Last updated: 2026-02-23
@@ -102,3 +102,10 @@ Phase 2 (Now):
 - Designer JSON must remain Reporter-compatible for field schema and slide types
 - Unknown fields must not be destroyed during round-trip edits
 - Deck export must remain possible even if image upload infrastructure is down (fallback required)
+
+
+
+## NOT REQUIREMENTS! JUST MUSING ON POSSIBLE FUTURE REQUIREMENTS. JUST IGNORE THIS SECTION ##
+
+
+So, Designer is really becoming something bigger than what it started out as. Now it's evolving toward a tool where I can have AI agents be able to generate and edit PowerPoint documents (at least within a narrow range of options - like our brand pp deck template). It would be really great to be able to have an AI chat directly inside Designer where I could talk to it and ask it to do things like "Rewrite this slide to be more casual" or "break this slide into to slides" or "Please look through the deck and figure out where images would be helpful, then add them in (which would require adding the second column then writing an image prompt and triggering the generation). Or "please grammer and spell check this entire document" (it would just change the text, not actually flag what it did). Or "Bold all the vocabulary words on this page."

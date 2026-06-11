@@ -8,7 +8,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 $workspaceRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$appsRoot = Join-Path $workspaceRoot "Reference Docs\apps"
+$appsRoot = Join-Path $workspaceRoot "apps"
 
 if (-not (Test-Path $appsRoot)) {
   throw "Apps folder not found: $appsRoot"
@@ -59,9 +59,11 @@ foreach ($dir in $appDirs) {
 
   $remoteDir = "$RemoteRoot/$($dir.Name)"
 
-  # Files to sync for each app (index.html is required; styles.css and app.js are optional)
-  $appFiles = @("index.html", "styles.css", "app.js") |
-    Where-Object { Test-Path (Join-Path $dir.FullName $_) }
+  # Sync published web assets for each app directory.
+  $appFiles = Get-ChildItem -Path $dir.FullName -File |
+    Where-Object { $_.Extension -in @('.html', '.css', '.js', '.svg') } |
+    Sort-Object Name |
+    ForEach-Object { $_.Name }
 
   Write-Host "Syncing $($dir.Name)/ ($($appFiles.Count) file(s))"
 
