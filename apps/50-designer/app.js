@@ -89,8 +89,10 @@
     const DESIGNER_OVERVIEW_NAMESPACE = 'designer_overview_texts';
     const DESIGNER_OVERVIEW_KEY = 'heart_walk_systems_overview';
     const DESIGNER_DECK_NAMESPACE = 'designer_decks';
+    const DESIGNER_DECK_IMAGE_LIBRARY_NAMESPACE = 'designer_deck_image_libraries';
     const LEGACY_DESIGNER_DECK_AUTOSAVE_KEY = 'autosave_current';
     const DESIGNER_DECK_RECORD_PREFIX = 'deck::';
+    const DESIGNER_DECK_IMAGE_LIBRARY_PREFIX = 'deck_images::';
     const LEGACY_LOCAL_DECK_AUTOSAVE_KEY = 'heart_walk_deck_pro_v3';
     const DESIGNER_DECK_LOCAL_PREFIX = 'heart_walk_designer_doc::';
     const DESIGNER_ACTIVE_DECK_SESSION_KEY = 'heart_walk_designer_active_deck_id';
@@ -106,6 +108,20 @@ Internal staff recruit and coach volunteer leaders. Volunteer leaders open doors
 Typical campaign actions include recruiting an ELT Chair, recruiting ELT members, conducting campaign meetings, identifying corporate prospects, making asks, capturing commitments, tracking pipeline status, and recognizing sponsors and participants.
 
 The system is relationship-based and supported by tools such as Salesforce, reporting dashboards, slide decks, annotated agendas, call scripts, email templates, and planning documents.`;
+    const DEFAULT_IMAGE_PROMPT_WRITER_INSTRUCTIONS = `Write prompts for small supporting slide illustrations, not mini-infographics.
+
+The image should do one light-touch job: add warmth, color, or a simple metaphor next to the slide text. It should not try to explain every bullet, every implication, or the whole system.
+
+Rules for choosing the image concept:
+- Pick one focal idea from the slide, preferably the simplest emotional or practical point.
+- Use one clear scene, object, or human moment. Avoid combining multiple scenes.
+- Keep the composition sparse: one or two people OR one simple object/metaphor, not both unless essential.
+- Avoid dashboards, maps, charts, arrows, labels, callouts, thought bubbles, badges, checklists, and multiple icons unless the slide explicitly requires one of them.
+- Do not include slide text, bullet content, or long labels inside the image.
+- If the slide contains several bullets, choose the best single supporting visual rather than representing each bullet.
+- Prefer a calm visual accent over a complete explanation.
+
+Return one concise image prompt of 1-3 sentences.`;
     let dbHelperPromise = null;
     let designerDbInitPromise = null;
     let cachedImageStyles = [];
@@ -114,6 +130,7 @@ The system is relationship-based and supported by tools such as Salesforce, repo
     let deckAutosaveTimer = null;
     let deckAutosaveInFlight = false;
     let pendingDeckAutosave = false;
+    let deckImageLibrarySavePromise = Promise.resolve();
     let lastRemoteDeckSnapshot = '';
     let lastRemoteDeckFingerprint = '';
     let lastDeckLoadedFromRemote = '';
@@ -122,14 +139,23 @@ The system is relationship-based and supported by tools such as Salesforce, repo
     let currentDeckCreatedAt = '';
     let currentDeckUpdatedAt = '';
     let cachedDeckLibrary = [];
+    let deckImageLibrary = [];
     let pendingDeletedSlide = null;
     renderDeckFilenameBanner();
     const FIELD_ASYNC_STATE = new Map();
-    const BATCH_IMAGE_STATE = { running: false, cancelRequested: false, total: 0, completed: 0, failed: 0, current: [], parallelism: 1 };
+    const BATCH_IMAGE_STATE = { running: false, cancelRequested: false, total: 0, completed: 0, failed: 0, retriesUsed: 0, current: [], parallelism: 1 };
     const BATCH_IMAGE_PARALLELISM_STORAGE_KEY = 'heart_walk_batch_parallelism';
     const DEFAULT_BATCH_IMAGE_PARALLELISM = 3;
+    const BATCH_IMAGE_MAX_RETRIES_PER_TARGET = 1;
+    const BATCH_IMAGE_MAX_TOTAL_RETRIES = 5;
     const IMAGE_MANAGE_STATE = new Map();
     const IMAGE_DIMENSION_CACHE = new Map();
+    const IMAGE_GENERATION_STATUS = {
+        IDLE: '',
+        PROMPTING: 'prompting',
+        GENERATING: 'generating',
+        ERROR: 'error'
+    };
     const SLIDE_TYPE_OPTIONS = [
         { type: 'cover', label: 'Cover' },
         { type: 'section', label: 'Section' },
@@ -647,6 +673,10 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         return getTrimmedConfigValue('imagePromptStyle');
     }
 
+    function getImagePromptWriterInstructions() {
+        return getTrimmedConfigValue('imagePromptWriterInstructions') || DEFAULT_IMAGE_PROMPT_WRITER_INSTRUCTIONS;
+    }
+
     function hasUniversalQuoteAttribution() {
         return !!getTrimmedConfigValue('universalQuoteAttribution');
     }
@@ -668,6 +698,7 @@ The system is relationship-based and supported by tools such as Salesforce, repo
                 promptPending: !!field?.imagePromptPending,
                 generateQueued: !!field?.imageGenerateQueued,
                 requestId: 0,
+                generationRequestId: 0,
                 promptPromise: null
             });
         } else if (field && !FIELD_ASYNC_STATE.get(key).promptPromise) {
@@ -757,6 +788,44 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         return text.split(/\n{2,}/)[0].trim();
     }
 
+    function getAiResponseErrorMessage(response) {
+        if (response && typeof response === 'object' && !Array.isArray(response)) {
+            const directError = response.error || response.message || response.statusText;
+            if (directError) return String(directError).trim();
+        }
+        const text = String(response || '').trim();
+        if (!text) return '';
+        let parsed = null;
+        try { parsed = JSON.parse(text); } catch { parsed = null; }
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            const parsedError = parsed.error || parsed.message || parsed.statusText;
+            if (parsedError) return String(parsedError).trim();
+        }
+        const firstLine = text.split(/\r?\n/)[0].trim();
+        if (/^(error|api error|request failed|failed|timeout|rate limit|too many requests)\b\s*:?\s*/i.test(firstLine)) return firstLine;
+        if (/\b(429|500|502|503|504)\b/.test(firstLine) && /\b(error|failed|timeout|rate|overloaded|unavailable)\b/i.test(firstLine)) return firstLine;
+        return '';
+    }
+
+    function isUsableImageResultUrl(url) {
+        const value = String(url || '').trim();
+        return isDataImageUrl(value) || /^https?:\/\/\S+/i.test(value);
+    }
+
+    function delay(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    function withTimeout(promise, ms, label) {
+        let timer = null;
+        const timeoutPromise = new Promise((_, reject) => {
+            timer = setTimeout(() => reject(new Error(`${label} timed out after ${Math.round(ms / 1000)} seconds.`)), ms);
+        });
+        return Promise.race([promise, timeoutPromise]).finally(() => {
+            if (timer) clearTimeout(timer);
+        });
+    }
+
     function collectFieldContextText(field, label) {
         if (!field) return '';
         if (field.mode === 'text') return `${label}: ${stripCitationMarkers(field.text || '')}`.trim();
@@ -808,16 +877,25 @@ The system is relationship-based and supported by tools such as Salesforce, repo
     function buildAutomaticImagePromptRequest(slide, fieldPath) {
         const slideSummary = summarizeSlideForImagePrompt(slide, fieldPath);
         const style = getImagePromptStyle();
+        const writerInstructions = getImagePromptWriterInstructions();
         const overview = String(overviewTextCache || DEFAULT_HEART_WALK_OVERVIEW).trim();
         return [
             'You are writing one image-generation prompt for a slide in the Heart Walk Designer app.',
             'Return only the final image prompt text. No markdown, labels, JSON, or explanation.',
             '',
-            'Requirements:',
+            'Prompt writer instructions:',
+            writerInstructions,
+            '',
+            'How to use the universal visual style reference:',
+            '- The visual style reference below will also be appended to the image-generation prompt.',
+            '- Use it here only to choose an image concept that fits the intended style and level of complexity.',
+            '- Do not copy the whole visual style reference into your returned prompt.',
+            '- If the style reference conflicts with the prompt writer instructions, prefer the prompt writer instructions.',
+            '',
+            'Hard requirements:',
             '- The image should support the slide content without repeating the slide text verbatim.',
-            '- Prefer concise but vivid prompt language.',
-            '- If a universal visual style is provided, use it naturally.',
-            '- Do not mention UI markers, citations, or question marks.',
+            '- Choose one simple visual idea, not a complete visual summary of the slide.',
+            '- Do not mention UI markers, citations, question marks, or editor controls.',
             '',
             'Heart Walk systems overview:',
             overview,
@@ -845,6 +923,42 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         if (!field) return;
         field.imagePromptPending = !!promptPending;
         field.imageGenerateQueued = !!generateQueued;
+        if (promptPending) {
+            field.imageGenerationStatus = IMAGE_GENERATION_STATUS.PROMPTING;
+            field.imageGenerationError = '';
+            field.imageGenerationUpdatedAt = new Date().toISOString();
+        } else if (field.imageGenerationStatus === IMAGE_GENERATION_STATUS.PROMPTING) {
+            field.imageGenerationStatus = '';
+            field.imageGenerationUpdatedAt = new Date().toISOString();
+        }
+    }
+
+    function setFieldImageGenerationStatus(field, status, options = {}) {
+        if (!field) return;
+        field.imageGenerationStatus = status || '';
+        field.imageGenerationError = options.error ? String(options.error) : '';
+        field.imageGenerationRequestId = options.requestId ? String(options.requestId) : field.imageGenerationRequestId || '';
+        field.imageGenerationStartedAt = options.startedAt || field.imageGenerationStartedAt || (status ? new Date().toISOString() : '');
+        field.imageGenerationUpdatedAt = new Date().toISOString();
+        if (status === IMAGE_GENERATION_STATUS.ERROR) {
+            field.imagePromptPending = false;
+            field.imageGenerateQueued = false;
+        }
+    }
+
+    function clearFieldImageGenerationStatus(field) {
+        if (!field) return;
+        field.imageGenerationStatus = '';
+        field.imageGenerationError = '';
+        field.imageGenerationRequestId = '';
+        field.imageGenerationStartedAt = '';
+        field.imageGenerationUpdatedAt = new Date().toISOString();
+        field.imagePromptPending = false;
+        field.imageGenerateQueued = false;
+    }
+
+    function getFieldImageGenerationError(field) {
+        return String(field?.imageGenerationError || '').trim();
     }
 
     function renderReferenceManager(focusId = null) {
@@ -969,6 +1083,333 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         el.classList.toggle('error', !!isError);
     }
 
+    function setEmbeddedImageNormalizeStatus(message, isError = false) {
+        setSettingsStatus('embedded-image-normalize-status', message, isError);
+    }
+
+    function createImageLibraryId() {
+        return `img_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    }
+
+    function isDataImageUrl(value) {
+        return String(value || '').trim().startsWith('data:image/');
+    }
+
+    function normalizeDeckImageLibraryItem(item) {
+        const base = item && typeof item === 'object' && !Array.isArray(item) ? item : {};
+        const rawUrl = String(base.url || base.imageUrl || '').trim();
+        const url = isDataImageUrl(rawUrl) ? '' : rawUrl;
+        if (!url) return null;
+        const rawOriginalUrl = String(base.originalUrl || '').trim();
+        const originalUrl = isDataImageUrl(rawOriginalUrl) ? '' : rawOriginalUrl;
+        return {
+            id: String(base.id || createImageLibraryId()).trim(),
+            url,
+            originalUrl,
+            prompt: String(base.prompt || '').trim(),
+            notes: String(base.notes || base.prompt || '').trim(),
+            source: String(base.source || 'generated').trim(),
+            provider: String(base.provider || '').trim(),
+            model: String(base.model || '').trim(),
+            slideIndex: Number.isInteger(Number(base.slideIndex)) ? Number(base.slideIndex) : null,
+            fieldPath: String(base.fieldPath || '').trim(),
+            requestId: String(base.requestId || '').trim(),
+            createdAt: String(base.createdAt || new Date().toISOString()).trim(),
+            updatedAt: String(base.updatedAt || base.createdAt || new Date().toISOString()).trim(),
+            uploadStatus: String(base.uploadStatus || '').trim(),
+            uploadError: String(base.uploadError || '').trim()
+        };
+    }
+
+    function normalizeDeckImageLibrary(list) {
+        if (!Array.isArray(list)) return [];
+        const seen = new Set();
+        return list
+            .map(normalizeDeckImageLibraryItem)
+            .filter(Boolean)
+            .filter(item => {
+                const key = item.id || item.url;
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            })
+            .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+    }
+
+    function mergeDeckImageLibraries(...lists) {
+        const merged = new Map();
+        lists.flat().forEach(item => {
+            const normalized = normalizeDeckImageLibraryItem(item);
+            if (!normalized) return;
+            const key = normalized.url || normalized.id;
+            const existing = merged.get(key);
+            if (existing) {
+                merged.set(key, {
+                    ...existing,
+                    ...normalized,
+                    id: existing.id || normalized.id,
+                    createdAt: existing.createdAt || normalized.createdAt,
+                    updatedAt: [existing.updatedAt, normalized.updatedAt].filter(Boolean).sort().pop() || new Date().toISOString()
+                });
+            } else {
+                merged.set(key, normalized);
+            }
+        });
+        return normalizeDeckImageLibrary(Array.from(merged.values())).slice(0, 120);
+    }
+
+    function collectDeckImageLibraryItemsFromSlides() {
+        const items = [];
+        (Array.isArray(slidesData) ? slidesData : []).forEach((slide, slideIndex) => {
+            ensureSlideSchema(slide);
+            getImageFieldsForSlide(slide).forEach(target => {
+                const field = target.field;
+                const imageUrl = String(field?.imageUrl || '').trim();
+                if (!imageUrl || isDataImageUrl(imageUrl)) return;
+                items.push({
+                    url: imageUrl,
+                    originalUrl: '',
+                    prompt: String(field.imagePrompt || '').trim(),
+                    notes: String(field.imageNotes || field.imagePrompt || '').trim(),
+                    source: 'slide',
+                    provider: '',
+                    model: '',
+                    slideIndex,
+                    fieldPath: target.fieldPath,
+                    requestId: String(field.imageGenerationRequestId || '').trim(),
+                    createdAt: field.imageGenerationUpdatedAt || currentDeckUpdatedAt || currentDeckCreatedAt || new Date().toISOString(),
+                    updatedAt: field.imageGenerationUpdatedAt || currentDeckUpdatedAt || new Date().toISOString(),
+                    uploadStatus: 'remote-url'
+                });
+            });
+        });
+        return items;
+    }
+
+    function getDeckImageLibraryDbKey(deckId) {
+        return `${DESIGNER_DECK_IMAGE_LIBRARY_PREFIX}${deckId}`;
+    }
+
+    function parseDeckImageLibraryDbRecord(rawRecord) {
+        if (!rawRecord) return [];
+        let parsed = rawRecord;
+        try {
+            if (typeof rawRecord === 'string') parsed = JSON.parse(rawRecord);
+        } catch {
+            return [];
+        }
+        if (Array.isArray(parsed)) return normalizeDeckImageLibrary(parsed);
+        return normalizeDeckImageLibrary(parsed?.images || parsed?.imageLibrary || []);
+    }
+
+    async function loadDeckImageLibraryFromDb(deckId) {
+        const normalizedDeckId = String(deckId || '').trim();
+        if (!normalizedDeckId) return [];
+        try {
+            const DBHelper = await initDesignerDb();
+            const result = await DBHelper.query(
+                DESIGNER_DB_APP_NAME,
+                'SELECT value_json FROM kv_store WHERE namespace = ? AND key_name = ? LIMIT 1',
+                [DESIGNER_DECK_IMAGE_LIBRARY_NAMESPACE, getDeckImageLibraryDbKey(normalizedDeckId)]
+            );
+            return parseDeckImageLibraryDbRecord(result?.rows?.[0]?.value_json || null);
+        } catch (err) {
+            console.warn('[Designer][ImageLibrary] Failed to load deck image library from DB:', err);
+            return [];
+        }
+    }
+
+    async function saveDeckImageLibraryToDb(deckId = currentDeckId, options = {}) {
+        const normalizedDeckId = String(deckId || '').trim();
+        if (!normalizedDeckId || normalizedDeckId !== currentDeckId) return false;
+        deckImageLibrary = mergeDeckImageLibraries(deckImageLibrary, collectDeckImageLibraryItemsFromSlides());
+        try {
+            const DBHelper = await initDesignerDb();
+            const record = {
+                deckId: normalizedDeckId,
+                deckName: currentDeckName || '',
+                images: deckImageLibrary,
+                updatedAt: new Date().toISOString()
+            };
+            await DBHelper.query(
+                DESIGNER_DB_APP_NAME,
+                'INSERT INTO kv_store (namespace, key_name, value_json, updated_at) VALUES (?, ?, ?, NOW()) ON DUPLICATE KEY UPDATE value_json = VALUES(value_json), updated_at = NOW()',
+                [DESIGNER_DECK_IMAGE_LIBRARY_NAMESPACE, getDeckImageLibraryDbKey(normalizedDeckId), JSON.stringify(record)]
+            );
+            console.log('[Designer][ImageLibrary] Saved deck image library to DB:', {
+                deckId: normalizedDeckId,
+                count: deckImageLibrary.length
+            });
+            return true;
+        } catch (err) {
+            console.warn('[Designer][ImageLibrary] Failed to save deck image library to DB:', err);
+            if (!options.silent) showToast('Could not save generated image library to DB.', 'error', 3200);
+            return false;
+        }
+    }
+
+    function queueDeckImageLibraryPersist(options = {}) {
+        if (!currentDeckId) return Promise.resolve(false);
+        const deckId = currentDeckId;
+        deckImageLibrarySavePromise = deckImageLibrarySavePromise
+            .catch(() => false)
+            .then(() => saveDeckImageLibraryToDb(deckId, options));
+        return deckImageLibrarySavePromise;
+    }
+
+    async function hydrateDeckImageLibraryFromDb(options = {}) {
+        if (!currentDeckId) return false;
+        const before = JSON.stringify(normalizeDeckImageLibrary(deckImageLibrary));
+        const dbImages = await loadDeckImageLibraryFromDb(currentDeckId);
+        deckImageLibrary = mergeDeckImageLibraries(deckImageLibrary, dbImages, collectDeckImageLibraryItemsFromSlides());
+        renderDeckImageLibrary();
+        const changed = before !== JSON.stringify(deckImageLibrary);
+        if (changed) {
+            console.log('[Designer][ImageLibrary] Hydrated generated image library:', {
+                deckId: currentDeckId,
+                dbCount: dbImages.length,
+                mergedCount: deckImageLibrary.length
+            });
+            if (options.saveMerged) {
+                saveState(true);
+                queueDeckImageLibraryPersist({ silent: true });
+            }
+        }
+        return changed;
+    }
+
+    function renderDeckImageLibrary() {
+        const listEl = document.getElementById('deck-image-library-list');
+        const countEl = document.getElementById('deck-image-library-count');
+        if (countEl) {
+            countEl.textContent = `${deckImageLibrary.length} saved image${deckImageLibrary.length === 1 ? '' : 's'}`;
+        }
+        if (!listEl) return;
+        if (!deckImageLibrary.length) {
+            listEl.innerHTML = '<div class="reference-empty">Generated images saved for this deck will appear here.</div>';
+            return;
+        }
+        listEl.innerHTML = deckImageLibrary.map(item => {
+            const meta = [
+                item.createdAt ? formatDeckTimestamp(item.createdAt) : '',
+                item.slideIndex != null ? `Slide ${item.slideIndex + 1}` : '',
+                item.fieldPath || '',
+                item.uploadStatus === 'data-uri' ? 'embedded' : item.uploadStatus === 'uploaded' ? 'server URL' : ''
+            ].filter(Boolean).join(' | ');
+            return `<div class="deck-image-library-item" data-image-library-id="${escapeHtml(item.id)}">
+                <button type="button" class="deck-image-library-thumb" data-role="image-library-preview" data-image-library-id="${escapeHtml(item.id)}" title="Open image in a new tab">
+                    <img src="${escapeHtml(item.url)}" alt="${escapeHtml(item.notes || 'Generated image')}">
+                </button>
+                <div class="deck-image-library-main">
+                    <div class="deck-image-library-meta">${escapeHtml(meta)}</div>
+                    <div class="deck-image-library-prompt">${escapeHtml(item.prompt || item.notes || 'No prompt saved.')}</div>
+                    ${item.uploadError ? `<div class="deck-image-library-error">${escapeHtml(item.uploadError)}</div>` : ''}
+                    <div class="deck-image-library-actions">
+                        <button type="button" data-role="image-library-use-current" data-image-library-id="${escapeHtml(item.id)}">Use on Current Image Field</button>
+                        <button type="button" data-role="image-library-copy-url" data-image-library-id="${escapeHtml(item.id)}">Copy URL</button>
+                    </div>
+                </div>
+            </div>`;
+        }).join('');
+    }
+
+    function addImageToDeckLibrary(item) {
+        const normalized = normalizeDeckImageLibraryItem(item);
+        if (!normalized) return null;
+        const existingIndex = deckImageLibrary.findIndex(entry => entry.id === normalized.id || entry.url === normalized.url);
+        if (existingIndex >= 0) {
+            deckImageLibrary[existingIndex] = { ...deckImageLibrary[existingIndex], ...normalized, updatedAt: new Date().toISOString() };
+        } else {
+            deckImageLibrary.unshift(normalized);
+        }
+        deckImageLibrary = normalizeDeckImageLibrary(deckImageLibrary).slice(0, 120);
+        renderDeckImageLibrary();
+        console.log('[Designer][ImageGen] Stored image in deck library:', {
+            id: normalized.id,
+            source: normalized.source,
+            slideIndex: normalized.slideIndex,
+            fieldPath: normalized.fieldPath,
+            urlPreview: normalized.url.slice(0, 90)
+        });
+        return normalized;
+    }
+
+    function updateDeckImageLibraryItem(imageId, updates) {
+        const idx = deckImageLibrary.findIndex(item => item.id === imageId);
+        if (idx < 0) return null;
+        deckImageLibrary[idx] = normalizeDeckImageLibraryItem({
+            ...deckImageLibrary[idx],
+            ...updates,
+            updatedAt: new Date().toISOString()
+        }) || deckImageLibrary[idx];
+        deckImageLibrary = normalizeDeckImageLibrary(deckImageLibrary);
+        renderDeckImageLibrary();
+        return deckImageLibrary.find(item => item.id === imageId) || null;
+    }
+
+    function getDeckImageLibraryItem(imageId) {
+        return deckImageLibrary.find(item => item.id === imageId) || null;
+    }
+
+    function getCurrentImageFieldTarget() {
+        const slide = slidesData[currentSlideIndex];
+        if (!slide) return null;
+        ensureSlideSchema(slide);
+        const target = getImageFieldsForSlide(slide).find(item => item.field?.mode === 'image');
+        return target ? { slideIndex: currentSlideIndex, fieldPath: target.fieldPath, field: target.field } : null;
+    }
+
+    function applyImageLibraryItemToField(imageId, slideIndex = currentSlideIndex, fieldPath = '') {
+        const item = getDeckImageLibraryItem(imageId);
+        if (!item) return false;
+        const target = fieldPath
+            ? { slideIndex, fieldPath, field: getByPath(slidesData[slideIndex], fieldPath) }
+            : getCurrentImageFieldTarget();
+        if (!target?.field) {
+            showToast('Select a slide with an image field first.', 'error', 3000);
+            return false;
+        }
+        pushImageHistory(target.field);
+        target.field.imageUrl = item.url;
+        target.field.imageNotes = target.field.imageNotes || item.notes || item.prompt || '';
+        target.field.imagePrompt = target.field.imagePrompt || item.prompt || '';
+        clearFieldImageGenerationStatus(target.field);
+        setImageManageMode(target.slideIndex, target.fieldPath, false);
+        saveState(true);
+        render();
+        showSlide(currentSlideIndex);
+        showToast('Image applied to the current slide.');
+        console.log('[Designer][ImageLibrary] Applied saved image to field:', {
+            imageId,
+            slideIndex: target.slideIndex,
+            fieldPath: target.fieldPath
+        });
+        return true;
+    }
+
+    function clearImageFieldStatus(fieldPath, slideIndex) {
+        const slide = slidesData[slideIndex];
+        if (!slide) return false;
+        ensureSlideSchema(slide);
+        const field = getByPath(slide, fieldPath);
+        if (!field) return false;
+        const key = getFieldRequestKey(slideIndex, fieldPath);
+        const state = getFieldAsyncState(slideIndex, fieldPath);
+        if (field.imageGenerationRequestId) CANCELED_IMAGE_REQUESTS.add(String(field.imageGenerationRequestId));
+        state.requestId += 1;
+        state.generationRequestId += 1;
+        state.promptPending = false;
+        state.generateQueued = false;
+        state.promptPromise = null;
+        AI_GEN_IN_FLIGHT.delete(key);
+        clearFieldImageGenerationStatus(field);
+        saveState();
+        render();
+        showSlide(currentSlideIndex);
+        console.log('[Designer][ImageGen] Cleared image field status:', { slideIndex, fieldPath });
+        return true;
+    }
+
     function createStarterDeckPayload() {
         const config = {};
         fillConfigFromActivePreset(config);
@@ -977,6 +1418,7 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         return {
             config,
             references: [],
+            imageLibrary: [],
             slides: [{ type: 'cover', title: 'Start', subtitle: 'Import JSON to begin' }]
         };
     }
@@ -1048,6 +1490,7 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         if (typeof appConfig.hideSourceAttribution !== 'boolean') appConfig.hideSourceAttribution = false;
         if (typeof appConfig.hideAllImages !== 'boolean') appConfig.hideAllImages = false;
         if (typeof appConfig.imagePromptStyle !== 'string') appConfig.imagePromptStyle = '';
+        if (typeof appConfig.imagePromptWriterInstructions !== 'string') appConfig.imagePromptWriterInstructions = '';
         if (typeof appConfig.universalQuoteAttribution !== 'string') appConfig.universalQuoteAttribution = '';
         if (typeof appConfig.showSpeakerNotes !== 'boolean') appConfig.showSpeakerNotes = false;
 
@@ -1065,16 +1508,19 @@ The system is relationship-based and supported by tools such as Salesforce, repo
     }
 
     function applyDeckPayload(payload, options = {}) {
+        const existingImageLibrary = Array.isArray(options.mergeImageLibrary) ? options.mergeImageLibrary : [];
         appConfig = payload?.config || {};
         deckReferences = normalizeDeckReferences(payload?.references);
         slidesData = Array.isArray(payload?.slides) && payload.slides.length
             ? payload.slides.map(ensureSlideSchema)
             : createStarterDeckPayload().slides.map(ensureSlideSchema);
+        deckImageLibrary = mergeDeckImageLibraries(existingImageLibrary, payload?.imageLibrary, collectDeckImageLibraryItemsFromSlides());
         normalizeRuntimeDeckState();
         applyConfig();
         render();
         if (options.resize !== false) resizeStage();
         updateSettingsUI();
+        renderDeckImageLibrary();
         showSlide(Number.isInteger(options.slideIndex) ? options.slideIndex : 0);
         resumePendingImagePrompts();
     }
@@ -1105,6 +1551,7 @@ The system is relationship-based and supported by tools such as Salesforce, repo
 
     function applyDeckRecord(record, options = {}) {
         if (!record) return false;
+        const existingImageLibrary = currentDeckId && currentDeckId === record.id ? deckImageLibrary : [];
         currentDeckId = record.id;
         currentDeckName = record.name;
         currentDeckCreatedAt = record.createdAt;
@@ -1114,7 +1561,7 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         lastRemoteDeckSnapshot = serializedDeck;
         lastRemoteDeckFingerprint = buildDeckFingerprint(serializedDeck, record.id, record.name);
         lastDeckLoadedFromRemote = serializedDeck;
-        applyDeckPayload(record.deck, options);
+        applyDeckPayload(record.deck, { ...options, mergeImageLibrary: existingImageLibrary });
         if (options.persistLocal !== false) {
             try {
                 localStorage.setItem(getDeckLocalCacheKey(record.id), JSON.stringify(record));
@@ -1212,7 +1659,8 @@ The system is relationship-based and supported by tools such as Salesforce, repo
     }
 
     function serializeDeckState(pretty = false) {
-        return JSON.stringify({ config: appConfig, slides: slidesData, references: deckReferences }, null, pretty ? 2 : 0);
+        deckImageLibrary = normalizeDeckImageLibrary(deckImageLibrary);
+        return JSON.stringify({ config: appConfig, slides: slidesData, references: deckReferences, imageLibrary: deckImageLibrary }, null, pretty ? 2 : 0);
     }
 
     async function saveDeckSnapshotToDb(serializedDeck = serializeDeckState(), options = {}) {
@@ -1338,6 +1786,7 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         if (!normalizedId) return false;
         const localRecord = loadDeckRecordFromLocal(normalizedId);
         if (localRecord && applyDeckRecord(localRecord, { persistLocal: false })) {
+            await hydrateDeckImageLibraryFromDb({ saveMerged: true });
             setSettingsStatus('deck-doc-status', `Loaded ${getCurrentDeckDisplayName(localRecord)} from local cache.`);
             showToast(`Loaded ${getCurrentDeckDisplayName(localRecord)}.`);
             return true;
@@ -1349,6 +1798,7 @@ The system is relationship-based and supported by tools such as Salesforce, repo
             return false;
         }
         applyDeckRecord(remoteRecord);
+        await hydrateDeckImageLibraryFromDb({ saveMerged: true });
         setSettingsStatus('deck-doc-status', `Loaded ${getCurrentDeckDisplayName(remoteRecord)} from DB.`);
         showToast(`Loaded ${getCurrentDeckDisplayName(remoteRecord)}.`);
         return true;
@@ -1444,6 +1894,7 @@ The system is relationship-based and supported by tools such as Salesforce, repo
                 const parts = [`${BATCH_IMAGE_STATE.completed}/${BATCH_IMAGE_STATE.total} completed`];
                 parts.push(`Parallel: ${BATCH_IMAGE_STATE.parallelism}`);
                 if (BATCH_IMAGE_STATE.failed) parts.push(`${BATCH_IMAGE_STATE.failed} failed`);
+                if (BATCH_IMAGE_STATE.retriesUsed) parts.push(`Retries: ${BATCH_IMAGE_STATE.retriesUsed}/${BATCH_IMAGE_MAX_TOTAL_RETRIES}`);
                 if (Array.isArray(BATCH_IMAGE_STATE.current) && BATCH_IMAGE_STATE.current.length) {
                     parts.push(`Active: ${BATCH_IMAGE_STATE.current.join(' | ')}`);
                 }
@@ -1750,6 +2201,11 @@ The system is relationship-based and supported by tools such as Salesforce, repo
             imageNotes: base.imageNotes || base.imagePrompt || '',         // alt-text / image description for accessibility & AI generation
             imagePromptPending: !!base.imagePromptPending,
             imageGenerateQueued: !!base.imageGenerateQueued,
+            imageGenerationStatus: ['prompting', 'generating', 'error'].includes(base.imageGenerationStatus) ? base.imageGenerationStatus : '',
+            imageGenerationError: base.imageGenerationError || '',
+            imageGenerationRequestId: base.imageGenerationRequestId || '',
+            imageGenerationStartedAt: base.imageGenerationStartedAt || '',
+            imageGenerationUpdatedAt: base.imageGenerationUpdatedAt || '',
             imageHistory: Array.isArray(base.imageHistory) ? base.imageHistory : [],
             quoteText: base.quoteText ?? fallbackText,
             quoteAttribution: base.quoteAttribution || '',
@@ -2046,6 +2502,46 @@ The system is relationship-based and supported by tools such as Salesforce, repo
     }
 
     function renderFieldBody(fieldPath, field, slideIndex = currentSlideIndex) {
+        function imagePanelIcon(iconName, extraClass = '') {
+            return `<i class="fa-regular ${iconName} image-panel-state-icon ${extraClass}" aria-hidden="true"></i>`;
+        }
+
+        function imageGenerationStatusHtml(fieldPath, field) {
+            const status = String(field.imageGenerationStatus || '');
+            if (!['prompting', 'generating', 'error'].includes(status)) return '';
+            const hasImage = !!String(field.imageUrl || '').trim();
+            const activeGeneration = status === 'generating' && AI_GEN_IN_FLIGHT.has(getFieldRequestKey(slideIndex, fieldPath));
+            if (hasImage && !activeGeneration) return '';
+            const isError = status === 'error';
+            const title = isError
+                ? 'Image generation failed'
+                : status === 'prompting'
+                    ? 'Drafting image prompt'
+                    : 'Generating image';
+            const detail = isError
+                ? getFieldImageGenerationError(field) || 'Unknown image generation error.'
+                : status === 'prompting'
+                    ? 'The app is asking AI to draft a usable image prompt.'
+                    : 'The app is waiting for the AI image API to return.';
+            const icon = isError
+                ? imagePanelIcon('fa-circle-xmark')
+                : '<span class="ai-spinner image-panel-state-spinner"></span>';
+            const notes = field.imageNotes || field.imagePrompt || '';
+            return `<div class="field-body image-status-body image-status-${escapeHtml(status)}" data-mode="image">
+                <div class="image-status-panel">
+                    <button type="button" class="image-status-clear-btn" data-role="image-error-clear-btn" data-field-path="${fieldPath}" title="Clear image status" aria-label="Clear image status">×</button>
+                    <div class="image-status-visual">${icon}</div>
+                    <div class="image-status-title">${escapeHtml(title)}</div>
+                    <div class="image-status-detail">${escapeHtml(detail)}</div>
+                    <textarea class="image-notes-field image-status-notes" data-role="image-notes" data-field-path="${fieldPath}" rows="3" placeholder="Describe the image you want…">${escapeHtml(notes)}</textarea>
+                    <div class="image-ai-actions image-status-actions">
+                        <button class="auto-prompt-btn" data-role="auto-prompt-btn" data-default-label="Auto Prompt" data-field-path="${fieldPath}" ${isError ? '' : 'disabled'}>Auto Prompt</button>
+                        <button class="ai-gen-btn" data-role="ai-gen-btn" data-default-label="Generate" data-field-path="${fieldPath}" ${isError ? '' : 'disabled'}>${isError ? 'Try Again' : 'Generating…'}</button>
+                    </div>
+                </div>
+            </div>`;
+        }
+
         // ── Shared helper: image notes row (shown below loaded image) ──
         function imageNotesHtml(fieldPath, field, options = {}) {
             const notes = field.imageNotes || field.imagePrompt || '';
@@ -2082,6 +2578,8 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         }
 
         if (field.mode === 'image') {
+            const statusHtml = imageGenerationStatusHtml(fieldPath, field);
+            if (statusHtml) return statusHtml;
             if (field.imageUrl) {
                 const manageOpen = isImageManageMode(slideIndex, fieldPath);
                 const altText = escapeHtml(field.imageNotes || 'Slide image');
@@ -2107,7 +2605,7 @@ The system is relationship-based and supported by tools such as Salesforce, repo
                 <div class="image-drop-zone image-drop-zone-empty" data-role="image-drop-zone" data-field-path="${fieldPath}" tabindex="0">
                     <input type="file" accept="image/*" data-role="field-image-file" data-field-path="${fieldPath}" style="display:none">
                     <div class="image-empty-placeholder" aria-hidden="true">
-                        <svg class="image-empty-figure" viewBox="0 0 128 128"><circle cx="64" cy="35" r="18" fill="currentColor"></circle><path d="M64 58c-23.2 0-42 18.8-42 42v10h84v-10c0-23.2-18.8-42-42-42Z" fill="currentColor"></path></svg>
+                        <i class="fa-regular fa-image image-empty-figure" aria-hidden="true"></i>
                     </div>
                     <button class="image-settings-btn image-settings-btn-empty" data-role="image-settings-btn" data-field-path="${fieldPath}" title="Manage image">
                         <i class="fa-solid fa-gear" aria-hidden="true"></i>
@@ -2206,7 +2704,7 @@ The system is relationship-based and supported by tools such as Salesforce, repo
     }
 
     function setSettingsTab(tabId) {
-        activeSettingsTab = ['typography', 'content', 'layout', 'import', 'export'].includes(tabId) ? tabId : 'typography';
+        activeSettingsTab = ['typography', 'content', 'images', 'layout', 'help', 'import', 'export'].includes(tabId) ? tabId : 'typography';
         document.querySelectorAll('[data-settings-tab]').forEach(btn => {
             btn.classList.toggle('active', btn.dataset.settingsTab === activeSettingsTab);
         });
@@ -2378,19 +2876,51 @@ The system is relationship-based and supported by tools such as Salesforce, repo
     }
 
     function resumePendingImagePrompts() {
+        let interruptedCount = 0;
+        let repairedImageCount = 0;
         slidesData.forEach((slide, slideIndex) => {
             getImageFieldsForSlide(slide).forEach(({ fieldPath, field }) => {
-                if (!field?.imagePromptPending) return;
-                const state = getFieldAsyncState(slideIndex, fieldPath);
-                if (state.promptPromise) return;
-                generateAutomaticImagePrompt(fieldPath, slideIndex, {
-                    queueGenerate: !!field.imageGenerateQueued,
-                    resumed: true
-                }).catch(err => {
-                    console.warn(`[Designer] Failed to resume prompt for ${fieldPath} on slide ${slideIndex}:`, err);
-                });
+                const hasImage = !!String(field?.imageUrl || '').trim();
+                const hasStaleStatus = !!field?.imagePromptPending
+                    || !!field?.imageGenerateQueued
+                    || ['prompting', 'generating', 'error'].includes(String(field?.imageGenerationStatus || ''));
+                if (hasImage && hasStaleStatus) {
+                    repairedImageCount += 1;
+                    clearFieldImageGenerationStatus(field);
+                    const state = getFieldAsyncState(slideIndex, fieldPath);
+                    state.promptPending = false;
+                    state.generateQueued = false;
+                    state.promptPromise = null;
+                    AI_GEN_IN_FLIGHT.delete(getFieldRequestKey(slideIndex, fieldPath));
+                    return;
+                }
+                if (field?.imageGenerationStatus === IMAGE_GENERATION_STATUS.GENERATING) {
+                    interruptedCount += 1;
+                    setFieldImageGenerationStatus(field, IMAGE_GENERATION_STATUS.ERROR, {
+                        requestId: field.imageGenerationRequestId,
+                        error: 'Image generation was interrupted, probably by a page refresh or deck reload. The lost API response cannot be recovered; try generating again.'
+                    });
+                    return;
+                }
+                if (field?.imageGenerationStatus === IMAGE_GENERATION_STATUS.PROMPTING || field?.imagePromptPending) {
+                    interruptedCount += 1;
+                    const wasQueued = !!field.imageGenerateQueued;
+                    setFieldImageGenerationStatus(field, IMAGE_GENERATION_STATUS.ERROR, {
+                        requestId: field.imageGenerationRequestId,
+                        error: wasQueued
+                            ? 'Image prompt drafting was interrupted by a page refresh or deck reload before the queued image could start. Clear this message and try again.'
+                            : 'Image prompt drafting was interrupted by a page refresh or deck reload. Clear this message and try again.'
+                    });
+                    return;
+                }
             });
         });
+        if (interruptedCount > 0 || repairedImageCount > 0) {
+            if (interruptedCount > 0) console.warn('[Designer][ImageGen] Marked interrupted image requests as errors:', interruptedCount);
+            if (repairedImageCount > 0) console.warn('[Designer][ImageGen] Cleared stale image status from existing images:', repairedImageCount);
+            saveState();
+            render(); showSlide(currentSlideIndex);
+        }
     }
 
     document.addEventListener('mousedown', (e) => {
@@ -2447,12 +2977,24 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         }
     }
 
+    function getEventTargetElement(target) {
+        if (target instanceof Element) return target;
+        return target?.parentElement || null;
+    }
+
+    function isKeyboardEditingContext(target) {
+        const el = getEventTargetElement(target);
+        if (!el) return false;
+        return !!el.closest('[contenteditable], input, textarea, select, #settings-panel, .modal-content, #speaker-notes-panel, #reference-modal');
+    }
+
     document.addEventListener('keydown', (e) => {
+        const editingContext = isKeyboardEditingContext(e.target);
         if (e.key === 'Escape' && slideTypePickerMode) {
             closeSlideTypePicker();
             return;
         }
-        if (e.altKey && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key) && !e.target.closest('input, textarea, select')) {
+        if (e.altKey && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key) && !editingContext) {
             e.preventDefault();
             const dx = (e.key === 'ArrowRight' ? 5 : (e.key === 'ArrowLeft' ? -5 : 0));
             const dy = (e.key === 'ArrowDown' ? 5 : (e.key === 'ArrowUp' ? -5 : 0));
@@ -2482,7 +3024,7 @@ The system is relationship-based and supported by tools such as Salesforce, repo
             saveState();
             return;
         }
-        if (!e.ctrlKey && !e.altKey && !e.target.closest('[contenteditable]')) {
+        if (!e.ctrlKey && !e.altKey && !editingContext) {
             if (e.key === 'ArrowRight') showSlide(currentSlideIndex + 1);
             if (e.key === 'ArrowLeft') showSlide(currentSlideIndex - 1);
             if (e.key === 'ArrowDown') showSlide(currentSlideIndex + 1);
@@ -2645,6 +3187,7 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         if (!loaded && !currentDeckId) loaded = await migrateLegacyRemoteAutosave();
 
         await reloadDeckLibrary(false);
+        if (currentDeckId) await hydrateDeckImageLibraryFromDb({ saveMerged: true });
         updateDeckManagementUI();
         if (currentDeckId) scheduleDeckAutosave({ delayMs: 1500 });
     }
@@ -2670,6 +3213,7 @@ The system is relationship-based and supported by tools such as Salesforce, repo
 
     function saveState(flushRemote = false) {
         const serializedDeck = serializeDeckState();
+        let localSaved = true;
         try {
             const record = buildCurrentDeckRecord(serializedDeck);
             localStorage.setItem(getDeckLocalCacheKey(record.id), JSON.stringify(record));
@@ -2678,13 +3222,19 @@ The system is relationship-based and supported by tools such as Salesforce, repo
             upsertDeckLibraryEntry(record);
             updateDeckManagementUI();
         } catch (err) {
-            console.error('[Designer] Local deck autosave failed:', err);
+            localSaved = false;
+            console.error('[Designer] Local deck autosave failed:', {
+                error: err,
+                serializedChars: serializedDeck.length,
+                serializedBytes: new Blob([serializedDeck]).size,
+                deckId: currentDeckId || '(pending)',
+                localCacheKey: currentDeckId ? getDeckLocalCacheKey(currentDeckId) : '(pending)'
+            });
             showToast('Local deck autosave failed. The deck may be too large to store in the browser.', 'error', 4200);
-            return false;
         }
         if (flushRemote) flushDeckAutosave({ silent: true });
         else scheduleDeckAutosave();
-        return true;
+        return localSaved;
     }
     function applyConfig() { document.documentElement.style.setProperty('--global-x', (appConfig.globalX || 0) + 'px'); document.documentElement.style.setProperty('--global-y', (appConfig.globalY || 0) + 'px'); if (appConfig.showShapes) document.body.classList.add('show-shapes'); else document.body.classList.remove('show-shapes'); types.forEach(t => { document.documentElement.style.setProperty(`--font-${t.id}`, normalizeDesignerFontValue(appConfig[`font-${t.id}`] || DEFAULT_FONT_STACK)); document.documentElement.style.setProperty(`--size-${t.id}`, appConfig[`size-${t.id}`] || '18pt'); document.documentElement.style.setProperty(`--color-${t.id}`, appConfig[`color-${t.id}`] || '#1e1d21'); }); }
     function updateTheme() { appConfig.showShapes = document.getElementById('toggle-shapes').checked; types.forEach(t => { appConfig[`font-${t.id}`] = document.getElementById(`font-${t.id}`).value; appConfig[`size-${t.id}`] = document.getElementById(`size-${t.id}`).value + 'pt'; }); applyConfig(); saveState(); }
@@ -2692,9 +3242,10 @@ The system is relationship-based and supported by tools such as Salesforce, repo
     function toggleHideAttrib() { appConfig.hideAttrib = document.getElementById('toggle-hide-attrib').checked; saveState(); syncUniversalQuoteAttributionPreview(); render(); showSlide(currentSlideIndex); }
     function toggleHideSourceAttribution() { appConfig.hideSourceAttribution = document.getElementById('toggle-hide-source-attrib').checked; saveState(); const previewModal = document.getElementById('reference-preview-modal'); if (previewModal?.classList.contains('open')) renderDeckReferencePreview(Number(previewModal.dataset.refId || 0)); }
     function updateImagePromptStyle() { appConfig.imagePromptStyle = document.getElementById('image-prompt-style').value.trim(); saveState(); updateImageStyleSelectUI(); }
+    function updateImagePromptWriterInstructions() { appConfig.imagePromptWriterInstructions = document.getElementById('image-prompt-writer-instructions').value.trim(); saveState(); }
     function updateUniversalQuoteAttribution() { appConfig.universalQuoteAttribution = document.getElementById('universal-quote-attribution').value; saveState(); syncUniversalQuoteAttributionPreview(); }
     function commitUniversalQuoteAttribution() { saveState(); render(); showSlide(currentSlideIndex); }
-    function updateSettingsUI() { document.getElementById('toggle-shapes').checked = (typeof appConfig.showShapes === 'boolean') ? appConfig.showShapes : true; document.getElementById('toggle-hide-images').checked = !!appConfig.hideAllImages; document.getElementById('toggle-hide-attrib').checked = !!appConfig.hideAttrib; document.getElementById('toggle-hide-source-attrib').checked = !!appConfig.hideSourceAttribution; document.getElementById('toggle-speaker-notes').checked = !!appConfig.showSpeakerNotes; document.getElementById('image-prompt-style').value = appConfig.imagePromptStyle || ''; document.getElementById('universal-quote-attribution').value = appConfig.universalQuoteAttribution || ''; const overviewEl = document.getElementById('heart-walk-overview-text'); if (overviewEl && document.activeElement !== overviewEl) overviewEl.value = overviewTextCache || DEFAULT_HEART_WALK_OVERVIEW; types.forEach(t => { const fEl = document.getElementById(`font-${t.id}`); const sEl = document.getElementById(`size-${t.id}`); const cBtn = document.getElementById(`color-btn-${t.id}`); if(fEl) fEl.value = normalizeDesignerFontValue(appConfig[`font-${t.id}`] || DEFAULT_FONT_STACK); if(sEl) sEl.value = (appConfig[`size-${t.id}`] || '').replace('pt',''); if(cBtn) cBtn.style.backgroundColor = appConfig[`color-${t.id}`] || '#000'; }); syncActiveTypographyTarget(); renderPresetList(); setSettingsTab(activeSettingsTab); renderSpeakerNotesPanel(); updateImageStyleSelectUI(); normalizeBatchParallelismInput(); updateBatchStatusUI(); syncLayoutActionButtons(); updateDeckManagementUI(); }
+    function updateSettingsUI() { document.getElementById('toggle-shapes').checked = (typeof appConfig.showShapes === 'boolean') ? appConfig.showShapes : true; document.getElementById('toggle-hide-images').checked = !!appConfig.hideAllImages; document.getElementById('toggle-hide-attrib').checked = !!appConfig.hideAttrib; document.getElementById('toggle-hide-source-attrib').checked = !!appConfig.hideSourceAttribution; document.getElementById('toggle-speaker-notes').checked = !!appConfig.showSpeakerNotes; document.getElementById('image-prompt-style').value = appConfig.imagePromptStyle || ''; document.getElementById('image-prompt-writer-instructions').value = appConfig.imagePromptWriterInstructions || DEFAULT_IMAGE_PROMPT_WRITER_INSTRUCTIONS; document.getElementById('universal-quote-attribution').value = appConfig.universalQuoteAttribution || ''; const overviewEl = document.getElementById('heart-walk-overview-text'); if (overviewEl && document.activeElement !== overviewEl) overviewEl.value = overviewTextCache || DEFAULT_HEART_WALK_OVERVIEW; types.forEach(t => { const fEl = document.getElementById(`font-${t.id}`); const sEl = document.getElementById(`size-${t.id}`); const cBtn = document.getElementById(`color-btn-${t.id}`); if(fEl) fEl.value = normalizeDesignerFontValue(appConfig[`font-${t.id}`] || DEFAULT_FONT_STACK); if(sEl) sEl.value = (appConfig[`size-${t.id}`] || '').replace('pt',''); if(cBtn) cBtn.style.backgroundColor = appConfig[`color-${t.id}`] || '#000'; }); syncActiveTypographyTarget(); renderPresetList(); setSettingsTab(activeSettingsTab); renderSpeakerNotesPanel(); updateImageStyleSelectUI(); normalizeBatchParallelismInput(); updateBatchStatusUI(); renderDeckImageLibrary(); syncLayoutActionButtons(); updateDeckManagementUI(); }
     // ════════════════════════════════════════════════
     //  Resilient import pipeline — extracts JSON from AI prose,
     //  handles slides-only arrays, missing config, unknown types, etc.
@@ -3052,6 +3603,10 @@ The system is relationship-based and supported by tools such as Salesforce, repo
 
     function normalizeImportedSlideBundle(data, warnings) {
         const references = normalizeImportReferences(data.references, warnings);
+        const imageLibrary = normalizeDeckImageLibrary(data.imageLibrary);
+        if (data.imageLibrary != null && !Array.isArray(data.imageLibrary)) {
+            warnings.push('Top-level imageLibrary must be an array. It was ignored.');
+        }
         let coercedTypes = 0;
         let missingBodyFields = 0;
         let missingColumns = 0;
@@ -3075,7 +3630,7 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         if (missingColumns > 0) warnings.push(`${missingColumns} two-column slide(s) were missing columns -> auto-created.`);
         if (skippedSlides > 0) warnings.push(`${skippedSlides} slide(s) could not be repaired and were skipped.`);
 
-        return { slides, references };
+        return { slides, references, imageLibrary };
     }
 
     function prepareSlidesForInsertion(inputString) {
@@ -3151,6 +3706,7 @@ The system is relationship-based and supported by tools such as Salesforce, repo
             const { data, warnings } = smartParseInput(inputString);
             const normalizedBundle = normalizeImportedSlideBundle(data, warnings);
             deckReferences = normalizedBundle.references;
+            deckImageLibrary = normalizedBundle.imageLibrary;
 
             // ── Config ──
             if (data.config) {
@@ -3184,7 +3740,7 @@ The system is relationship-based and supported by tools such as Salesforce, repo
                 ensureCurrentDeckIdentity({ createdAt: new Date().toISOString() });
             }
 
-            applyDeckPayload({ config: appConfig, references: deckReferences, slides: slidesData }, { resize: true });
+            applyDeckPayload({ config: appConfig, references: deckReferences, imageLibrary: deckImageLibrary, slides: slidesData }, { resize: true });
             saveState(true);
             document.body.classList.add('flash-success');
             setTimeout(() => document.body.classList.remove('flash-success'), 600);
@@ -3509,6 +4065,29 @@ The system is relationship-based and supported by tools such as Salesforce, repo
             deleteDeckReference(deleteBtn.dataset.refId);
             return;
         }
+
+        const libraryPreviewBtn = e.target.closest('[data-role="image-library-preview"]');
+        if (libraryPreviewBtn) {
+            const item = getDeckImageLibraryItem(libraryPreviewBtn.dataset.imageLibraryId);
+            if (item?.url) window.open(item.url, '_blank', 'noopener');
+            return;
+        }
+
+        const libraryUseBtn = e.target.closest('[data-role="image-library-use-current"]');
+        if (libraryUseBtn) {
+            applyImageLibraryItemToField(libraryUseBtn.dataset.imageLibraryId);
+            return;
+        }
+
+        const libraryCopyBtn = e.target.closest('[data-role="image-library-copy-url"]');
+        if (libraryCopyBtn) {
+            const item = getDeckImageLibraryItem(libraryCopyBtn.dataset.imageLibraryId);
+            if (!item?.url) return;
+            navigator.clipboard.writeText(item.url)
+                .then(() => showToast('Image URL copied.'))
+                .catch(() => showToast('Clipboard was blocked. Could not copy image URL.', 'error', 2800));
+            return;
+        }
     });
 
     // ── Mode icon button clicks ──
@@ -3565,6 +4144,17 @@ The system is relationship-based and supported by tools such as Salesforce, repo
             return;
         }
 
+        const errorClearBtn = e.target.closest('[data-role="image-error-clear-btn"]');
+        if (errorClearBtn) {
+            e.stopPropagation();
+            const slideEl = errorClearBtn.closest('.slide');
+            if (!slideEl) return;
+            const index = parseInt(slideEl.dataset.index, 10);
+            if (Number.isNaN(index)) return;
+            clearImageFieldStatus(errorClearBtn.dataset.fieldPath, index);
+            return;
+        }
+
         // ── URL Load button ──
         const urlBtn = e.target.closest('[data-role="url-load-btn"]');
         if (urlBtn) {
@@ -3579,6 +4169,7 @@ The system is relationship-based and supported by tools such as Salesforce, repo
             if (field && urlInput) {
                 pushImageHistory(field);
                 field.imageUrl = urlInput.value.trim();
+                clearFieldImageGenerationStatus(field);
                 setImageManageMode(index, urlBtn.dataset.fieldPath, false);
                 saveState(); render(); showSlide(currentSlideIndex);
                 console.log(`[Designer] Image URL loaded: ${field.imageUrl.slice(0, 60)}`);
@@ -3792,10 +4383,156 @@ The system is relationship-based and supported by tools such as Salesforce, repo
     const IMAGE_UPLOAD_URL = 'https://happydo.xyz/harvester/api/image-store.php';
     const IMAGE_LIBRARY_PAGE_URL = IMAGE_UPLOAD_URL.replace(/\/api\/image-store\.php$/i, '/50-designer/image-library.html');
     const IMAGE_HISTORY_MAX = 10;
+    const AI_IMAGE_MODEL = 'gpt-image-1';
     const AI_GEN_IN_FLIGHT = new Set();
+    const CANCELED_IMAGE_REQUESTS = new Set();
+    let embeddedImageNormalizationInFlight = false;
 
     function openServerImageLibrary() {
         window.open(IMAGE_LIBRARY_PAGE_URL, '_blank', 'noopener');
+    }
+
+    async function uploadImageBlobToServer(blob, options = {}) {
+        if (!blob || !blob.size) throw new Error('Image upload received an empty file.');
+        const ext = inferImageExtension(options.dataUrl || '', blob.type);
+        const sanitizedBase = String(options.fileBaseName || 'designer-image')
+            .replace(/[^A-Za-z0-9_-]+/g, '-')
+            .replace(/^-+|-+$/g, '') || 'designer-image';
+        const file = new File([blob], `${sanitizedBase}.${ext}`, { type: blob.type || 'image/png' });
+        const form = new FormData();
+        form.append('image', file);
+        const resp = await fetch(IMAGE_UPLOAD_URL, { method: 'POST', body: form });
+        const rawText = await resp.text();
+        let uploadResult = null;
+        try {
+            uploadResult = rawText ? JSON.parse(rawText) : null;
+        } catch (parseErr) {
+            console.warn('[Designer][ImageUpload] Upload response was not JSON:', {
+                status: resp.status,
+                responsePreview: rawText.slice(0, 300),
+                parseErr
+            });
+        }
+        if (!resp.ok) {
+            const serverMessage = uploadResult?.error || uploadResult?.message || rawText.slice(0, 180);
+            throw new Error(`Upload failed: HTTP ${resp.status}${serverMessage ? ` - ${serverMessage}` : ''}`);
+        }
+        const url = String(uploadResult?.url || '').trim();
+        if (!url) throw new Error('Upload response did not include url.');
+        return { url, uploadResult, status: resp.status, rawText };
+    }
+
+    async function uploadDataImageToServer(dataUrl, options = {}) {
+        const blob = await (await fetch(dataUrl)).blob();
+        return uploadImageBlobToServer(blob, { ...options, dataUrl });
+    }
+
+    function collectEmbeddedDeckImageReferences() {
+        const refs = [];
+        const visit = (value, path) => {
+            if (!value || typeof value !== 'object') return;
+            if (Array.isArray(value)) {
+                value.forEach((item, index) => visit(item, `${path}[${index}]`));
+                return;
+            }
+            Object.entries(value).forEach(([key, child]) => {
+                const childPath = path ? `${path}.${key}` : key;
+                if (key === 'imageUrl' && isDataImageUrl(child)) {
+                    refs.push({
+                        path: childPath,
+                        getValue: () => String(value[key] || '').trim(),
+                        setValue: (nextUrl) => { value[key] = nextUrl; }
+                    });
+                    return;
+                }
+                if (key === 'imageHistory' && Array.isArray(child)) {
+                    child.forEach((entry, index) => {
+                        if (!isDataImageUrl(entry)) return;
+                        refs.push({
+                            path: `${childPath}[${index}]`,
+                            getValue: () => String(child[index] || '').trim(),
+                            setValue: (nextUrl) => { child[index] = nextUrl; }
+                        });
+                    });
+                }
+                visit(child, childPath);
+            });
+        };
+
+        slidesData.forEach((slide, slideIndex) => visit(slide, `slides[${slideIndex}]`));
+        deckImageLibrary.forEach((item, index) => {
+            if (isDataImageUrl(item?.url)) {
+                refs.push({
+                    path: `imageLibrary[${index}].url`,
+                    getValue: () => String(deckImageLibrary[index]?.url || '').trim(),
+                    setValue: (nextUrl) => { deckImageLibrary[index].url = nextUrl; }
+                });
+            }
+        });
+        return refs;
+    }
+
+    async function normalizeEmbeddedDeckImages() {
+        if (embeddedImageNormalizationInFlight) {
+            showToast('Embedded-image normalization is already running.', 'info', 2400);
+            return false;
+        }
+        const refs = collectEmbeddedDeckImageReferences();
+        if (!refs.length) {
+            setEmbeddedImageNormalizeStatus('No embedded data-URI images were found in this deck.');
+            showToast('No embedded images needed normalization.', 'info', 2600);
+            return false;
+        }
+        if (!confirm(`Upload ${refs.length} embedded image reference${refs.length === 1 ? '' : 's'} to the server and replace them with URLs? This will shrink the deck JSON.`)) {
+            return false;
+        }
+
+        embeddedImageNormalizationInFlight = true;
+        const uploadCache = new Map();
+        let normalizedCount = 0;
+        let uploadedCount = 0;
+        let failureCount = 0;
+
+        try {
+            setEmbeddedImageNormalizeStatus(`Normalizing ${refs.length} embedded image reference${refs.length === 1 ? '' : 's'}...`);
+            for (let index = 0; index < refs.length; index += 1) {
+                const ref = refs[index];
+                const dataUrl = ref.getValue();
+                if (!isDataImageUrl(dataUrl)) continue;
+                setEmbeddedImageNormalizeStatus(`Uploading embedded image ${index + 1} of ${refs.length}...`);
+                try {
+                    let remoteUrl = uploadCache.get(dataUrl);
+                    if (!remoteUrl) {
+                        const upload = await uploadDataImageToServer(dataUrl, {
+                            fileBaseName: `${sanitizeSlideTitleForFileName(slidesData[currentSlideIndex]?.title || 'embedded-image')}-${index + 1}`
+                        });
+                        remoteUrl = upload.url;
+                        uploadCache.set(dataUrl, remoteUrl);
+                        uploadedCount += 1;
+                    }
+                    ref.setValue(remoteUrl);
+                    normalizedCount += 1;
+                } catch (err) {
+                    failureCount += 1;
+                    console.warn('[Designer][ImageNormalize] Failed to upload embedded image:', { path: ref.path, err });
+                }
+            }
+
+            deckImageLibrary = mergeDeckImageLibraries(deckImageLibrary, collectDeckImageLibraryItemsFromSlides());
+            renderDeckImageLibrary();
+            const savedOk = saveState(true);
+            await queueDeckImageLibraryPersist({ silent: true });
+            const summary = failureCount
+                ? `Normalized ${normalizedCount} embedded image reference${normalizedCount === 1 ? '' : 's'} (${uploadedCount} upload${uploadedCount === 1 ? '' : 's'}). ${failureCount} failed and stayed embedded.`
+                : `Normalized ${normalizedCount} embedded image reference${normalizedCount === 1 ? '' : 's'} (${uploadedCount} upload${uploadedCount === 1 ? '' : 's'}).`;
+            setEmbeddedImageNormalizeStatus(savedOk ? summary : `${summary} Browser autosave may have failed; export JSON to keep the normalized deck.` , !savedOk && normalizedCount > 0);
+            render();
+            showSlide(currentSlideIndex);
+            showToast(failureCount ? summary : 'Embedded images were uploaded and replaced with server URLs.', failureCount ? 'error' : 'info', 4200);
+            return failureCount === 0;
+        } finally {
+            embeddedImageNormalizationInFlight = false;
+        }
     }
 
     /** Push the current imageUrl onto the field's history stack before replacing it */
@@ -4305,21 +5042,16 @@ The system is relationship-based and supported by tools such as Salesforce, repo
 
         // Try server upload first
         try {
-            const form = new FormData();
-            form.append('image', file);
-            const resp = await fetch(IMAGE_UPLOAD_URL, { method: 'POST', body: form });
-            if (resp.ok) {
-                const result = await resp.json();
-                if (result.url) {
-                    field.imageUrl = result.url;
-                    setImageManageMode(slideIndex, fieldPath, false);
-                    console.log(`[Designer] ✓ Server upload OK: ${result.url}`);
-                    saveState(true); render(); showSlide(currentSlideIndex);
-                    showToast('Image saved to the deck and autosaved to DB.', 'info', 2600);
-                    return;
-                }
-            }
-            console.warn(`[Designer] Server upload failed (${resp.status}), falling back to data-URI`);
+            const upload = await uploadImageBlobToServer(file, {
+                fileBaseName: `${sanitizeSlideTitleForFileName(slide?.title || 'slide-image')}-${slideIndex + 1}`
+            });
+            field.imageUrl = upload.url;
+            clearFieldImageGenerationStatus(field);
+            setImageManageMode(slideIndex, fieldPath, false);
+            console.log(`[Designer] ✓ Server upload OK: ${upload.url}`);
+            saveState(true); render(); showSlide(currentSlideIndex);
+            showToast('Image saved to the deck and autosaved to DB.', 'info', 2600);
+            return;
         } catch (err) {
             console.warn(`[Designer] Server upload error: ${err.message}. Falling back to data-URI.`);
         }
@@ -4328,6 +5060,7 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         const reader = new FileReader();
         reader.onload = (ev) => {
             field.imageUrl = ev.target.result;
+            clearFieldImageGenerationStatus(field);
             setImageManageMode(slideIndex, fieldPath, false);
             console.log(`[Designer] ✓ Image embedded as data-URI (${(ev.target.result.length/1024).toFixed(1)} KB)`);
             const savedOk = saveState(true);
@@ -4362,28 +5095,43 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         updateFieldPromptFlags(field, state.promptPending, state.generateQueued);
         saveState();
         const requestId = ++state.requestId;
+        render(); showSlide(currentSlideIndex);
         refreshImageActionButtons(slideIndex, fieldPath);
+        console.log('[Designer][ImagePrompt] Request started:', { slideIndex, fieldPath, requestId, queueGenerate: !!options.queueGenerate });
 
         state.promptPromise = (async () => {
             try {
                 const { askAI } = await getAiTools();
-                const response = await askAI(buildAutomaticImagePromptRequest(slide, fieldPath), 'openai', {
-                    temperature: 0.2,
-                    timeoutMs: 45000
-                });
+                console.log('[Designer][ImagePrompt] Calling askAI...', { slideIndex, fieldPath, requestId });
+                const response = await withTimeout(
+                    askAI(buildAutomaticImagePromptRequest(slide, fieldPath), 'openai', {
+                        temperature: 0.2,
+                        timeoutMs: 45000
+                    }),
+                    55000,
+                    'Image prompt drafting'
+                );
+                const responseError = getAiResponseErrorMessage(response);
+                if (responseError) throw new Error(responseError);
                 const promptText = normalizeAiPromptResponse(response);
+                const promptError = getAiResponseErrorMessage(promptText);
+                if (promptError) throw new Error(promptError);
                 if (!promptText) throw new Error('AI returned an empty image prompt.');
                 if (requestId !== state.requestId) return '';
 
-                field.imagePrompt = promptText;
-                field.imageNotes = promptText;
+                const latestSlide = slidesData[slideIndex];
+                const latestField = latestSlide ? getByPath(latestSlide, fieldPath) : field;
+                if (!latestField) throw new Error(`Prompt completed but field no longer exists: ${fieldPath}`);
+                latestField.imagePrompt = promptText;
+                latestField.imageNotes = promptText;
                 saveState();
                 updateImagePromptInputs(slideIndex, fieldPath, promptText);
+                console.log('[Designer][ImagePrompt] Prompt drafted:', { slideIndex, fieldPath, requestId, preview: promptText.slice(0, 180) });
                 showToast(options.resumed ? 'Image prompt finished after reload.' : 'Image prompt drafted.');
 
                 if (state.generateQueued) {
                     state.generateQueued = false;
-                    updateFieldPromptFlags(field, state.promptPending, state.generateQueued);
+                    updateFieldPromptFlags(latestField, state.promptPending, state.generateQueued);
                     saveState();
                     refreshImageActionButtons(slideIndex, fieldPath);
                     await generateAIImage(fieldPath, slideIndex, promptText);
@@ -4392,8 +5140,13 @@ The system is relationship-based and supported by tools such as Salesforce, repo
                 return promptText;
             } catch (err) {
                 state.generateQueued = false;
-                updateFieldPromptFlags(field, state.promptPending, state.generateQueued);
+                const latestSlide = slidesData[slideIndex];
+                const latestField = latestSlide ? getByPath(latestSlide, fieldPath) : field;
+                updateFieldPromptFlags(latestField, state.promptPending, state.generateQueued);
+                if (latestField) setFieldImageGenerationStatus(latestField, IMAGE_GENERATION_STATUS.ERROR, { error: err.message || String(err) });
                 saveState();
+                render(); showSlide(currentSlideIndex);
+                console.error('[Designer][ImagePrompt] Prompt failed:', { slideIndex, fieldPath, requestId, error: err.message || String(err), err });
                 showToast(`Auto prompt failed: ${err.message}`, 'error', 3600);
                 throw err;
             } finally {
@@ -4401,9 +5154,13 @@ The system is relationship-based and supported by tools such as Salesforce, repo
                     state.promptPending = false;
                     state.promptPromise = null;
                 }
-                updateFieldPromptFlags(field, state.promptPending, state.generateQueued);
+                const latestSlide = slidesData[slideIndex];
+                const latestField = latestSlide ? getByPath(latestSlide, fieldPath) : field;
+                updateFieldPromptFlags(latestField, state.promptPending, state.generateQueued);
                 saveState();
+                render(); showSlide(currentSlideIndex);
                 refreshImageActionButtons(slideIndex, fieldPath);
+                console.log('[Designer][ImagePrompt] Request finished:', { slideIndex, fieldPath, requestId });
             }
         })();
 
@@ -4463,6 +5220,7 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         BATCH_IMAGE_STATE.total = targets.length;
         BATCH_IMAGE_STATE.completed = 0;
         BATCH_IMAGE_STATE.failed = 0;
+        BATCH_IMAGE_STATE.retriesUsed = 0;
         BATCH_IMAGE_STATE.current = [];
         BATCH_IMAGE_STATE.parallelism = parallelism;
         updateBatchStatusUI();
@@ -4476,14 +5234,53 @@ The system is relationship-based and supported by tools such as Salesforce, repo
             BATCH_IMAGE_STATE.current.push(label);
             updateBatchStatusUI();
             try {
-                const field = getByPath(slide, target.fieldPath);
-                const existingPrompt = String(field?.imagePrompt || field?.imageNotes || '').trim();
-                if (existingPrompt) {
-                    await generateAIImage(target.fieldPath, target.slideIndex, existingPrompt);
-                } else {
-                    const promptText = await generateAutomaticImagePrompt(target.fieldPath, target.slideIndex);
-                    await generateAIImage(target.fieldPath, target.slideIndex, promptText);
+                let lastError = null;
+                for (let attempt = 0; attempt <= BATCH_IMAGE_MAX_RETRIES_PER_TARGET; attempt += 1) {
+                    try {
+                        const latestSlide = slidesData[target.slideIndex];
+                        const field = latestSlide ? getByPath(latestSlide, target.fieldPath) : null;
+                        let existingPrompt = String(field?.imagePrompt || field?.imageNotes || '').trim();
+                        const existingPromptError = getAiResponseErrorMessage(existingPrompt);
+                        if (field && existingPromptError) {
+                            console.warn('[Designer][ImageBatch] Clearing error-shaped image prompt before retrying prompt generation:', {
+                                target,
+                                existingPromptError
+                            });
+                            field.imagePrompt = '';
+                            field.imageNotes = '';
+                            existingPrompt = '';
+                            saveState();
+                        }
+                        let ok = false;
+                        if (existingPrompt) {
+                            ok = await generateAIImage(target.fieldPath, target.slideIndex, existingPrompt);
+                        } else {
+                            const promptText = await generateAutomaticImagePrompt(target.fieldPath, target.slideIndex);
+                            ok = await generateAIImage(target.fieldPath, target.slideIndex, promptText);
+                        }
+                        if (!ok) throw new Error('Image generation returned without a usable image.');
+                        lastError = null;
+                        break;
+                    } catch (err) {
+                        lastError = err;
+                        const canRetry = attempt < BATCH_IMAGE_MAX_RETRIES_PER_TARGET
+                            && BATCH_IMAGE_STATE.retriesUsed < BATCH_IMAGE_MAX_TOTAL_RETRIES
+                            && !BATCH_IMAGE_STATE.cancelRequested;
+                        if (!canRetry) break;
+                        BATCH_IMAGE_STATE.retriesUsed += 1;
+                        console.warn('[Designer][ImageBatch] Retrying failed image target:', {
+                            target,
+                            attempt: attempt + 1,
+                            retriesUsed: BATCH_IMAGE_STATE.retriesUsed,
+                            maxRetries: BATCH_IMAGE_MAX_TOTAL_RETRIES,
+                            error: err?.message || String(err)
+                        });
+                        updateBatchStatusUI();
+                        showToast(`Retrying image ${target.slideIndex + 1} after API error (${BATCH_IMAGE_STATE.retriesUsed}/${BATCH_IMAGE_MAX_TOTAL_RETRIES}).`, 'info', 2600);
+                        await delay(1200);
+                    }
                 }
+                if (lastError) throw lastError;
             } catch (err) {
                 BATCH_IMAGE_STATE.failed += 1;
                 console.warn('[Designer] Batch image generation failed:', target, err);
@@ -4649,7 +5446,15 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         scheduleSlideHoverMenuPosition();
     }
 
-    function exportDeck() { navigator.clipboard.writeText(serializeDeckState(true)).then(() => alert("JSON Copied!")); }
+    async function exportDeck() {
+        const result = await saveTextFileWithPicker(serializeDeckState(true), buildDeckJsonFileName(), {
+            description: 'Designer deck JSON',
+            mimeType: 'application/json',
+            extension: '.json'
+        });
+        if (result === 'saved') showToast('Deck JSON saved.');
+        else if (result === 'downloaded') showToast('Deck JSON download started.');
+    }
 
     async function copyCurrentSlideJson() {
         if (!slidesData[currentSlideIndex]) {
@@ -4854,6 +5659,57 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         showToast(`Started downloading ${downloaded} image${downloaded === 1 ? '' : 's'}.`, 'info', 2600);
     }
 
+    function downloadTextAsset(text, fileName, mimeType = 'application/json') {
+        const blob = new Blob([text], { type: `${mimeType};charset=utf-8` });
+        const objectUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = objectUrl;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    }
+
+    async function saveTextFileWithPicker(text, suggestedName, options = {}) {
+        const fileName = String(suggestedName || 'HeartWalk_Deck.json').trim() || 'HeartWalk_Deck.json';
+        const mimeType = options.mimeType || 'application/json';
+        const extension = options.extension || '.json';
+        if (typeof window.showSaveFilePicker === 'function') {
+            try {
+                const handle = await window.showSaveFilePicker({
+                    suggestedName: fileName,
+                    types: [{
+                        description: options.description || 'JSON files',
+                        accept: { [mimeType]: [extension] }
+                    }]
+                });
+                const writable = await handle.createWritable();
+                await writable.write(text);
+                await writable.close();
+                return 'saved';
+            } catch (err) {
+                if (err?.name === 'AbortError') return 'cancelled';
+                console.warn('[Designer] Save picker failed, falling back to download:', err);
+            }
+        }
+        downloadTextAsset(text, fileName, mimeType);
+        return 'downloaded';
+    }
+
+    function buildDeckJsonFileName() {
+        return `${getCurrentDeckDownloadBaseName()}.json`;
+    }
+
+    async function copyDeckJson() {
+        try {
+            await navigator.clipboard.writeText(serializeDeckState(true));
+            showToast('Deck JSON copied to clipboard.');
+        } catch (_err) {
+            showToast('Clipboard was blocked. Allow clipboard access and try again.', 'error', 3200);
+        }
+    }
+
     async function copyJsonHowTo() {
         const guide = [
             'Designer JSON authoring guide',
@@ -4868,13 +5724,17 @@ The system is relationship-based and supported by tools such as Salesforce, repo
             '  "config": {',
             '    "globalX": 0,',
             '    "globalY": 0,',
-            '    "imagePromptStyle": "Optional universal image style"',
+            '    "imagePromptStyle": "Optional universal image style",',
+            '    "imagePromptWriterInstructions": "Optional instructions for Auto Prompt concept selection"',
             '  },',
             '  "references": [',
             '    { "id": 12, "sources": [',
             '      { "text": "Quoted supporting evidence", "interviewee": "Person Name", "sourceLabel": "Lauren Verrill.md", "timestamp": "00:14:32" },',
             '      { "text": "Second supporting quote for the same sentence", "interviewee": "Another Person" }',
             '    ] }',
+            '  ],',
+            '  "imageLibrary": [',
+            '    { "id": "img_example", "url": "https://example.com/generated.png", "prompt": "Saved generated-image prompt", "source": "generated", "model": "gpt-image-1" }',
             '  ],',
             '  "slides": [',
             '    { "type": "cover", "title": "Deck Title", "subtitle": "Optional subtitle" },',
@@ -4922,8 +5782,10 @@ The system is relationship-based and supported by tools such as Salesforce, repo
             '- Optional top-level key: "config" (object). If missing, full-deck import uses defaults.',
             '- The hover Paste button ignores `config` and only inserts the slides into the current deck.',
             '- Optional top-level key: "references" (array). Each item should have an integer `id` and a `sources` array.',
+            '- Optional top-level key: "imageLibrary" (array). Generated images are saved here even if they are not currently on a slide.',
             '- One sentence or quote should usually use one marker number, and that reference should contain all supporting quotes in its `sources` list.',
             '- `config.imagePromptStyle` stores the universal image style used for AI image generation.',
+            '- `config.imagePromptWriterInstructions` controls how Auto Prompt chooses simple image concepts before image generation.',
             '- Supported slide types: "cover", "section", "standard", "image", "statement", "statement-image", "two-column".',
             '- `statement` slides use a small `kicker` line above a large centered statement text field.',
             '- `statement-image` slides use the same `kicker` + statement copy block with a dedicated `imageField` underneath.',
@@ -5032,6 +5894,14 @@ The system is relationship-based and supported by tools such as Salesforce, repo
     
     // --- PPT GENERATOR LOGIC ---
     async function generatePPTX() {
+        const exportBtn = document.getElementById('download-pptx-btn');
+        const exportBtnLabel = exportBtn?.innerHTML || 'Download .PPTX';
+        if (exportBtn) {
+            exportBtn.disabled = true;
+            exportBtn.innerHTML = '<span class="ai-spinner"></span> Building .PPTX...';
+        }
+
+        try {
         let pres = new PptxGenJS();
         pres.layout = 'LAYOUT_WIDE';
 
@@ -5375,17 +6245,47 @@ The system is relationship-based and supported by tools such as Salesforce, repo
         }
 
         await pres.writeFile({ fileName: `${getCurrentDeckDownloadBaseName()}.pptx` });
+        } catch (err) {
+            console.error('[Designer][PPTX] Export failed:', err);
+            showToast(`PowerPoint export failed: ${err?.message || String(err)}`, 'error', 5200);
+            throw err;
+        } finally {
+            if (exportBtn) {
+                exportBtn.disabled = false;
+                exportBtn.innerHTML = exportBtnLabel;
+            }
+        }
     }
 
     // ════════════════════════════════════════════════
     //  AI Image Generation — uses generateImage() from ailnl.js
     // ════════════════════════════════════════════════
+    async function uploadGeneratedDataImage(dataUrl, context = {}) {
+        const generationRequestId = context.generationRequestId || '';
+        console.log('[Designer][ImageGen] Data URI returned; uploading before deck save...', {
+            generationRequestId,
+            sizeKb: Math.round(String(dataUrl || '').length / 1024)
+        });
+        const upload = await uploadDataImageToServer(dataUrl, { fileBaseName: 'ai-generated' });
+        console.log('[Designer][ImageGen] Upload response:', {
+            generationRequestId,
+            ok: true,
+            status: upload.status,
+            hasUrl: !!upload.url,
+            responsePreview: String(upload.rawText || '').slice(0, 300)
+        });
+        return String(upload.url || '').trim();
+    }
+
     async function generateAIImage(fieldPath, slideIndex, customPrompt, triggerBtn = null) {
-        console.log('[Designer] generateAIImage called:', { fieldPath, slideIndex, customPrompt: customPrompt?.slice(0, 60) });
+        console.log('[Designer][ImageGen] generateAIImage called:', { fieldPath, slideIndex, customPromptPreview: customPrompt?.slice(0, 80) });
         const slide = slidesData[slideIndex];
         ensureSlideSchema(slide);
         const field = getByPath(slide, fieldPath);
-        if (!field) { console.error('[Designer] generateAIImage: field not found at', fieldPath); return; }
+        if (!field) {
+            console.error('[Designer][ImageGen] generateAIImage: field not found at start', { slideIndex, fieldPath });
+            return false;
+        }
 
         const promptBase = customPrompt || field.imagePrompt || field.imageNotes;
         if (!promptBase) {
@@ -5394,22 +6294,38 @@ The system is relationship-based and supported by tools such as Salesforce, repo
                 state.generateQueued = true;
                 refreshImageActionButtons(slideIndex, fieldPath);
                 showToast('Image generation queued until the prompt is ready.', 'info', 2800);
-                return;
+                return false;
             }
-            console.warn('[Designer] No image prompt available');
+            console.warn('[Designer][ImageGen] No image prompt available', { slideIndex, fieldPath });
             showToast('Enter an image description first or use Auto Prompt.', 'error', 2600);
-            return;
+            return false;
+        }
+        const promptBaseError = getAiResponseErrorMessage(promptBase);
+        if (promptBaseError) {
+            const message = `Image prompt contains an API error instead of a usable prompt: ${promptBaseError}`;
+            setFieldImageGenerationStatus(field, IMAGE_GENERATION_STATUS.ERROR, { error: message });
+            saveState();
+            render(); showSlide(currentSlideIndex);
+            showToast(message, 'error', 4200);
+            return false;
         }
         const prompt = buildImageGenerationPrompt(promptBase);
-        console.log('[Designer] Using prompt:', prompt.slice(0, 100));
+        console.log('[Designer][ImageGen] Built final prompt:', { length: prompt.length, preview: prompt.slice(0, 300) });
 
         const reqKey = `${slideIndex}::${fieldPath}`;
         if (AI_GEN_IN_FLIGHT.has(reqKey)) {
-            console.warn('[Designer] generateAIImage skipped: request already in-flight for', reqKey);
+            console.warn('[Designer][ImageGen] Skipped: request already in-flight for', reqKey);
             showToast('Image generation already in progress for this field.', 'error', 2200);
-            return;
+            return false;
         }
         AI_GEN_IN_FLIGHT.add(reqKey);
+        const state = getFieldAsyncState(slideIndex, fieldPath);
+        const generationRequestId = `${Date.now()}-${++state.generationRequestId}`;
+        const startedAt = new Date().toISOString();
+        setFieldImageGenerationStatus(field, IMAGE_GENERATION_STATUS.GENERATING, { requestId: generationRequestId, startedAt });
+        saveState();
+        render(); showSlide(currentSlideIndex);
+        console.log('[Designer][ImageGen] Request started:', { reqKey, generationRequestId, startedAt });
 
         // Persist edited prompt
         if (customPrompt) {
@@ -5431,74 +6347,149 @@ The system is relationship-based and supported by tools such as Salesforce, repo
             btn.disabled = true;
             btn.innerHTML = '<span class="ai-spinner"></span> Generating…';
         });
-        console.log('[Designer] Loading ailnl.js module...');
+        console.log('[Designer][ImageGen] Loading ailnl.js module...');
 
         try {
             const { generateImage } = await getAiTools();
-            console.log('[Designer] ailnl.js loaded, calling generateImage...');
-            const result = await generateImage(prompt, 'openai', {
-                size: '1536x1024',
-                timeoutMs: 90000,
-                debug: true
+            console.log('[Designer][ImageGen] ailnl.js loaded, calling generateImage...', { generationRequestId, model: AI_IMAGE_MODEL });
+            const result = await withTimeout(
+                generateImage(prompt, AI_IMAGE_MODEL, {
+                    size: '1536x1024',
+                    timeoutMs: 90000,
+                    debug: true
+                }),
+                105000,
+                'Image generation'
+            );
+            console.log('[Designer][ImageGen] generateImage returned:', {
+                generationRequestId,
+                hasResult: !!result,
+                error: result?.error,
+                hasUrl: !!result?.url,
+                urlPreview: result?.url?.slice(0, 120),
+                rawKeys: result && typeof result === 'object' ? Object.keys(result) : []
             });
-            console.log('[Designer] generateImage returned:', { error: result.error, hasUrl: !!result.url, urlPreview: result.url?.slice(0, 80) });
-
-            if (result.error) {
-                console.error('[Designer] AI image generation failed:', result.error);
-                showToast('Image generation failed: ' + result.error, 'error', 4000);
-                return;
+            if (CANCELED_IMAGE_REQUESTS.has(generationRequestId)) {
+                console.warn('[Designer][ImageGen] Discarding canceled image generation result:', { generationRequestId, slideIndex, fieldPath });
+                return false;
             }
 
-            if (result.url) {
-                // Push old image to history before replacing
-                pushImageHistory(field);
+            if (result?.error) {
+                throw new Error(String(result.error));
+            }
 
-                // If base64 data-URI, attempt server upload for persistence
-                if (result.url.startsWith('data:')) {
-                    try {
-                        const blob = await (await fetch(result.url)).blob();
-                        const file = new File([blob], 'ai-generated.png', { type: 'image/png' });
-                        const form = new FormData();
-                        form.append('image', file);
-                        const resp = await fetch(IMAGE_UPLOAD_URL, { method: 'POST', body: form });
-                        if (resp.ok) {
-                            const uploadResult = await resp.json();
-                            if (uploadResult.url) {
-                                field.imageUrl = uploadResult.url;
-                                setImageManageMode(slideIndex, fieldPath, false);
-                                console.log('[Designer] ✓ AI image uploaded to server:', uploadResult.url);
-                                saveState(true); render(); showSlide(currentSlideIndex);
-                                showToast('Generated image saved to the deck and autosaved to DB.', 'info', 2800);
-                                return;
-                            }
-                        }
-                    } catch (uploadErr) {
-                        console.warn('[Designer] Upload of AI image failed, using data-URI:', uploadErr.message);
-                    }
-                }
-                field.imageUrl = result.url;
-                setImageManageMode(slideIndex, fieldPath, false);
-                console.log('[Designer] ✓ AI image generated:', result.url.slice(0, 80));
-                const savedOk = saveState(true);
-                render(); showSlide(currentSlideIndex);
-                if (String(result.url || '').startsWith('data:')) {
-                    showToast(savedOk
-                        ? 'Generated image was embedded into the deck JSON. For the most reliable persistence, use upload-backed image URLs.'
-                        : 'Generated image preview updated, but autosave failed. The generated image was not stored durably.', savedOk ? 'info' : 'error', 4600);
-                } else {
-                    showToast('Generated image saved to the deck and autosaved to DB.', 'info', 2800);
+            if (!result?.url) {
+                throw new Error('AI image API returned successfully but did not include a usable image URL.');
+            }
+
+            let finalUrl = String(result.url || '').trim();
+            const imageResultError = getAiResponseErrorMessage(finalUrl);
+            if (imageResultError) throw new Error(imageResultError);
+            if (!isUsableImageResultUrl(finalUrl)) {
+                throw new Error(`AI image API returned a non-image response: ${finalUrl.slice(0, 180)}`);
+            }
+            let uploadStatus = isDataImageUrl(finalUrl) ? 'uploaded' : 'remote-url';
+            if (isDataImageUrl(finalUrl)) {
+                try {
+                    finalUrl = await uploadGeneratedDataImage(finalUrl, { generationRequestId });
+                } catch (uploadErr) {
+                    const uploadMessage = uploadErr?.message || String(uploadErr);
+                    console.error('[Designer][ImageGen] Image generated, but upload failed before deck save:', {
+                        generationRequestId,
+                        slideIndex,
+                        fieldPath,
+                        uploadMessage,
+                        uploadErr
+                    });
+                    throw new Error(`Image generated, but could not be saved to the image store: ${uploadMessage}`);
                 }
             }
+
+            const libraryItem = addImageToDeckLibrary({
+                url: finalUrl,
+                originalUrl: '',
+                prompt,
+                notes: promptBase,
+                source: 'generated',
+                provider: 'openai',
+                model: AI_IMAGE_MODEL,
+                slideIndex,
+                fieldPath,
+                requestId: generationRequestId,
+                createdAt: new Date().toISOString(),
+                uploadStatus
+            });
+            await queueDeckImageLibraryPersist({ silent: true });
+            const librarySavedOk = saveState(true);
+            console.log('[Designer][ImageGen] Image saved to deck library before field apply:', {
+                generationRequestId,
+                imageLibraryId: libraryItem?.id,
+                uploadStatus,
+                localSaved: librarySavedOk,
+                urlPreview: finalUrl.slice(0, 120)
+            });
+            if (CANCELED_IMAGE_REQUESTS.has(generationRequestId)) {
+                console.warn('[Designer][ImageGen] Generated image kept in library, but field apply was canceled:', { generationRequestId, slideIndex, fieldPath });
+                return true;
+            }
+
+            const latestSlide = slidesData[slideIndex];
+            const latestField = latestSlide ? getByPath(latestSlide, fieldPath) : null;
+            if (!latestField) {
+                console.warn('[Designer][ImageGen] Generated image kept in library, but target field no longer exists:', { generationRequestId, slideIndex, fieldPath });
+                showToast('Generated image saved in the Images tab, but the original slide field no longer exists.', 'error', 5200);
+                return true;
+            }
+            if (latestField.imageGenerationRequestId && latestField.imageGenerationRequestId !== generationRequestId) {
+                console.warn('[Designer][ImageGen] Generated image kept in library, but target field has a newer request:', {
+                    generationRequestId,
+                    currentRequestId: latestField.imageGenerationRequestId,
+                    slideIndex,
+                    fieldPath
+                });
+                showToast('Generated image saved in the Images tab. It was not applied because a newer request is active for that field.', 'error', 5600);
+                return true;
+            }
+
+            pushImageHistory(latestField);
+            latestField.imageUrl = finalUrl;
+            latestField.imagePrompt = customPrompt || latestField.imagePrompt || promptBase;
+            latestField.imageNotes = customPrompt || latestField.imageNotes || promptBase;
+            clearFieldImageGenerationStatus(latestField);
+            setImageManageMode(slideIndex, fieldPath, false);
+            console.log('[Designer][ImageGen] Applied generated image to field:', {
+                generationRequestId,
+                slideIndex,
+                fieldPath,
+                finalUrlPreview: finalUrl.slice(0, 120)
+            });
+            const savedOk = saveState(true);
+            render(); showSlide(currentSlideIndex);
+            showToast(savedOk
+                ? 'Generated image saved in the Images tab and applied to the slide.'
+                : 'Generated image was applied and saved in the deck library, but autosave reported a problem.', savedOk ? 'info' : 'error', 4600);
+            return true;
         } catch (err) {
-            console.error('[Designer] AI image generation error:', err);
-            alert('Image generation error: ' + err.message);
+            const message = err?.message || String(err);
+            console.error('[Designer][ImageGen] AI image generation error:', { generationRequestId, slideIndex, fieldPath, message, err });
+            const latestSlide = slidesData[slideIndex];
+            const latestField = latestSlide ? getByPath(latestSlide, fieldPath) : field;
+            if (latestField) {
+                setFieldImageGenerationStatus(latestField, IMAGE_GENERATION_STATUS.ERROR, { requestId: generationRequestId, error: message });
+                saveState();
+                render(); showSlide(currentSlideIndex);
+            }
+            showToast('Image generation failed: ' + message, 'error', 5200);
+            return false;
         } finally {
             AI_GEN_IN_FLIGHT.delete(reqKey);
+            CANCELED_IMAGE_REQUESTS.delete(generationRequestId);
             btnStates.forEach(({ btn, label }) => {
                 btn.disabled = false;
                 btn.textContent = label;
             });
             refreshImageActionButtons(slideIndex, fieldPath);
+            console.log('[Designer][ImageGen] Request finished:', { generationRequestId, reqKey });
         }
     }
 

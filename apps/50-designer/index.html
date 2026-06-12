@@ -81,9 +81,9 @@
             background: white; border-radius: 8px; 
             border: 2px solid var(--powder-blue);
             box-shadow: 0 10px 40px rgba(0,0,0,0.5);
-            padding: 20px; width: 380px; max-height: min(88vh, 860px);
+            padding: 20px; width: min(380px, calc(100vw - 24px)); max-height: min(calc(100vh - 72px), 860px);
             display: none; flex-direction: column; gap: 12px; font-family: 'Source Sans Pro', sans-serif;
-            overflow: hidden;
+            overflow: hidden; box-sizing: border-box;
         }
         #settings-panel.open { display: flex; }
         #settings-panel h3 { color: var(--powder-blue); margin: 0; font-size: 20px; font-weight: 700; border-bottom: 1px solid #eee; padding-bottom: 10px; }
@@ -93,8 +93,18 @@
             padding: 7px 12px; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
         }
         .settings-tab-btn.active { background: var(--powder-blue); border-color: var(--powder-blue); color: #fff; }
-        .settings-tab-panels { flex: 1; min-height: 0; overflow: hidden; }
-        .settings-tab-panel { display: none; height: 100%; overflow-y: auto; padding-right: 4px; }
+        .settings-tab-panels { flex: 1; min-height: 0; overflow: hidden; display: flex; }
+        .settings-tab-panel {
+            display: none;
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding-right: 10px;
+            padding-bottom: 18px;
+            scrollbar-gutter: stable;
+            overscroll-behavior: contain;
+        }
         .settings-tab-panel.active { display: block; }
         .settings-tab-panel h4 { margin: 0 0 10px 0; color: #2f4652; font-size: 14px; }
 
@@ -121,7 +131,8 @@
 
         .btn-close { background: #e0e0e0; border: 1px solid #ccc; color: #333; padding: 6px 15px; border-radius: 4px; cursor: pointer; display: block; margin: 15px auto 0 auto; width: auto; font-size: 13px; }
         .toggle-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-size: 14px; color: #444; }
-        .settings-block { margin: 14px 0; padding: 12px; border: 1px solid #e7eef2; border-radius: 8px; background: #f8fcfe; }
+        .settings-block { margin: 0 0 14px 0; padding: 12px; border: 1px solid #e7eef2; border-radius: 8px; background: #f8fcfe; }
+        .settings-tab-panel > :last-child { margin-bottom: 0; }
         .settings-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
         .settings-field:last-child { margin-bottom: 0; }
         .settings-field label { font-size: 13px; font-weight: 700; color: #2f4652; }
@@ -147,6 +158,31 @@
         .settings-actions button:disabled { opacity: 0.55; cursor: wait; }
         .settings-status { min-height: 18px; font-size: 12px; color: #5d7280; }
         .settings-status.error { color: #b42318; }
+        .shortcut-list { display: flex; flex-direction: column; gap: 8px; }
+        .shortcut-item {
+            display: grid;
+            grid-template-columns: minmax(120px, 160px) minmax(0, 1fr);
+            gap: 10px;
+            align-items: start;
+            padding: 10px 12px;
+            border: 1px solid #d7e5eb;
+            border-radius: 8px;
+            background: #fff;
+        }
+        .shortcut-key {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 4px 8px;
+            border-radius: 999px;
+            background: #eefafd;
+            color: #0f6b85;
+            font-size: 11px;
+            font-weight: 800;
+            letter-spacing: 0.02em;
+            text-align: center;
+        }
+        .shortcut-copy { font-size: 12px; line-height: 1.45; color: #2f4652; }
         .batch-status {
             min-height: 36px; padding: 8px 10px; border: 1px dashed #bfd9e4; border-radius: 8px;
             background: #fff; font-size: 12px; line-height: 1.45; color: #2f4652;
@@ -717,9 +753,88 @@
             color: #7a8b95;
             font-size: 12px;
         }
+        .deck-image-library-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .deck-image-library-item {
+            display: grid;
+            grid-template-columns: 96px minmax(0, 1fr);
+            gap: 10px;
+            padding: 10px;
+            border: 1px solid #d7dfe4;
+            border-radius: 8px;
+            background: #fff;
+        }
+        .deck-image-library-thumb {
+            width: 96px;
+            height: 70px;
+            padding: 0;
+            border: 1px solid #cfd7dc;
+            border-radius: 6px;
+            overflow: hidden;
+            background: #f4f5f7;
+            cursor: pointer;
+        }
+        .deck-image-library-thumb img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+        .deck-image-library-main {
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        .deck-image-library-meta {
+            color: #7a8b95;
+            font-size: 11px;
+            font-weight: 700;
+        }
+        .deck-image-library-prompt {
+            color: #2f4652;
+            font-size: 12px;
+            line-height: 1.35;
+            max-height: 3.9em;
+            overflow: hidden;
+        }
+        .deck-image-library-error {
+            color: #9f2e2a;
+            font-size: 11px;
+            font-weight: 700;
+        }
+        .deck-image-library-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+        .deck-image-library-actions button {
+            padding: 5px 8px;
+            border: 1px solid #c7dbe2;
+            background: #fff;
+            color: #2f4652;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+        .deck-image-library-actions button:hover {
+            background: #f0f8ff;
+            border-color: var(--powder-blue);
+        }
         @media (max-width: 900px) {
             .image-manage-meta {
                 grid-template-columns: 1fr;
+            }
+            .deck-image-library-item {
+                grid-template-columns: 1fr;
+            }
+            .deck-image-library-thumb {
+                width: 100%;
+                height: 140px;
             }
         }
 
@@ -808,6 +923,83 @@
             width: min(46%, 160px);
             height: auto;
             display: block;
+            font-size: min(24vw, 168px);
+            line-height: 1;
+        }
+        .image-status-body {
+            padding: 0;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .image-status-body.image-status-prompting,
+        .image-status-body.image-status-generating {
+            background: #fff4cc;
+            border: 1px solid #f2c94c;
+        }
+        .image-status-body.image-status-error {
+            background: #ffe1df;
+            border: 1px solid #ff8a80;
+        }
+        .image-status-panel {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            min-height: 220px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            padding: 20px;
+            box-sizing: border-box;
+            text-align: center;
+        }
+        .image-status-clear-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            border: 1px solid rgba(30,29,33,0.16);
+            background: rgba(255,255,255,0.9);
+            color: #4b2930;
+            font-size: 18px;
+            line-height: 1;
+            cursor: pointer;
+        }
+        .image-panel-state-icon {
+            font-size: min(17vw, 136px);
+            color: #bf3a35;
+        }
+        .image-panel-state-spinner {
+            width: min(15vw, 112px);
+            height: min(15vw, 112px);
+            border-width: 8px;
+            border-color: rgba(30,29,33,0.16);
+            border-top-color: #d49a00;
+        }
+        .image-status-title {
+            color: #2f4652;
+            font-weight: 800;
+            font-size: 18px;
+        }
+        .image-status-detail {
+            max-width: 620px;
+            color: #5a6570;
+            font-size: 13px;
+            line-height: 1.35;
+        }
+        .image-status-error .image-status-detail {
+            color: #7a2723;
+            font-weight: 700;
+        }
+        .image-status-notes {
+            width: min(92%, 560px);
+            flex: 0 0 auto;
+        }
+        .image-status-actions {
+            justify-content: center;
         }
         .image-empty-overlay {
             position: absolute;
@@ -1271,8 +1463,12 @@
         /* Modals & Menus */
         #import-modal, #error-modal, #context-menu { display: none; }
         #import-modal.open, #error-modal.open { display: flex; }
-        #import-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.8); justify-content: center; align-items: center; z-index: 3000; }
-        .modal-content { background: white; padding: 25px; border-radius: 8px; width: 450px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); }
+        #import-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.8); justify-content: center; align-items: center; z-index: 3000; padding: 16px; box-sizing: border-box; overflow-y: auto; }
+        .modal-content {
+            background: white; padding: 25px; border-radius: 8px; width: min(450px, calc(100vw - 32px));
+            max-height: calc(100vh - 32px); display: flex; flex-direction: column; gap: 12px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5); overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; box-sizing: border-box;
+        }
         .modal-content h3 { margin: 0; color: var(--powder-blue); }
         .btn-file-upload { display: block; width: 100%; padding: 12px; text-align: center; background: #f8f9fa; border: 2px dashed #ccc; border-radius: 6px; color: #555; cursor: pointer; font-weight: bold; }
         textarea { width: 100%; height: 120px; font-family: monospace; padding: 10px; border: 1px solid #ccc; border-radius: 4px; resize: none; box-sizing: border-box; }
@@ -1641,7 +1837,9 @@
         <div class="settings-tabs" role="tablist" aria-label="Settings sections">
             <button class="settings-tab-btn active" type="button" data-settings-tab="typography" onclick="setSettingsTab('typography')">Typography</button>
             <button class="settings-tab-btn" type="button" data-settings-tab="content" onclick="setSettingsTab('content')">Content</button>
+            <button class="settings-tab-btn" type="button" data-settings-tab="images" onclick="setSettingsTab('images')">Images</button>
             <button class="settings-tab-btn" type="button" data-settings-tab="layout" onclick="setSettingsTab('layout')">Layout</button>
+            <button class="settings-tab-btn" type="button" data-settings-tab="help" onclick="setSettingsTab('help')">Help</button>
             <button class="settings-tab-btn" type="button" data-settings-tab="import" onclick="setSettingsTab('import')">Import</button>
             <button class="settings-tab-btn" type="button" data-settings-tab="export" onclick="setSettingsTab('export')">Export</button>
         </div>
@@ -1653,10 +1851,6 @@
                 <div class="toggle-row">
                     <input type="checkbox" id="toggle-shapes" onchange="updateTheme()">
                     <label for="toggle-shapes">Show Decorative Shapes</label>
-                </div>
-                <div class="toggle-row">
-                    <input type="checkbox" id="toggle-hide-images" onchange="toggleHideAllImages()">
-                    <label for="toggle-hide-images">Hide All Graphics (images + quote balloon vectors)</label>
                 </div>
                 <div class="toggle-row">
                     <input type="checkbox" id="toggle-hide-attrib" onchange="toggleHideAttrib()">
@@ -1672,9 +1866,32 @@
                 </div>
                 <div class="settings-block">
                     <div class="settings-field">
+                        <label for="heart-walk-overview-text">Heart Walk Systems Overview</label>
+                        <textarea id="heart-walk-overview-text" placeholder="Editable system overview text used when AI drafts an image prompt."></textarea>
+                        <div class="settings-help">Used as context when the app has to draft an image prompt for a slide that has no image description yet.</div>
+                        <div class="settings-actions">
+                            <button type="button" id="save-overview-btn" onclick="saveOverviewTextToDb()">Save Overview to DB</button>
+                            <button type="button" id="reload-overview-btn" onclick="reloadOverviewTextFromDb(true)">Reload Overview</button>
+                        </div>
+                        <div class="settings-status" id="overview-status"></div>
+                    </div>
+                    <div class="settings-field">
+                        <label for="universal-quote-attribution">Universal Quote Attribution</label>
+                        <input type="text" id="universal-quote-attribution" placeholder="Example: Heart Walk participant" oninput="updateUniversalQuoteAttribution()" onchange="commitUniversalQuoteAttribution()">
+                        <div class="settings-help">When set, this overrides every quote attribution in the editor and in the downloaded PPTX.</div>
+                    </div>
+                </div>
+            </div>
+            <div class="settings-tab-panel" data-settings-panel="images">
+                <div class="settings-block">
+                    <div class="toggle-row">
+                        <input type="checkbox" id="toggle-hide-images" onchange="toggleHideAllImages()">
+                        <label for="toggle-hide-images">Hide All Graphics (images + quote balloon vectors)</label>
+                    </div>
+                    <div class="settings-field">
                         <label for="image-prompt-style">AI Image Style</label>
                         <textarea id="image-prompt-style" placeholder="Example: cinematic documentary photo, warm natural light, shallow depth of field" oninput="updateImagePromptStyle()"></textarea>
-                        <div class="settings-help">This text is appended to every AI image generation prompt without changing each slide's saved prompt.</div>
+                        <div class="settings-help">Shared with Auto Prompt as visual context, then appended to each final image generation prompt without changing each slide's saved prompt.</div>
                         <div class="settings-inline-row">
                             <select id="image-style-select" onchange="applySelectedImageStyleFromDb()">
                                 <option value="">Custom / current style</option>
@@ -1688,14 +1905,9 @@
                         <div class="settings-status" id="image-style-status"></div>
                     </div>
                     <div class="settings-field">
-                        <label for="heart-walk-overview-text">Heart Walk Systems Overview</label>
-                        <textarea id="heart-walk-overview-text" placeholder="Editable system overview text used when AI drafts an image prompt."></textarea>
-                        <div class="settings-help">Used as context when the app has to draft an image prompt for a slide that has no image description yet.</div>
-                        <div class="settings-actions">
-                            <button type="button" id="save-overview-btn" onclick="saveOverviewTextToDb()">Save Overview to DB</button>
-                            <button type="button" id="reload-overview-btn" onclick="reloadOverviewTextFromDb(true)">Reload Overview</button>
-                        </div>
-                        <div class="settings-status" id="overview-status"></div>
+                        <label for="image-prompt-writer-instructions">AI Prompt Writer Instructions</label>
+                        <textarea id="image-prompt-writer-instructions" placeholder="Tell the prompt writer how to choose a simple image concept" oninput="updateImagePromptWriterInstructions()"></textarea>
+                        <div class="settings-help">Used when Auto Prompt drafts the saved image prompt. The AI Image Style is still passed along as visual context and appended when generating the final image.</div>
                     </div>
                     <div class="settings-field">
                         <label>Missing Image Generation</label>
@@ -1709,13 +1921,18 @@
                         <div class="settings-actions">
                             <button type="button" id="generate-missing-images-btn" onclick="generateMissingImagesBatch()">Generate Missing Images</button>
                             <button type="button" id="cancel-generate-missing-images-btn" onclick="cancelMissingImagesBatch()">Cancel Batch</button>
+                            <button type="button" id="normalize-embedded-images-btn" onclick="normalizeEmbeddedDeckImages()">Normalize Embedded Images</button>
+                            <button type="button" onclick="downloadAllImages()">Download Slide Images</button>
+                            <button type="button" onclick="openServerImageLibrary()">Browse Server Library</button>
                         </div>
                         <div class="batch-status" id="batch-image-status">No image generation batch running.</div>
+                        <div class="settings-help">Use Normalize Embedded Images after importing a PPT-derived deck that came back with base64 `data:image/...` payloads in the JSON.</div>
+                        <div class="settings-status" id="embedded-image-normalize-status"></div>
                     </div>
                     <div class="settings-field">
-                        <label for="universal-quote-attribution">Universal Quote Attribution</label>
-                        <input type="text" id="universal-quote-attribution" placeholder="Example: Heart Walk participant" oninput="updateUniversalQuoteAttribution()" onchange="commitUniversalQuoteAttribution()">
-                        <div class="settings-help">When set, this overrides every quote attribution in the editor and in the downloaded PPTX.</div>
+                        <label>Generated Image Library</label>
+                        <div class="settings-help" id="deck-image-library-count">0 saved images</div>
+                        <div class="deck-image-library-list" id="deck-image-library-list"></div>
                     </div>
                 </div>
             </div>
@@ -1727,7 +1944,28 @@
                         <div class="arrow-btn" onclick="nudge(-5, 0)">◀</div><div></div><div class="arrow-btn" onclick="nudge(5, 0)">▶</div>
                         <div></div><div class="arrow-btn" onclick="nudge(0, 5)">▼</div><div></div>
                     </div>
-                    <div style="font-size:11px; color:#888; margin-top:5px;">Tip: <strong>Ctrl+Click</strong> element to Select.<br><strong>Alt+Arrows</strong> to move selection.</div>
+                    <div style="font-size:11px; color:#888; margin-top:5px;">Tip: <strong>Ctrl+Click</strong> the title, body region, or quote bubble to select it.<br><strong>Alt+Arrows</strong> moves the selected block in <strong>This Slide</strong> mode, or the whole slide if nothing is selected.</div>
+                </div>
+            </div>
+            <div class="settings-tab-panel" data-settings-panel="help">
+                <div class="settings-block">
+                    <div class="settings-field">
+                        <label>Keyboard + Move Commands</label>
+                        <div class="shortcut-list">
+                            <div class="shortcut-item"><span class="shortcut-key">Ctrl+Click</span><span class="shortcut-copy">Select the title, main body region, or quote bubble so it can move independently from the rest of the slide.</span></div>
+                            <div class="shortcut-item"><span class="shortcut-key">Alt+Arrows</span><span class="shortcut-copy">Nudge the current selection by 5px. If nothing is selected while Layout mode is <strong>This Slide</strong>, the whole current slide moves instead.</span></div>
+                            <div class="shortcut-item"><span class="shortcut-key">Arrow Keys</span><span class="shortcut-copy">Flip between slides only when focus is outside editors and settings fields. While you are typing in slide text, speaker notes, import boxes, or settings inputs, arrows stay local for normal caret movement.</span></div>
+                            <div class="shortcut-item"><span class="shortcut-key">Escape</span><span class="shortcut-copy">Close the Add Slide / Convert Slide picker row if it is open.</span></div>
+                        </div>
+                    </div>
+                    <div class="settings-field">
+                        <label>Move Scope</label>
+                        <div class="shortcut-list">
+                            <div class="shortcut-item"><span class="shortcut-key">This Slide</span><span class="shortcut-copy">Move only the current slide, or only the currently selected block if you used Ctrl+Click first.</span></div>
+                            <div class="shortcut-item"><span class="shortcut-key">This Template</span><span class="shortcut-copy">Move every slide of the current type together, such as all standard slides or all statement slides.</span></div>
+                            <div class="shortcut-item"><span class="shortcut-key">All Slides</span><span class="shortcut-copy">Move the whole deck with one shared global offset.</span></div>
+                        </div>
+                    </div>
                 </div>
             </div>
             <div class="settings-tab-panel" data-settings-panel="import">
@@ -1747,13 +1985,7 @@
             </div>
             <div class="settings-tab-panel" data-settings-panel="export">
                 <div class="ppt-row">
-                    <button class="btn-outline btn-primary" onclick="generatePPTX()">Download .PPTX</button>
-                </div>
-                <div class="ppt-row">
-                    <button class="btn-outline" onclick="downloadAllImages()">Download All Images</button>
-                </div>
-                <div class="ppt-row">
-                    <button class="btn-outline" onclick="openServerImageLibrary()">Browse Server Image Library</button>
+                    <button class="btn-outline btn-primary" id="download-pptx-btn" onclick="generatePPTX()">Download .PPTX</button>
                 </div>
                 <div class="settings-spacer"></div>
                 <div class="presets-section">
@@ -1764,7 +1996,10 @@
                         <button onclick="saveCurrentAsPreset()">Save Current</button>
                     </div>
                 </div>
-                <div class="action-row"><button class="btn-outline" onclick="exportDeck()">Export JSON</button></div>
+                <div class="settings-actions">
+                    <button type="button" class="btn-outline" onclick="exportDeck()">Save JSON File</button>
+                    <button type="button" class="btn-outline" onclick="copyDeckJson()">Copy JSON</button>
+                </div>
                 <div class="ppt-row">
                     <button class="btn-outline" style="font-size:12px; padding:6px;" onclick="runSmokeTests()">🧪 Run Smoke Tests</button>
                 </div>

@@ -78,6 +78,8 @@ Designer supports:
 - Text / Image / Quote field mode switching,
 - a hover toolbar beside the active slide for delete / copy slide JSON / paste slide JSON,
 - file upload, drag/drop, paste, and direct URL loading for image fields,
+- bulk normalization of embedded `data:image/...` deck images back into hosted server URLs,
+- a Help tab inside Settings that lists keyboard commands and explains movement scope,
 - Auto Prompt for drafting an image prompt from slide content,
 - Generate for creating an image from the current prompt,
 - queued generate behavior when Auto Prompt is still in flight,
@@ -87,8 +89,17 @@ Designer supports:
 - speaker notes per slide.
 
 ### Export
-- Export JSON copies the current deck JSON to clipboard.
+- Save JSON File opens a file-save flow in supported browsers and falls back to a normal download when the picker API is unavailable.
+- Copy JSON copies the current deck JSON to the clipboard.
 - Download `.PPTX` creates a PowerPoint.
+
+### Keyboard and movement
+- `Ctrl + Click` selects the title, main body region, or quote bubble so it can move independently.
+- `Alt + Arrow Keys` nudges the current selection by 5px.
+- In `This Slide` mode, `Alt + Arrow Keys` move only the current slide when nothing is selected.
+- In `This Template` mode, nudging affects every slide of the current type.
+- In `All Slides` mode, nudging affects the whole deck.
+- Plain arrow keys only change slides when focus is outside editors and settings fields. While typing in slide text, settings fields, import boxes, or speaker notes, arrow keys stay local for normal caret movement.
 
 ### Slide copy / paste / delete
 - The hover toolbar just left of the active slide exposes 3 slide-level actions: Delete, Copy, and Paste.
@@ -118,9 +129,12 @@ This is important for AI authors.
 These travel with the deck and export/import cleanly:
 - `slides`
 - `config`
+- image fields may temporarily contain embedded `data:image/...` values after offline/PPT-derived workflows, but the Images settings tab includes a `Normalize Embedded Images` action to upload them back to `/harvester/uploads/images/` and rewrite the deck to hosted URLs
 - `references`
+- `imageLibrary`
 - optional `meta` markers used to label slide clipboard payloads
 - `config.imagePromptStyle`
+- `config.imagePromptWriterInstructions`
 - slide content and fields
 - slide-level `typeState` used to preserve hidden data during reversible slide conversion
 - slide speaker notes
@@ -171,6 +185,7 @@ Important limitation:
 | `meta` | No | object | Optional metadata. Slide-copy payloads use this to declare they are clipboard slide JSON |
 | `config` | No | object | Optional settings object |
 | `references` | No | array | Deck-level evidence/reference registry used by inline `(12)` markers |
+| `imageLibrary` | No | array | Deck-level generated-image library. Stores successful generated image URLs even if the image is not currently assigned to a slide |
 
 ### 4.3 Accepted root input forms
 
@@ -296,6 +311,7 @@ All config keys are optional.
 | `hideSourceAttribution` | boolean | Hide interviewee/source attribution in source previews and PPTX speaker-note footnotes |
 | `showSpeakerNotes` | boolean | Open the speaker notes panel in the app |
 | `imagePromptStyle` | string | Universal image style appended to AI image prompts |
+| `imagePromptWriterInstructions` | string | Instructions used by Auto Prompt when choosing the image concept |
 | `universalQuoteAttribution` | string | Overrides all quote attributions in app and PPTX |
 | `shapePath` | string or null | Custom decorative SVG path |
 | `shapeViewBox` | string or null | Custom decorative SVG viewBox |
@@ -842,12 +858,15 @@ Deck-level universal style lives in:
 ```json
 {
   "config": {
-    "imagePromptStyle": "cinematic documentary photo, warm natural light"
+    "imagePromptStyle": "cinematic documentary photo, warm natural light",
+    "imagePromptWriterInstructions": "Choose one simple supporting visual idea. Do not summarize every bullet."
   }
 }
 ```
 
 This is optional.
+
+`imagePromptStyle` is also shown to the prompt-writing AI as context, because some style rules affect concept choice. However, Auto Prompt should use `imagePromptWriterInstructions` as the higher-priority guide for what kind of image idea to write.
 
 If present, Designer appends it to AI image generation prompts.
 
@@ -884,7 +903,63 @@ For each target field:
 - otherwise Designer auto-drafts one,
 - then Designer generates the image.
 
-This is sequential editor behavior. It does not change the JSON schema.
+Batch generation uses the same image field schema as individual generation. Successful generated images may also be recorded in the deck-level `imageLibrary`.
+
+Retry behavior:
+- prompt-generation API errors must be treated as failures, not as prompt text,
+- image-generation API errors or non-image responses must be treated as failures, not as image URLs,
+- Generate Missing Images may retry a failed target once,
+- one batch run may spend at most five retries total.
+
+### 8.6 Deck image library
+
+Generated images are stored in the top-level `imageLibrary` array as soon as Designer has a durable image URL. If the image API returns a `data:image/...base64` URI, Designer uploads it to the image store before writing it into deck JSON, then applies the uploaded URL to the field that requested it.
+
+Designer also saves the generated-image library to a deck-specific DB record outside the deck JSON. On startup and when opening a deck, Designer merges:
+- the deck JSON `imageLibrary`,
+- the deck-specific DB image-library record,
+- image URLs already present on the deck's slides.
+
+Purpose:
+- preserve generated images even if the slide field is deleted, changed, or no longer available,
+- recover generated images after a refresh even if deck autosave was interrupted,
+- make generated images visible in Settings > Images,
+- allow an image to be reused on the current image field later.
+
+Typical item shape:
+
+```json
+{
+  "id": "img_example",
+  "url": "https://example.com/generated-image.png",
+  "originalUrl": "",
+  "prompt": "Image generation prompt",
+  "notes": "Image generation prompt",
+  "source": "generated",
+  "provider": "openai",
+  "model": "gpt-image-1",
+  "slideIndex": 3,
+  "fieldPath": "columns.rightField",
+  "requestId": "request id",
+  "createdAt": "2026-06-10T00:00:00.000Z",
+  "updatedAt": "2026-06-10T00:00:00.000Z",
+  "uploadStatus": "uploaded",
+  "uploadError": ""
+}
+```
+
+Field-level image generation status may appear while editing:
+- `imageGenerationStatus`
+- `imageGenerationError`
+- `imageGenerationRequestId`
+- `imageGenerationStartedAt`
+- `imageGenerationUpdatedAt`
+
+These are editor-facing status keys used to show yellow pending panels and red retryable error panels in the app.
+
+Important:
+- `imageLibrary[].url` should be the durable image URL when one exists.
+- `imageLibrary[].url` and `imageLibrary[].originalUrl` must not store `data:image/...base64` blobs. Designer strips deck-level data-URI image-library values during import/serialization to keep browser autosave under quota.
 
 ---
 
